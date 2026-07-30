@@ -1,10 +1,18 @@
 # AirTablet
 
-A modern 16:9 tablet OS for Airi Tsukino's Dalamud venue app suite. The venue
+AirTablet is a modern 16:9 tablet OS for Airi Tsukino's Dalamud venue app suite. The venue
 apps are compiled into this one plugin as independently maintained app modules,
 so users do not install the bundled versions or individual versions separately.
 
 The app layouts are designed for the tablet form factor.
+
+## Repo Link
+
+```text
+https://raw.githubusercontent.com/AiriTsukino/AirTablet/main/pluginmaster.json
+```
+
+[Discord Server](https://discord.com/invite/HqyDz3SRbG)
 
 
 ## Existing plugin data
