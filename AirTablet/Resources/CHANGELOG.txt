@@ -7,5 +7,8 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-07-29] GambaAssistant v1.0.52.0
+- Changed default state of blackjack overlay to off
+
 [2026-07-29] AirTabOS v1.0.51.0
 - Initial Release of AirTablet

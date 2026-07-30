@@ -34,7 +34,7 @@ public sealed class GeneralSettings
 [Serializable]
 public sealed class OverlaySettings
 {
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; } = false;
     public bool Compact { get; set; } = true;
     public int PlayerPanelColumns { get; set; } = 1;
     public float TextScale { get; set; } = 1.0f;
