@@ -1,0 +1,44 @@
+[
+  {
+    "id": "AutoGreet",
+    "name": "AutoGreet",
+    "version": "1.0.54.0",
+    "tagline": "Welcome and track venue guests",
+    "iconUrl": "Resources/Apps/AutoGreet/AGLogo.png"
+  },
+  {
+    "id": "BarManager",
+    "name": "BarManager",
+    "version": "0.1.51.0",
+    "tagline": "Sales, audit, and gamba drinks",
+    "iconUrl": "Resources/Apps/BarManager/BMLogo.png"
+  },
+  {
+    "id": "GambaAssistant",
+    "name": "GambaAssistant",
+    "version": "0.1.15.0",
+    "tagline": "Blackjack and DRT dealer tools",
+    "iconUrl": "Resources/Apps/GambaAssistant/GALogo.png"
+  },
+  {
+    "id": "RaffleManager",
+    "name": "RaffleManager",
+    "version": "0.2.20.0",
+    "tagline": "Tickets, jackpots, and draws",
+    "iconUrl": "Resources/Apps/RaffleManager/RMLogo.png"
+  },
+  {
+    "id": "ShiftKeeper",
+    "name": "ShiftKeeper",
+    "version": "1.0.18.0",
+    "tagline": "Staff, shifts, and payroll",
+    "iconUrl": "Resources/Apps/ShiftKeeper/SKLogo.png"
+  },
+  {
+    "id": "ShopHelper",
+    "name": "ShopHelper",
+    "version": "0.1.46.0",
+    "tagline": "Custom-quantity shop purchases",
+    "iconUrl": "Resources/Apps/ShopHelper/SHLogo.png"
+  }
+]

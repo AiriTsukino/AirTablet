@@ -1,0 +1,46 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <AssemblyName>AirTablet</AssemblyName>
+    <RootNamespace>AirTablet</RootNamespace>
+    <Version>1.0.51.0</Version>
+    <Description>A modern tablet OS for Airi's bundled venue apps.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Resources\apps.json" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Include="Resources\CHANGELOG.txt" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Include="Resources\DefaultWallpaper.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\DefaultWallpaper.png" />
+    <Content Include="Resources\ATLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\ATLogo.png" />
+    <Content Include="Resources\Supporters.txt" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Supporters.txt" />
+    <Content Include="Apps\AutoGreet\Resources\AGLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\AutoGreet\AGLogo.png" />
+    <Content Include="Apps\BarManager\Resources\BMLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\BarManager\BMLogo.png" />
+    <Content Include="Apps\GambaAssistant\Resources\GALogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\GambaAssistant\GALogo.png" />
+    <Content Include="Apps\RaffleManager\Resources\RMLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\RaffleManager\RMLogo.png" />
+    <Content Include="Apps\ShiftKeeper\Resources\SKLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShiftKeeper\SKLogo.png" />
+    <Content Include="Apps\ShopHelper\Resources\SHLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShopHelper\SHLogo.png" />
+    <Content Include="Resources\Dock\Discord.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Dock\Discord.png" />
+    <Content Include="Resources\Dock\KoFi.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Dock\KoFi.png" />
+    <Content Include="Resources\Settings\Appearance.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\Appearance.png" />
+    <Content Include="Resources\Settings\General.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\General.png" Condition="Exists('Resources\Settings\General.png')" />
+    <Content Include="Resources\Settings\Apps.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\Apps.png" />
+    <Content Include="Resources\Settings\WhatsNew.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\WhatsNew.png" />
+    <Content Include="Resources\Settings\StatusBar.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\StatusBar.png" />
+    <Content Include="Resources\Settings\Migration.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\Migration.png" />
+    <Content Include="Resources\Settings\About.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\About.png" />
+    <Content Include="Apps\AutoGreet\Resources\default-doorbell.mp3" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\default-doorbell.mp3" />
+    <Content Include="Apps\RaffleManager\Resources\tick.wav" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\tick.wav" />
+    <EmbeddedResource Include="Apps\AutoGreet\Resources\default-doorbell.mp3" />
+    <EmbeddedResource Include="Apps\RaffleManager\Resources\tick.wav" />
+  </ItemGroup>
+</Project>
