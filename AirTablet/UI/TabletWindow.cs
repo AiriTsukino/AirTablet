@@ -7,7 +7,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.0.51.0";
+    private const string ReleaseVersion = "1.0.54.0";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -87,6 +87,11 @@ internal sealed class TabletWindow
     private TutorialStep tutorialStep;
     private bool startupAnimationPending;
     private double startupAnimationStartedAt = -1d;
+    private bool recoveryRequested;
+    private bool migrationConfirmationPending;
+    private bool welcomeSetupConfirmationPending;
+    private bool lastRenderedMinimized;
+    private bool forceNextWindowPosition;
 
     public TabletWindow(
         Configuration config,
@@ -109,6 +114,8 @@ internal sealed class TabletWindow
         TabletAppTheme.RememberTheme(ThemePalette.Resolve(config.Theme));
         supporters = LoadSupporters();
         migrationStatus = GetMigrationHistoryStatus();
+        NormalizeMiniSettings();
+        lastRenderedMinimized = config.Minimized;
         startupAnimationPending = config.ShowStartupAnimation;
         if (startupAnimationPending)
             config.Minimized = false;
@@ -151,28 +158,54 @@ internal sealed class TabletWindow
         save();
     }
 
+    public void RequestRecovery()
+    {
+        recoveryRequested = true;
+        config.WindowVisible = true;
+        config.Minimized = false;
+    }
+
     public void Draw()
     {
         ProcessAppForegroundRequest();
+        if (recoveryRequested &&
+            DalamudServices.ClientState.IsLoggedIn &&
+            DalamudServices.ObjectTable.LocalPlayer is not null)
+        {
+            RecoverToActiveGameScreen();
+        }
         if (!config.WindowVisible ||
             !DalamudServices.ClientState.IsLoggedIn ||
             DalamudServices.ObjectTable.LocalPlayer is null)
             return;
 
+        var drawingMinimized = config.Minimized;
         var palette = ThemePalette.Resolve(config.Theme);
         TabletAppTheme.RememberTheme(palette);
-        uiScale = config.Minimized
+        uiScale = drawingMinimized
             ? SmallTabletScale
             : LargeTabletScale;
-        var fontScale = config.Minimized ? SmallTabletScale : AppContentScale;
+        var fontScale = drawingMinimized ? SmallTabletScale : AppContentScale;
         PushShellStyle();
         try
         {
-            var outerSize = (config.Minimized ? MiniOuterSize : FullOuterSize) * uiScale;
+            if (lastRenderedMinimized != drawingMinimized)
+            {
+                lastRenderedMinimized = drawingMinimized;
+                forceNextWindowPosition = true;
+            }
+
+            var outerSize = (drawingMinimized ? MiniOuterSize : FullOuterSize) * uiScale;
             ImGui.SetNextWindowSize(outerSize, ImGuiCond.Always);
+            var positionLocked = !drawingMinimized && config.PositionLocked;
+            var windowPosition = drawingMinimized
+                ? config.MiniPosition
+                : config.Position;
             ImGui.SetNextWindowPos(
-                config.Position,
-                config.PositionLocked ? ImGuiCond.Always : ImGuiCond.FirstUseEver);
+                windowPosition,
+                positionLocked || forceNextWindowPosition
+                    ? ImGuiCond.Always
+                    : ImGuiCond.FirstUseEver);
 
             var flags =
                 ImGuiWindowFlags.NoTitleBar |
@@ -182,7 +215,7 @@ internal sealed class TabletWindow
                 ImGuiWindowFlags.NoScrollWithMouse |
                 ImGuiWindowFlags.NoSavedSettings |
                 ImGuiWindowFlags.NoBackground;
-            if (config.PositionLocked || TabletAppTheme.HasOpenModal)
+            if (positionLocked || TabletAppTheme.HasOpenModal)
                 flags |= ImGuiWindowFlags.NoMove;
 
             // The fresh ID intentionally discards the platform-window class
@@ -190,22 +223,34 @@ internal sealed class TabletWindow
             if (ImGui.Begin("AirTablet###AirTabletShellStable", flags))
             {
                 ImGui.SetWindowFontScale(fontScale);
-                if (config.Minimized)
+                if (drawingMinimized)
                     DrawMini(palette);
                 else
                     DrawFullTablet(palette);
 
-                if (!config.PositionLocked && !TabletAppTheme.HasOpenModal)
+                if (!positionLocked && !TabletAppTheme.HasOpenModal)
                 {
                     var position = ImGui.GetWindowPos();
-                    if (Vector2.DistanceSquared(position, config.Position) > 1f)
+                    var savedPosition = drawingMinimized
+                        ? config.MiniPosition
+                        : config.Position;
+                    if (Vector2.DistanceSquared(position, savedPosition) > 1f)
                     {
-                        config.Position = position;
+                        if (drawingMinimized)
+                        {
+                            config.MiniPosition = position;
+                            config.MiniPositionInitialized = true;
+                        }
+                        else
+                        {
+                            config.Position = position;
+                        }
                         save();
                     }
                 }
             }
             ImGui.End();
+            forceNextWindowPosition = false;
         }
         finally
         {
@@ -363,7 +408,7 @@ internal sealed class TabletWindow
         {
             if (tutorialStep is TutorialStep.None or TutorialStep.Restore)
             {
-                config.Minimized = false;
+                RestoreFullTablet();
                 if (tutorialStep == TutorialStep.Restore)
                     CompleteControlTutorial();
                 else
@@ -375,6 +420,67 @@ internal sealed class TabletWindow
         var clock = ClockText();
         draw.AddText(screenMin + S(new Vector2(9, 8)), ImGui.GetColorU32(new Vector4(0.92f, 0.93f, 0.98f, 1f)), clock);
         DrawMiniTutorial(bodyMin, bodyMax, expandMin, expandMax, palette);
+    }
+
+    private void NormalizeMiniSettings()
+    {
+        if (config.MiniCollapseCorner is not
+            ("TopLeft" or "TopRight" or "BottomLeft" or "BottomRight"))
+        {
+            config.MiniCollapseCorner = "TopLeft";
+        }
+
+        if (!config.MiniPositionInitialized)
+        {
+            config.MiniPosition = CalculateCollapsedMiniPosition();
+            config.MiniPositionInitialized = true;
+        }
+    }
+
+    private void MinimizeTablet()
+    {
+        if (config.AnchorMiniToCollapseCorner ||
+            !config.MiniPositionInitialized)
+        {
+            config.MiniPosition = CalculateCollapsedMiniPosition();
+            config.MiniPositionInitialized = true;
+        }
+        config.Minimized = true;
+    }
+
+    private void RestoreFullTablet()
+    {
+        config.Minimized = false;
+    }
+
+    private Vector2 CalculateCollapsedMiniPosition()
+    {
+        var fullSize = FullOuterSize * LargeTabletScale;
+        var miniSize = MiniOuterSize * SmallTabletScale;
+        var remaining = Vector2.Max(Vector2.Zero, fullSize - miniSize);
+        var offset = config.MiniCollapseCorner switch
+        {
+            "TopRight" => new Vector2(remaining.X, 0f),
+            "BottomLeft" => new Vector2(0f, remaining.Y),
+            "BottomRight" => remaining,
+            _ => Vector2.Zero,
+        };
+        return config.Position + offset;
+    }
+
+    private void RecoverToActiveGameScreen()
+    {
+        var viewport = ImGui.GetMainViewport();
+        var tabletSize = FullOuterSize * LargeTabletScale;
+        config.Position =
+            viewport.Pos +
+            Vector2.Max(Vector2.Zero, (viewport.Size - tabletSize) * 0.5f);
+        config.Minimized = false;
+        config.WindowVisible = true;
+        recoveryRequested = false;
+        forceNextWindowPosition = true;
+        ShowNotice("AirTablet was recovered to the center of the game screen.");
+        saveImmediate();
     }
 
     private void DrawTabletNotification(
@@ -916,7 +1022,7 @@ internal sealed class TabletWindow
                 {
                     return;
                 }
-                config.Minimized = true;
+                MinimizeTablet();
                 if (tutorialStep == TutorialStep.Minimize)
                     AdvanceControlTutorial(TutorialStep.Restore);
                 else
@@ -2314,10 +2420,40 @@ internal sealed class TabletWindow
                     "Run welcome setup",
                     new Vector2(buttonWidth, rowHeight)))
             {
-                RestartWelcomeSetup();
-                ImGui.EndChild();
-                return;
+                welcomeSetupConfirmationPending = true;
+                TabletAppTheme.OpenCenteredModal(
+                    "Run welcome setup again?##airtablet-repeat-welcome");
             }
+        }
+        EndSettingsGroup();
+
+        DrawSettingsGroupLabel("Minimized tablet");
+        const float miniTabletGroupHeight = 274f;
+        if (BeginSettingsGroup(
+                "##settings-mini-tablet-group",
+                miniTabletGroupHeight,
+                palette))
+        {
+            var anchorMini = config.AnchorMiniToCollapseCorner;
+            if (DrawSettingsToggleRow(
+                    "anchor-mini",
+                    "Anchor mini tablet to the selected collapse corner",
+                    ref anchorMini))
+            {
+                config.AnchorMiniToCollapseCorner = anchorMini;
+                save();
+            }
+
+            ImGui.TextUnformatted("Collapse corner");
+            ImGui.TextColored(
+                anchorMini
+                    ? new Vector4(0.62f, 0.64f, 0.72f, 1f)
+                    : new Vector4(0.43f, 0.44f, 0.50f, 1f),
+                anchorMini
+                    ? "Choose which corner stays in place when the tablet minimizes."
+                    : "Turn on corner anchoring to choose a collapse corner.");
+            ImGui.Dummy(new Vector2(0, C(5f)));
+            DrawMiniCollapseCornerPicker(palette, anchorMini);
         }
         EndSettingsGroup();
 
@@ -2339,6 +2475,157 @@ internal sealed class TabletWindow
             }
         }
         EndSettingsGroup();
+        DrawWelcomeSetupConfirmation();
+    }
+
+    private void DrawWelcomeSetupConfirmation()
+    {
+        if (!welcomeSetupConfirmationPending)
+            return;
+
+        const string modalName =
+            "Run welcome setup again?##airtablet-repeat-welcome";
+        TabletAppTheme.OpenCenteredModal(modalName);
+        if (!TabletAppTheme.BeginCenteredModal(
+                modalName,
+                ImGuiWindowFlags.AlwaysAutoResize |
+                ImGuiWindowFlags.NoResize |
+                ImGuiWindowFlags.NoSavedSettings))
+        {
+            return;
+        }
+
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + C(430f));
+        ImGui.TextUnformatted(
+            "Run the welcome setup again? This disables the current app selections and restarts onboarding and the control tutorial. The bundled apps' own configurations and saved data are not changed.");
+        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
+
+        if (ImGui.Button("Run setup", C(new Vector2(120f, 0f))))
+        {
+            welcomeSetupConfirmationPending = false;
+            RestartWelcomeSetup();
+            TabletAppTheme.CloseCenteredModal();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel", C(new Vector2(100f, 0f))))
+        {
+            welcomeSetupConfirmationPending = false;
+            TabletAppTheme.CloseCenteredModal();
+        }
+
+        TabletAppTheme.EndCenteredModal();
+    }
+
+    private void DrawMiniCollapseCornerPicker(
+        ThemePalette palette,
+        bool enabled)
+    {
+        var availableWidth = ImGui.GetContentRegionAvail().X;
+        var diagramSize = C(new Vector2(260f, 110f));
+        var rowStart = ImGui.GetCursorScreenPos();
+        var diagramMin = rowStart + new Vector2(
+            MathF.Max(0f, (availableWidth - diagramSize.X) * 0.5f),
+            0f);
+        var diagramMax = diagramMin + diagramSize;
+        var draw = ImGui.GetWindowDrawList();
+        var frameColor = ImGui.GetColorU32(
+            enabled
+                ? new Vector4(0.50f, 0.52f, 0.60f, 1f)
+                : new Vector4(0.30f, 0.31f, 0.36f, 1f));
+        var screenColor = ImGui.GetColorU32(
+            enabled
+                ? new Vector4(
+                    palette.Surface.X,
+                    palette.Surface.Y,
+                    palette.Surface.Z,
+                    1f)
+                : new Vector4(0.10f, 0.105f, 0.12f, 1f));
+
+        draw.AddRectFilled(
+            diagramMin,
+            diagramMax,
+            ImGui.GetColorU32(new Vector4(0.05f, 0.055f, 0.065f, 1f)),
+            C(12f));
+        draw.AddRect(
+            diagramMin,
+            diagramMax,
+            frameColor,
+            C(12f),
+            ImDrawFlags.None,
+            C(2f));
+        draw.AddRectFilled(
+            diagramMin + C(new Vector2(12f, 10f)),
+            diagramMax - C(new Vector2(12f, 10f)),
+            screenColor,
+            C(7f));
+
+        var corners = new[]
+        {
+            ("TopLeft", "top-left", diagramMin + C(new Vector2(24f, 22f))),
+            ("TopRight", "top-right", new Vector2(diagramMax.X - C(24f), diagramMin.Y + C(22f))),
+            ("BottomLeft", "bottom-left", new Vector2(diagramMin.X + C(24f), diagramMax.Y - C(22f))),
+            ("BottomRight", "bottom-right", diagramMax - C(new Vector2(24f, 22f))),
+        };
+
+        foreach (var (value, label, center) in corners)
+        {
+            var selected =
+                enabled &&
+                config.MiniCollapseCorner.Equals(
+                    value,
+                    StringComparison.Ordinal);
+            draw.AddCircleFilled(
+                center,
+                C(11f),
+                ImGui.GetColorU32(selected
+                    ? palette.Accent
+                    : enabled
+                        ? new Vector4(0.24f, 0.25f, 0.30f, 1f)
+                        : new Vector4(0.18f, 0.185f, 0.21f, 1f)),
+                24);
+            draw.AddCircle(
+                center,
+                C(11f),
+                ImGui.GetColorU32(selected
+                    ? palette.AccentHover
+                    : enabled
+                        ? new Vector4(0.70f, 0.71f, 0.76f, 1f)
+                        : new Vector4(0.38f, 0.39f, 0.44f, 1f)),
+                24,
+                C(1.5f));
+            if (selected)
+            {
+                draw.AddLine(
+                    center + C(new Vector2(-5f, 0f)),
+                    center + C(new Vector2(-1f, 4f)),
+                    ImGui.GetColorU32(Vector4.One),
+                    C(2f));
+                draw.AddLine(
+                    center + C(new Vector2(-1f, 4f)),
+                    center + C(new Vector2(6f, -5f)),
+                    ImGui.GetColorU32(Vector4.One),
+                    C(2f));
+            }
+
+            ImGui.SetCursorScreenPos(center - C(new Vector2(14f, 14f)));
+            if (ImGui.InvisibleButton(
+                    $"##mini-collapse-{value}",
+                    C(new Vector2(28f, 28f))) &&
+                enabled)
+            {
+                config.MiniCollapseCorner = value;
+                save();
+            }
+            DrawTooltip(enabled
+                ? $"Keep the {label} corner in place when minimizing."
+                : "Turn on corner anchoring to select a collapse corner.");
+        }
+
+        ImGui.SetCursorScreenPos(new Vector2(
+            rowStart.X,
+            diagramMax.Y));
+        ImGui.Dummy(new Vector2(0f, C(1f)));
     }
 
     private void DrawAppSettings(ThemePalette palette)
@@ -2675,7 +2962,7 @@ internal sealed class TabletWindow
 
         if (changelog.Items.Count == 0)
         {
-            DrawSettingsGroupLabel("Bundled updates");
+            DrawSettingsGroupLabel("AirTabOS & App Updates");
             if (BeginSettingsGroup(
                     "##whats-new-empty-group",
                     62f,
@@ -2687,7 +2974,7 @@ internal sealed class TabletWindow
             return;
         }
 
-        DrawSettingsGroupLabel("Bundled updates");
+        DrawSettingsGroupLabel("AirTabOS & App Updates");
         var releases = changelog.Items
             .GroupBy(item => (item.Date.Date, item.Version))
             .OrderByDescending(group => group.Key.Date)
@@ -3075,15 +3362,16 @@ internal sealed class TabletWindow
         {
         if (ImGui.Button("Migrate original configs", C(new Vector2(190, 36))))
         {
-            var result = appHost.MigrateOriginalConfigs();
-            config.OriginalConfigMigrationCount =
-                Math.Max(0, config.OriginalConfigMigrationCount) + 1;
-            saveImmediate();
-            migrationStatus =
-                $"{result.Summary} {GetMigrationHistoryStatus()}";
-            ShowNotice(result.Imported.Count > 0
-                ? $"Imported settings for {result.Imported.Count} app(s)."
-                : "No original plugin settings were imported.");
+            if (config.OriginalConfigMigrationCount > 0)
+            {
+                migrationConfirmationPending = true;
+                TabletAppTheme.OpenCenteredModal(
+                    "Migrate original configs again?##airtablet-repeat-migration");
+            }
+            else
+            {
+                RunOriginalConfigMigration();
+            }
         }
         DrawTooltip("Copy original plugin settings into AirTablet without deleting or modifying the originals.");
 
@@ -3091,6 +3379,59 @@ internal sealed class TabletWindow
         ImGui.TextWrapped(migrationStatus);
         }
         EndSettingsGroup();
+        DrawMigrationConfirmation();
+    }
+
+    private void RunOriginalConfigMigration()
+    {
+        var result = appHost.MigrateOriginalConfigs();
+        config.OriginalConfigMigrationCount =
+            Math.Max(0, config.OriginalConfigMigrationCount) + 1;
+        saveImmediate();
+        migrationStatus =
+            $"{result.Summary} {GetMigrationHistoryStatus()}";
+        ShowNotice(result.Imported.Count > 0
+            ? $"Imported settings for {result.Imported.Count} app(s)."
+            : "No original plugin settings were imported.");
+    }
+
+    private void DrawMigrationConfirmation()
+    {
+        if (!migrationConfirmationPending)
+            return;
+
+        const string modalName =
+            "Migrate original configs again?##airtablet-repeat-migration";
+        TabletAppTheme.OpenCenteredModal(modalName);
+        if (!TabletAppTheme.BeginCenteredModal(
+                modalName,
+                ImGuiWindowFlags.AlwaysAutoResize |
+                ImGuiWindowFlags.NoResize |
+                ImGuiWindowFlags.NoSavedSettings))
+        {
+            return;
+        }
+
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + C(430f));
+        ImGui.TextUnformatted(
+            "Migrating again may overwrite app settings you changed in AirTablet since the last migration. The imported values come from the original standalone plugin configurations.");
+        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
+
+        if (ImGui.Button("Migrate again", C(new Vector2(130f, 0f))))
+        {
+            migrationConfirmationPending = false;
+            RunOriginalConfigMigration();
+            TabletAppTheme.CloseCenteredModal();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel", C(new Vector2(100f, 0f))))
+        {
+            migrationConfirmationPending = false;
+            TabletAppTheme.CloseCenteredModal();
+        }
+
+        TabletAppTheme.EndCenteredModal();
     }
 
     private string GetMigrationHistoryStatus()

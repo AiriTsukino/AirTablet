@@ -10,6 +10,7 @@ public sealed class Plugin : IDalamudPlugin
 {
     private const string MainCommand = "/airtablet";
     private const string SettingsCommand = "/airtabletsettings";
+    private const string RecoveryCommand = "/airtabletrecovery";
     private const string AppStateFileName = "app-state.json";
     private sealed class AppSelectionState
     {
@@ -37,7 +38,7 @@ public sealed class Plugin : IDalamudPlugin
         if (hadExistingConfig && previousVersion < 10)
             MigrateAppSelection(config);
         NormalizeAppSelection(config);
-        if (hadExistingConfig && previousVersion < 11)
+        if (hadExistingConfig && previousVersion < 13)
         {
             // Existing users already made their app choices before the welcome
             // screen existed, so upgrades must never be treated as fresh installs.
@@ -49,7 +50,7 @@ public sealed class Plugin : IDalamudPlugin
             // can replay it by running the welcome setup from General.
             config.TutorialCompleted = true;
             config.AppOrder ??= [];
-            config.Version = 11;
+            config.Version = 13;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
         SaveAppSelectionState(config);
@@ -70,11 +71,15 @@ public sealed class Plugin : IDalamudPlugin
 
         DalamudServices.CommandManager.AddHandler(MainCommand, new CommandInfo(OnMainCommand)
         {
-            HelpMessage = "Open or close AirTablet. Use '/airtablet open' to always open it.",
+            HelpMessage = "Open or close AirTablet.",
         });
         DalamudServices.CommandManager.AddHandler(SettingsCommand, new CommandInfo(OnSettingsCommand)
         {
             HelpMessage = "Open AirTablet directly to its settings app.",
+        });
+        DalamudServices.CommandManager.AddHandler(RecoveryCommand, new CommandInfo(OnRecoveryCommand)
+        {
+            HelpMessage = "Recover AirTablet to the center of the active game screen.",
         });
         DalamudServices.PluginInterface.UiBuilder.Draw += Draw;
         DalamudServices.PluginInterface.UiBuilder.OpenMainUi += Toggle;
@@ -91,6 +96,7 @@ public sealed class Plugin : IDalamudPlugin
         DalamudServices.PluginInterface.UiBuilder.OpenConfigUi -= window.OpenSettings;
         DalamudServices.CommandManager.RemoveHandler(MainCommand);
         DalamudServices.CommandManager.RemoveHandler(SettingsCommand);
+        DalamudServices.CommandManager.RemoveHandler(RecoveryCommand);
         appHost.Dispose();
         dialogs.Dispose();
         textures.Dispose();
@@ -99,16 +105,12 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private void OnMainCommand(string command, string arguments)
-    {
-        if (arguments.Trim().Equals("open", StringComparison.OrdinalIgnoreCase))
-        {
-            window.OpenHome();
-            return;
-        }
-        Toggle();
-    }
+        => Toggle();
 
     private void OnSettingsCommand(string command, string arguments) => window.OpenSettings();
+
+    private void OnRecoveryCommand(string command, string arguments) =>
+        window.RequestRecovery();
 
     private void Toggle()
     {

@@ -6,14 +6,18 @@ namespace AirTablet;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 11;
+    public int Version { get; set; } = 13;
     public bool SetupCompleted { get; set; }
     public bool TutorialCompleted { get; set; }
     public bool ShowStartupAnimation { get; set; } = true;
     public bool WindowVisible { get; set; }
     public bool Minimized { get; set; }
     public bool PositionLocked { get; set; }
+    public bool AnchorMiniToCollapseCorner { get; set; }
+    public string MiniCollapseCorner { get; set; } = "TopLeft";
     public Vector2 Position { get; set; } = new(120, 120);
+    public Vector2 MiniPosition { get; set; } = new(120, 120);
+    public bool MiniPositionInitialized { get; set; }
     public string Theme { get; set; } = "Purple";
     public string TabletSize { get; set; } = "Large";
     public string WallpaperPath { get; set; } = string.Empty;
