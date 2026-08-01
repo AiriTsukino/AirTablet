@@ -1,0 +1,56 @@
+@id gambaassistant
+@title GambaAssistant
+@summary Run Blackjack and Death Roll Tournament tables with party-aware dealer tools.
+@category Bundled Apps
+@order 30
+
+# Quick start: Blackjack
+- Select a venue profile and review Rules before starting a night.
+- Form the game party, sync the party if it doesnt match your current party list.
+- Open betting and accept trades from players to raise their banks, reserve each player's bet, then close betting and deal.
+- Use the active-hand controls to Hit, Stand, Double Down, or Split.
+- Complete the dealer turn, settle the round, and cash players out between hands.
+
+> warning: Keep players in the current party. Party identity is used for dice, trade detection, bank changes, and VIP bet limits.
+
+# Venue profiles
+Each profile saves Blackjack rules, chat templates, overlay preferences, pacing, and its Blackjack VIP list. Profile switching and critical rule changes are locked during an active session.
+
+# Betting limits and VIPs
+## Standard limits
+Minimum bet and Maximum bet apply to every non-VIP player.
+## VIP maximum
+VIP maximum bet is a separate higher limit saved on the venue profile. Add VIPs manually by Name and Home World or from the current target.
+## How matching works
+The higher limit is used only when the saved VIP matches a player in the current party. Max Bet uses that player's effective limit; custom, last, and recent-trade bets are also validated against it.
+## Repeated bets
+Multiple bet button presses add to the active hand. The total active bet cannot exceed the player's standard or VIP maximum.
+
+# Bank and trade detection
+- Incoming gil from a current party member adds to that player's bank.
+- Gil handed to a current party member subtracts from their bank.
+- Only trusted FFXIV system trade messages can trigger automatic adjustments; normal chat cannot.
+- Chat and dice commands pause while a verified trade sequence is active.
+- A bank reaching zero after cash-out is treated as cashed out; reaching zero through play means the player has no betting money remaining.
+
+# Blackjack rules
+- Initial deal mode controls round-robin versus full player hands first.
+- Dealer soft-17, tie/push, split, resplit, double-after-split, and split-natural options change hand resolution.
+- Return multipliers control standard wins, Double Down wins, and Natural Blackjack.
+- Chat templates control party announcements and support documented variables shown in settings.
+
+# Overlay
+The overlay follows the active tablet theme. Compact and column settings change its footprint. Active-player action buttons mirror the table controls; disabled actions remain unavailable under the same rules.
+
+# Death Roll Tournament
+Create entrants manually, from target, from party, or through the configured join flow. Configure channel, roll requirements, maximum entrants, then run the bracket. Party DRT can require /dice rolls; other modes use their configured visible roll source.
+
+# Troubleshooting
+## A trade is detected but no bank changes
+Verify the player is in the current party and their displayed Name/World matches the tracked table player. Review the Trades and Warnings logs.
+## A bet above standard max is rejected for a VIP
+Confirm the correct venue profile is active, the VIP entry includes the correct character/world, the player is currently in party, and VIP maximum is higher than standard maximum.
+## Commands pause during trade
+This is intended. Automation resumes after the verified Trade complete system message.
+## Dice do not progress a hand
+Confirm the configured dice command/channel and that the visible roll belongs to the expected current party player or dealer action.

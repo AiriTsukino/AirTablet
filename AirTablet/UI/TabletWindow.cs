@@ -7,7 +7,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.0.55.0";
+    private const string ReleaseVersion = "1.0.66.0";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -23,6 +23,7 @@ internal sealed class TabletWindow
         Home,
         Welcome,
         Settings,
+        Wiki,
         Module,
         Feedback,
     }
@@ -62,6 +63,7 @@ internal sealed class TabletWindow
     private readonly Configuration config;
     private readonly CatalogService catalog;
     private readonly ChangelogService changelog;
+    private readonly WikiService wiki;
     private readonly TextureCache textures;
     private readonly FileDialogService dialogs;
     private readonly AppHostService appHost;
@@ -72,10 +74,19 @@ internal sealed class TabletWindow
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, float> appTileScales =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, float> controlHoverAmounts =
+        new(StringComparer.OrdinalIgnoreCase);
     private Screen screen;
     private SettingsPage settingsPage;
     private string activeModuleId = string.Empty;
     private string draggedAppId = string.Empty;
+    private string selectedWikiArticleId = "airtabos";
+    private string wikiSearch = string.Empty;
+    private string previousWikiSearch = string.Empty;
+    private int selectedWikiMatch;
+    private bool wikiJumpPending;
+    private bool wikiArticleScrollResetPending;
+    private bool wikiArticleJumpRepeatPending;
     private int welcomePage;
     private string notice = string.Empty;
     private DateTime noticeUntil;
@@ -93,6 +104,13 @@ internal sealed class TabletWindow
     private bool lastRenderedMinimized;
     private bool forceNextWindowPosition;
 
+    private bool HasUnreadChangelog =>
+        config.SetupCompleted &&
+        !string.Equals(
+            config.LastReadChangelogVersion,
+            ReleaseVersion,
+            StringComparison.OrdinalIgnoreCase);
+
     public TabletWindow(
         Configuration config,
         CatalogService catalog,
@@ -106,6 +124,7 @@ internal sealed class TabletWindow
         this.config = config;
         this.catalog = catalog;
         this.changelog = changelog;
+        wiki = new WikiService();
         this.textures = textures;
         this.dialogs = dialogs;
         this.appHost = appHost;
@@ -343,6 +362,9 @@ internal sealed class TabletWindow
                         case Screen.Settings:
                             DrawSettingsApp(palette);
                             break;
+                        case Screen.Wiki:
+                            DrawWikiApp(palette);
+                            break;
                         case Screen.Module:
                             DrawModuleScreen(palette);
                             break;
@@ -355,7 +377,7 @@ internal sealed class TabletWindow
                     }
                     ImGui.EndChild();
                     if (config.SetupCompleted)
-                        DrawGestureBar();
+                        DrawGestureBar(palette);
                 }
                 ImGui.EndChild();
             ImGui.PopStyleColor();
@@ -387,10 +409,20 @@ internal sealed class TabletWindow
         DrawWallpaper(screenMin, screenMax, palette);
 
         var closeCenter = new Vector2(screenMax.X - S(13f), screenMin.Y + S(13f));
-        draw.AddCircleFilled(closeCenter, S(9f), ImGui.GetColorU32(new Vector4(0.18f, 0.18f, 0.22f, 0.96f)));
-        draw.AddLine(closeCenter - S(new Vector2(3, 3)), closeCenter + S(new Vector2(3, 3)), ImGui.GetColorU32(Vector4.One), S(1.5f));
-        draw.AddLine(closeCenter + S(new Vector2(-3, 3)), closeCenter + S(new Vector2(3, -3)), ImGui.GetColorU32(Vector4.One), S(1.5f));
-        ImGui.SetCursorScreenPos(closeCenter - S(new Vector2(10, 10)));
+        var closeHitMin = closeCenter - S(new Vector2(10, 10));
+        var closeHovered = ImGui.IsMouseHoveringRect(closeHitMin, closeHitMin + S(new Vector2(20, 20)));
+        var closeHover = AnimateControlHover("mini-close", closeHovered);
+        var closeScale = 1f + closeHover * 0.12f;
+        var closeRadius = S(9f) * closeScale;
+        var closeColor = Vector4.Lerp(
+            new Vector4(0.18f, 0.18f, 0.22f, 0.96f),
+            new Vector4(0.48f, 0.49f, 0.56f, 1f),
+            closeHover);
+        var closeGlyph = S(3f) * closeScale;
+        draw.AddCircleFilled(closeCenter, closeRadius, ImGui.GetColorU32(closeColor));
+        draw.AddLine(closeCenter - new Vector2(closeGlyph), closeCenter + new Vector2(closeGlyph), ImGui.GetColorU32(Vector4.One), S(1.5f) * closeScale);
+        draw.AddLine(closeCenter + new Vector2(-closeGlyph, closeGlyph), closeCenter + new Vector2(closeGlyph, -closeGlyph), ImGui.GetColorU32(Vector4.One), S(1.5f) * closeScale);
+        ImGui.SetCursorScreenPos(closeHitMin);
         if (ImGui.InvisibleButton("##mini-close", S(new Vector2(20, 20))) &&
             tutorialStep == TutorialStep.None)
         {
@@ -401,8 +433,16 @@ internal sealed class TabletWindow
 
         var expandMin = screenMin + S(new Vector2(51, 33));
         var expandMax = expandMin + S(new Vector2(47, 43));
-        draw.AddRectFilled(expandMin, expandMax, ImGui.GetColorU32(palette.Accent), S(14f));
-        DrawExpandGlyph(draw, (expandMin + expandMax) * 0.5f);
+        var expandHovered = ImGui.IsMouseHoveringRect(expandMin, expandMax);
+        var expandHover = AnimateControlHover("mini-expand", expandHovered);
+        var expandScale = 1f + expandHover * 0.10f;
+        var expandCenter = (expandMin + expandMax) * 0.5f;
+        var animatedExpandSize = (expandMax - expandMin) * expandScale;
+        var animatedExpandMin = expandCenter - animatedExpandSize * 0.5f;
+        var animatedExpandMax = expandCenter + animatedExpandSize * 0.5f;
+        var expandColor = Vector4.Lerp(palette.Accent, palette.AccentHover, expandHover);
+        draw.AddRectFilled(animatedExpandMin, animatedExpandMax, ImGui.GetColorU32(expandColor), S(14f) * expandScale);
+        DrawExpandGlyph(draw, expandCenter, expandScale);
         ImGui.SetCursorScreenPos(expandMin);
         if (ImGui.InvisibleButton("##mini-expand", expandMax - expandMin))
         {
@@ -1040,6 +1080,14 @@ internal sealed class TabletWindow
     {
         var max = min + size;
         var draw = ImGui.GetWindowDrawList();
+        var hovered = ImGui.IsMouseHoveringRect(min, max);
+        var hoverAmount = AnimateControlHover(id, hovered);
+        var idleColor = pressed
+            ? new Vector4(0.055f, 0.058f, 0.068f, 1f)
+            : new Vector4(0.12f, 0.125f, 0.14f, 1f);
+        var brightColor = pressed
+            ? new Vector4(0.18f, 0.19f, 0.22f, 1f)
+            : new Vector4(0.31f, 0.32f, 0.36f, 1f);
         draw.AddRectFilled(
             min + S(new Vector2(2, 3)),
             max + S(new Vector2(2, 3)),
@@ -1048,9 +1096,7 @@ internal sealed class TabletWindow
         draw.AddRectFilled(
             min,
             max,
-            ImGui.GetColorU32(pressed
-                ? new Vector4(0.055f, 0.058f, 0.068f, 1f)
-                : new Vector4(0.12f, 0.125f, 0.14f, 1f)),
+            ImGui.GetColorU32(Vector4.Lerp(idleColor, brightColor, hoverAmount)),
             S(4f));
         draw.AddLine(
             min + S(new Vector2(2, 2)),
@@ -1408,7 +1454,7 @@ internal sealed class TabletWindow
 
     private void DrawHomeDock(ThemePalette palette, Vector2 contentSize)
     {
-        var dockWidth = S(548f);
+        var dockWidth = S(680f);
         var dockHeight = S(102f);
         var localMin = new Vector2((contentSize.X - dockWidth) * 0.5f, contentSize.Y - dockHeight - S(18f));
         ImGui.SetCursorPos(localMin);
@@ -1422,11 +1468,23 @@ internal sealed class TabletWindow
             0.76f)), S(25f));
         draw.AddRect(start, end, ImGui.GetColorU32(new Vector4(1, 1, 1, 0.16f)), S(25f));
 
-        var itemWidth = dockWidth / 4f;
+        var itemWidth = dockWidth / 5f;
         DrawDockApp(
             start,
             itemWidth,
             0,
+            "discord",
+            "Discord",
+            new Vector4(0.35f, 0.40f, 0.95f, 1f),
+            palette,
+            @"Resources\Dock\Discord.png",
+            DrawDiscordGlyph,
+            () => OpenExternalUrl(DiscordInviteUrl, "Discord"),
+            "Open the community Discord.");
+        DrawDockApp(
+            start,
+            itemWidth,
+            1,
             "settings",
             "Settings",
             new Vector4(0.43f, 0.46f, 0.56f, 1f),
@@ -1443,27 +1501,19 @@ internal sealed class TabletWindow
         DrawDockApp(
             start,
             itemWidth,
-            1,
-            "discord",
-            "Discord",
-            new Vector4(0.35f, 0.40f, 0.95f, 1f),
-            palette,
-            @"Resources\Dock\Discord.png",
-            DrawDiscordGlyph,
-            () => OpenExternalUrl(DiscordInviteUrl, "Discord"),
-            "Open the community Discord.");
-        DrawDockApp(
-            start,
-            itemWidth,
             2,
-            "kofi",
-            "Ko-fi",
-            new Vector4(0.95f, 0.32f, 0.42f, 1f),
+            "wiki",
+            "Wiki",
+            new Vector4(0.18f, 0.52f, 0.78f, 1f),
             palette,
-            @"Resources\Dock\KoFi.png",
-            DrawKofiGlyph,
-            () => OpenExternalUrl(KofiUrl, "Ko-fi"),
-            "Support Airi on Ko-fi.");
+            string.Empty,
+            DrawWikiGlyph,
+            () =>
+            {
+                activeModuleId = string.Empty;
+                BeginOpening(Screen.Wiki);
+            },
+            "Open the AirTablet guides and troubleshooting wiki.");
         DrawDockApp(
             start,
             itemWidth,
@@ -1480,6 +1530,18 @@ internal sealed class TabletWindow
                 BeginOpening(Screen.Feedback);
             },
             "Bug reports, feedback, and feature requests.");
+        DrawDockApp(
+            start,
+            itemWidth,
+            4,
+            "kofi",
+            "Ko-fi",
+            new Vector4(0.95f, 0.32f, 0.42f, 1f),
+            palette,
+            @"Resources\Dock\KoFi.png",
+            DrawKofiGlyph,
+            () => OpenExternalUrl(KofiUrl, "Ko-fi"),
+            "Support Airi on Ko-fi.");
     }
 
     private void DrawDockApp(
@@ -1539,6 +1601,13 @@ internal sealed class TabletWindow
             draw.AddRectFilled(iconMin, iconMax, ImGui.GetColorU32(background), S(15f));
             drawGlyph(draw, (iconMin + iconMax) * 0.5f, Vector4.One);
         }
+        if (id.Equals("settings", StringComparison.OrdinalIgnoreCase) && HasUnreadChangelog)
+            DrawNotificationBadge(
+                draw,
+                new Vector2(iconMax.X - S(1f), iconMin.Y + S(1f)),
+                S(10f),
+                palette,
+                "1");
         DrawCenteredText(
             draw,
             label,
@@ -1621,6 +1690,447 @@ internal sealed class TabletWindow
             }
         }
         EndAnimatedAppViewport();
+    }
+
+    private void DrawWikiApp(ThemePalette palette)
+    {
+        var visible = BeginAnimatedAppViewport(
+            "##wiki-app",
+            palette,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse,
+            out var contentScale);
+        if (!visible)
+        {
+            EndAnimatedAppViewport();
+            return;
+        }
+
+        ImGui.SetWindowFontScale(contentScale);
+        TabletAppTheme.Begin(palette, contentScale);
+        TabletAppTheme.Push();
+        try
+        {
+            var headerStart = ImGui.GetCursorScreenPos();
+            ImGui.SetWindowFontScale(contentScale * 1.30f);
+            ImGui.TextColored(palette.AccentHover, "AirTablet Wiki");
+            ImGui.SetWindowFontScale(contentScale);
+            ImGui.TextColored(
+                new Vector4(0.62f, 0.64f, 0.72f, 1f),
+                "Quick starts, complete option references, and troubleshooting.");
+
+            var reloadWidth = ImGui.CalcTextSize("Reload wiki").X + C(30f);
+            ImGui.SetCursorScreenPos(new Vector2(
+                ImGui.GetWindowPos().X + ImGui.GetWindowSize().X - reloadWidth - C(20f),
+                headerStart.Y + C(6f)));
+            if (ImGui.Button("Reload wiki", new Vector2(reloadWidth, C(30f))))
+                wiki.Reload();
+            DrawTooltip("Reload the editable .wiki.txt files from the Resources/Wiki folder.");
+
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + C(8f));
+            ImGui.SetNextItemWidth(C(330f));
+            if (ImGui.InputTextWithHint("##wiki-search", "Search every guide...", ref wikiSearch, 100) ||
+                !string.Equals(previousWikiSearch, wikiSearch, StringComparison.Ordinal))
+            {
+                previousWikiSearch = wikiSearch;
+                selectedWikiMatch = 0;
+                wikiJumpPending = true;
+            }
+
+            var searchTerms = GetWikiSearchTerms(wikiSearch);
+            var articleMatchCounts = wiki.Articles.ToDictionary(
+                article => article.Id,
+                article => CountWikiMatches(article, searchTerms),
+                StringComparer.OrdinalIgnoreCase);
+            var matchedArticles = wiki.Articles
+                .Where(article => articleMatchCounts[article.Id] > 0)
+                .ToList();
+            var selectedHasMatches = articleMatchCounts.TryGetValue(selectedWikiArticleId, out var selectedCount) &&
+                                     selectedCount > 0;
+            if (searchTerms.Length > 0 && matchedArticles.Count > 0 && !selectedHasMatches)
+            {
+                selectedWikiArticleId = matchedArticles[0].Id;
+                selectedWikiMatch = 0;
+                wikiJumpPending = true;
+                wikiArticleScrollResetPending = true;
+                wikiArticleJumpRepeatPending = true;
+            }
+
+            var selectedArticle = wiki.Articles.FirstOrDefault(item =>
+                item.Id.Equals(selectedWikiArticleId, StringComparison.OrdinalIgnoreCase));
+            var matchCount = selectedArticle is null
+                ? 0
+                : articleMatchCounts.GetValueOrDefault(selectedArticle.Id);
+            var totalMatchCount = articleMatchCounts.Values.Sum();
+            if (searchTerms.Length > 0)
+            {
+                ImGui.SameLine(0f, C(10f));
+                if (totalMatchCount == 0)
+                {
+                    ImGui.TextDisabled("No matches");
+                }
+                else
+                {
+                    selectedWikiMatch = Math.Clamp(selectedWikiMatch, 0, matchCount - 1);
+                    var selectedArticleIndex = matchedArticles.FindIndex(article =>
+                        article.Id.Equals(selectedWikiArticleId, StringComparison.OrdinalIgnoreCase));
+                    var matchesBeforeSelectedArticle = matchedArticles
+                        .Take(Math.Max(0, selectedArticleIndex))
+                        .Sum(article => articleMatchCounts[article.Id]);
+                    ImGui.TextDisabled($"{matchesBeforeSelectedArticle + selectedWikiMatch + 1} of {totalMatchCount}");
+                    ImGui.SameLine(0f, C(8f));
+                    if (ImGui.Button("Next match", new Vector2(C(96f), 0f)))
+                    {
+                        if (selectedWikiMatch + 1 < matchCount)
+                        {
+                            selectedWikiMatch++;
+                        }
+                        else
+                        {
+                            var nextArticleIndex = (Math.Max(0, selectedArticleIndex) + 1) % matchedArticles.Count;
+                            selectedWikiArticleId = matchedArticles[nextArticleIndex].Id;
+                            selectedWikiMatch = 0;
+                            wikiArticleScrollResetPending = true;
+                            wikiArticleJumpRepeatPending = true;
+                        }
+                        wikiJumpPending = true;
+                    }
+                }
+            }
+            ImGui.Dummy(new Vector2(0f, C(7f)));
+
+            var navigationWidth = C(230f);
+            ImGui.PushStyleColor(
+                ImGuiCol.ChildBg,
+                new Vector4(
+                    palette.SurfaceRaised.X,
+                    palette.SurfaceRaised.Y,
+                    palette.SurfaceRaised.Z,
+                    0.96f));
+            if (ImGui.BeginChild("##wiki-navigation", new Vector2(navigationWidth, 0f), true))
+            {
+                if (wiki.Articles.Count == 0)
+                {
+                    ImGui.TextWrapped(wiki.Status);
+                }
+                else
+                {
+                    foreach (var category in wiki.Articles.GroupBy(article => article.Category))
+                    {
+                        ImGui.TextColored(palette.AccentHover, category.Key.ToUpperInvariant());
+                        ImGui.Dummy(new Vector2(0f, C(3f)));
+                        foreach (var article in category)
+                        {
+                            var selected = article.Id.Equals(selectedWikiArticleId, StringComparison.OrdinalIgnoreCase);
+                            if (ImGui.Selectable($"{article.Title}##wiki-{article.Id}", selected, ImGuiSelectableFlags.None, new Vector2(0f, C(34f))))
+                            {
+                                selectedWikiArticleId = article.Id;
+                                selectedWikiMatch = 0;
+                                wikiJumpPending = true;
+                                wikiArticleScrollResetPending = true;
+                                wikiArticleJumpRepeatPending = true;
+                            }
+                            if (searchTerms.Length > 0)
+                            {
+                                var countText = articleMatchCounts[article.Id].ToString();
+                                var countSize = ImGui.CalcTextSize(countText);
+                                var rowMin = ImGui.GetItemRectMin();
+                                var rowMax = ImGui.GetItemRectMax();
+                                ImGui.GetWindowDrawList().AddText(
+                                    new Vector2(
+                                        rowMax.X - countSize.X - C(8f),
+                                        rowMin.Y + (rowMax.Y - rowMin.Y - countSize.Y) * 0.5f),
+                                    ImGui.GetColorU32(articleMatchCounts[article.Id] > 0
+                                        ? palette.AccentHover
+                                        : new Vector4(0.48f, 0.50f, 0.58f, 1f)),
+                                    countText);
+                            }
+                            DrawTooltip(article.Summary);
+                        }
+                        ImGui.Dummy(new Vector2(0f, C(9f)));
+                    }
+                }
+            }
+            ImGui.EndChild();
+            ImGui.PopStyleColor();
+
+            ImGui.SameLine(0f, C(12f));
+            ImGui.PushStyleColor(
+                ImGuiCol.ChildBg,
+                new Vector4(
+                    palette.Surface.X,
+                    palette.Surface.Y,
+                    palette.Surface.Z,
+                    1f));
+            selectedArticle = wiki.Articles.FirstOrDefault(item =>
+                item.Id.Equals(selectedWikiArticleId, StringComparison.OrdinalIgnoreCase));
+            if (ImGui.BeginChild("##wiki-article", Vector2.Zero, true))
+            {
+                if (wikiArticleScrollResetPending)
+                {
+                    ImGui.SetScrollY(0f);
+                    wikiArticleScrollResetPending = false;
+                }
+                var article = selectedArticle;
+                if (article is null)
+                    ImGui.TextWrapped(wiki.Articles.Count == 0 ? wiki.Status : "Choose an article from the left.");
+                else
+                    DrawWikiArticle(article, palette, contentScale, searchTerms);
+            }
+            ImGui.EndChild();
+            ImGui.PopStyleColor();
+        }
+        finally
+        {
+            TabletAppTheme.End();
+        }
+        EndAnimatedAppViewport();
+    }
+
+    private void DrawWikiArticle(WikiArticle article, ThemePalette palette, float contentScale, string[] searchTerms)
+    {
+        var matchOrdinal = 0;
+        ImGui.SetWindowFontScale(contentScale * 1.42f);
+        DrawWikiText(article.Title, palette.AccentHover, palette, searchTerms, ref matchOrdinal);
+        ImGui.SetWindowFontScale(contentScale);
+        DrawWikiText(article.Summary, new Vector4(0.66f, 0.68f, 0.76f, 1f), palette, searchTerms, ref matchOrdinal);
+        ImGui.Dummy(new Vector2(0f, C(8f)));
+        ImGui.Separator();
+        ImGui.Dummy(new Vector2(0f, C(8f)));
+
+        foreach (var block in article.Blocks)
+        {
+            switch (block.Kind)
+            {
+                case WikiBlockKind.Heading:
+                    ImGui.Dummy(new Vector2(0f, C(7f)));
+                    ImGui.SetWindowFontScale(contentScale * 1.22f);
+                    DrawWikiText(block.Text, palette.AccentHover, palette, searchTerms, ref matchOrdinal);
+                    ImGui.SetWindowFontScale(contentScale);
+                    ImGui.Dummy(new Vector2(0f, C(3f)));
+                    break;
+                case WikiBlockKind.Subheading:
+                    ImGui.Dummy(new Vector2(0f, C(4f)));
+                    DrawWikiText(block.Text, palette.Accent, palette, searchTerms, ref matchOrdinal);
+                    ImGui.Dummy(new Vector2(0f, C(2f)));
+                    break;
+                case WikiBlockKind.Bullet:
+                    ImGui.TextColored(palette.Accent, "•");
+                    ImGui.SameLine();
+                    DrawWikiText(block.Text, new Vector4(0.91f, 0.92f, 0.96f, 1f), palette, searchTerms, ref matchOrdinal);
+                    break;
+                case WikiBlockKind.Tip:
+                    DrawWikiCallout("TIP", block.Text, palette.Accent, palette, searchTerms, ref matchOrdinal);
+                    break;
+                case WikiBlockKind.Warning:
+                    DrawWikiCallout("CHECK THIS", block.Text, new Vector4(0.96f, 0.58f, 0.22f, 1f), palette, searchTerms, ref matchOrdinal);
+                    break;
+                case WikiBlockKind.Code:
+                    ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.055f, 0.058f, 0.072f, 1f));
+                    var codeWrapWidth = MathF.Max(C(140f), ImGui.GetContentRegionAvail().X - ImGui.GetStyle().WindowPadding.X * 2f - C(8f));
+                    var codeHeight = ImGui.CalcTextSize(block.Text, false, codeWrapWidth).Y + ImGui.GetStyle().WindowPadding.Y * 2f + C(10f);
+                    if (ImGui.BeginChild(
+                            $"##wiki-code-{ImGui.GetCursorPosY()}",
+                            new Vector2(0f, codeHeight),
+                            true,
+                            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+                    {
+                        DrawWikiText(block.Text, new Vector4(0.91f, 0.92f, 0.96f, 1f), palette, searchTerms, ref matchOrdinal);
+                    }
+                    ImGui.EndChild();
+                    ImGui.PopStyleColor();
+                    ImGui.Dummy(new Vector2(0f, C(5f)));
+                    break;
+                case WikiBlockKind.Divider:
+                    ImGui.Dummy(new Vector2(0f, C(4f)));
+                    ImGui.Separator();
+                    ImGui.Dummy(new Vector2(0f, C(4f)));
+                    break;
+                default:
+                    DrawWikiText(block.Text, new Vector4(0.91f, 0.92f, 0.96f, 1f), palette, searchTerms, ref matchOrdinal);
+                    ImGui.Dummy(new Vector2(0f, C(4f)));
+                    break;
+            }
+        }
+        ImGui.Dummy(new Vector2(0f, C(14f)));
+    }
+
+    private void DrawWikiCallout(
+        string label,
+        string body,
+        Vector4 accent,
+        ThemePalette palette,
+        string[] searchTerms,
+        ref int matchOrdinal)
+    {
+        var wrapWidth = MathF.Max(C(140f), ImGui.GetContentRegionAvail().X - ImGui.GetStyle().WindowPadding.X * 2f - C(8f));
+        var height = ImGui.CalcTextSize(body, false, wrapWidth).Y + ImGui.GetTextLineHeight() +
+                     ImGui.GetStyle().ItemSpacing.Y + ImGui.GetStyle().WindowPadding.Y * 2f + C(10f);
+        ImGui.PushStyleColor(
+            ImGuiCol.ChildBg,
+            new Vector4(
+                palette.SurfaceRaised.X,
+                palette.SurfaceRaised.Y,
+                palette.SurfaceRaised.Z,
+                0.96f));
+        if (ImGui.BeginChild(
+                $"##wiki-callout-{label}-{ImGui.GetCursorPosY()}",
+                new Vector2(0f, height),
+                true,
+                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+        {
+            ImGui.TextColored(accent, label);
+            DrawWikiText(body, new Vector4(0.91f, 0.92f, 0.96f, 1f), palette, searchTerms, ref matchOrdinal);
+        }
+        ImGui.EndChild();
+        ImGui.PopStyleColor();
+        ImGui.Dummy(new Vector2(0f, C(6f)));
+    }
+
+    private readonly record struct WikiMatchSpan(int Start, int Length);
+
+    private static string[] GetWikiSearchTerms(string search) =>
+        search.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static int CountWikiMatches(WikiArticle article, string[] terms) =>
+        terms.Length == 0
+            ? 0
+            : FindWikiMatches(article.Title, terms).Count +
+              FindWikiMatches(article.Summary, terms).Count +
+              article.Blocks.Sum(block => FindWikiMatches(block.Text, terms).Count);
+
+    private static List<WikiMatchSpan> FindWikiMatches(string text, string[] terms)
+    {
+        var matches = new List<WikiMatchSpan>();
+        if (string.IsNullOrEmpty(text) || terms.Length == 0)
+            return matches;
+
+        for (var position = 0; position < text.Length;)
+        {
+            var length = terms
+                .Where(term => position + term.Length <= text.Length &&
+                               text.AsSpan(position, term.Length).Equals(term, StringComparison.OrdinalIgnoreCase))
+                .Select(term => term.Length)
+                .DefaultIfEmpty(0)
+                .Max();
+            if (length == 0)
+            {
+                position++;
+                continue;
+            }
+            matches.Add(new WikiMatchSpan(position, length));
+            position += length;
+        }
+        return matches;
+    }
+
+    private void DrawWikiText(
+        string text,
+        Vector4 normalColor,
+        ThemePalette palette,
+        string[] searchTerms,
+        ref int matchOrdinal)
+    {
+        var matches = FindWikiMatches(text, searchTerms);
+        var firstOrdinal = matchOrdinal;
+
+        if (matches.Count == 0)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, normalColor);
+            ImGui.TextWrapped(text);
+            ImGui.PopStyleColor();
+            return;
+        }
+
+        var draw = ImGui.GetWindowDrawList();
+        var originCursorY = ImGui.GetCursorPosY();
+        var origin = ImGui.GetCursorScreenPos();
+        var availableWidth = MathF.Max(C(80f), ImGui.GetContentRegionAvail().X);
+        var lineHeight = ImGui.GetTextLineHeight();
+        var spaceWidth = ImGui.CalcTextSize(" ").X;
+        var x = 0f;
+        var line = 0;
+        var position = 0;
+        var localMatch = 0;
+
+        while (position < text.Length)
+        {
+            if (text[position] == '\n')
+            {
+                line++;
+                x = 0f;
+                position++;
+                continue;
+            }
+            if (char.IsWhiteSpace(text[position]))
+            {
+                position++;
+                continue;
+            }
+
+            var wordStart = position;
+            while (position < text.Length && !char.IsWhiteSpace(text[position]))
+                position++;
+            var wordLength = position - wordStart;
+            var word = text.Substring(wordStart, wordLength);
+            var wordWidth = ImGui.CalcTextSize(word).X;
+            var leadingSpace = x > 0f ? spaceWidth : 0f;
+            if (x > 0f && x + leadingSpace + wordWidth > availableWidth)
+            {
+                line++;
+                x = 0f;
+                leadingSpace = 0f;
+            }
+            x += leadingSpace;
+
+            var wordEnd = wordStart + wordLength;
+            var segmentStart = wordStart;
+            foreach (var match in matches.Where(match => match.Start >= wordStart && match.Start < wordEnd))
+            {
+                if (match.Start > segmentStart)
+                    DrawWikiTextSegment(text[segmentStart..match.Start], normalColor, false, false);
+
+                var isSelected = firstOrdinal + localMatch == selectedWikiMatch;
+                DrawWikiTextSegment(text.Substring(match.Start, match.Length), palette.AccentHover, true, isSelected);
+                if (isSelected && wikiJumpPending)
+                {
+                    ImGui.SetScrollY(MathF.Max(0f, originCursorY + line * lineHeight - C(8f)));
+                    if (wikiArticleJumpRepeatPending)
+                        wikiArticleJumpRepeatPending = false;
+                    else
+                        wikiJumpPending = false;
+                }
+                segmentStart = match.Start + match.Length;
+                localMatch++;
+            }
+            if (segmentStart < wordEnd)
+                DrawWikiTextSegment(text[segmentStart..wordEnd], normalColor, false, false);
+        }
+
+        ImGui.Dummy(new Vector2(0f, (line + 1) * lineHeight));
+        matchOrdinal += matches.Count;
+        return;
+
+        void DrawWikiTextSegment(string segment, Vector4 color, bool highlighted, bool selected)
+        {
+            if (segment.Length == 0)
+                return;
+            var size = ImGui.CalcTextSize(segment);
+            var at = origin + new Vector2(x, line * lineHeight);
+            if (highlighted)
+            {
+                var background = selected
+                    ? new Vector4(1.00f, 0.72f, 0.18f, 0.96f)
+                    : new Vector4(palette.Accent.X, palette.Accent.Y, palette.Accent.Z, 0.28f);
+                draw.AddRectFilled(at - C(new Vector2(1f, 1f)), at + size + C(new Vector2(1f, 1f)), ImGui.GetColorU32(background), C(2f));
+            }
+            var textColor = selected
+                ? new Vector4(0.08f, 0.055f, 0.015f, 1f)
+                : color;
+            draw.AddText(at, ImGui.GetColorU32(textColor), segment);
+            x += size.X;
+        }
     }
 
     private void DrawFeedbackApp(ThemePalette palette)
@@ -1909,6 +2419,7 @@ internal sealed class TabletWindow
         }
 
         config.SetupCompleted = true;
+        config.LastReadChangelogVersion = ReleaseVersion;
         config.TutorialCompleted = false;
         welcomePage = 0;
         tutorialStep = TutorialStep.Home;
@@ -2197,6 +2708,13 @@ internal sealed class TabletWindow
         {
             draw.AddRectFilled(iconMin, iconMax, ImGui.GetColorU32(fallbackColor), C(7f));
         }
+        if (page == SettingsPage.WhatsNew && HasUnreadChangelog)
+            DrawNotificationBadge(
+                draw,
+                new Vector2(iconMax.X - C(1f), iconMin.Y + C(1f)),
+                C(9f),
+                palette,
+                "1");
 
         var labelSize = ImGui.CalcTextSize(label);
         draw.AddText(
@@ -2221,6 +2739,8 @@ internal sealed class TabletWindow
         if (ImGui.IsItemClicked())
         {
             settingsPage = page;
+            if (page == SettingsPage.WhatsNew)
+                MarkChangelogRead();
             if (page == SettingsPage.WhatsNew &&
                 changelog.Items.Count == 0 &&
                 !changelog.IsRefreshing)
@@ -2471,6 +2991,25 @@ internal sealed class TabletWindow
                     false))
             {
                 config.ShowStartupAnimation = showStartupAnimation;
+                save();
+            }
+        }
+        EndSettingsGroup();
+
+        DrawSettingsGroupLabel("AirTabOS help");
+        if (BeginSettingsGroup(
+                "##settings-airtabos-help-group",
+                84f,
+                palette))
+        {
+            var showOsTooltips = config.ShowAirTabOsTooltips;
+            if (DrawSettingsToggleRow(
+                    "airtabos-tooltips",
+                    "Show AirTabOS tooltips",
+                    ref showOsTooltips,
+                    false))
+            {
+                config.ShowAirTabOsTooltips = showOsTooltips;
                 save();
             }
         }
@@ -2826,6 +3365,8 @@ internal sealed class TabletWindow
         if (target is not null && ImGui.IsItemClicked())
         {
             settingsPage = target.Value;
+            if (target == SettingsPage.WhatsNew)
+                MarkChangelogRead();
             if (target == SettingsPage.WhatsNew && changelog.Items.Count == 0 && !changelog.IsRefreshing)
                 _ = changelog.RefreshAsync(catalog.Apps);
         }
@@ -3477,21 +4018,35 @@ internal sealed class TabletWindow
                     activeModuleId,
                     StringComparison.OrdinalIgnoreCase))
                 ?.Name ?? activeModuleId,
+            Screen.Wiki => "Wiki",
             Screen.Feedback => "Feedback",
             _ => string.Empty,
         };
     }
 
-    private void DrawGestureBar()
+    private void DrawGestureBar(ThemePalette palette)
     {
         var screenSize = ImGui.GetWindowSize();
         var barWidth = S(118f);
         var min = ImGui.GetWindowPos() + new Vector2((screenSize.X - barWidth) * 0.5f, screenSize.Y - S(10f));
         var max = min + new Vector2(barWidth, S(4f));
         var draw = ImGui.GetWindowDrawList();
-        draw.AddRectFilled(min, max, ImGui.GetColorU32(new Vector4(0.64f, 0.65f, 0.70f, 0.95f)), S(3f));
-        ImGui.SetCursorScreenPos(min - S(new Vector2(10, 5)));
-        if (ImGui.InvisibleButton("##home-gesture", S(new Vector2(138, 14))))
+        var hitMin = min - S(new Vector2(10, 5));
+        var hitSize = S(new Vector2(138, 14));
+        var hovered = ImGui.IsMouseHoveringRect(hitMin, hitMin + hitSize);
+        var hoverAmount = AnimateControlHover("home-gesture", hovered);
+        var barColor = Vector4.Lerp(
+            new Vector4(0.64f, 0.65f, 0.70f, 0.95f),
+            new Vector4(palette.AccentHover.X, palette.AccentHover.Y, palette.AccentHover.Z, 1f),
+            hoverAmount);
+        var expanded = S(1.5f) * hoverAmount;
+        draw.AddRectFilled(
+            min - new Vector2(expanded, expanded * 0.5f),
+            max + new Vector2(expanded, expanded * 0.5f),
+            ImGui.GetColorU32(barColor),
+            S(3f));
+        ImGui.SetCursorScreenPos(hitMin);
+        if (ImGui.InvisibleButton("##home-gesture", hitSize))
         {
             if (tutorialStep == TutorialStep.Home)
             {
@@ -3504,6 +4059,19 @@ internal sealed class TabletWindow
             }
         }
         DrawTooltip("Return to the AirTablet home screen.");
+    }
+
+    private float AnimateControlHover(string key, bool hovered)
+    {
+        var target = hovered ? 1f : 0f;
+        var current = controlHoverAmounts.GetValueOrDefault(key);
+        var response = 1f - MathF.Exp(
+            -15f * MathF.Max(0.001f, ImGui.GetIO().DeltaTime));
+        current += (target - current) * response;
+        if (MathF.Abs(current - target) < 0.001f)
+            current = target;
+        controlHoverAmounts[key] = current;
+        return current;
     }
 
     private void AdvanceControlTutorial(TutorialStep nextStep)
@@ -3791,17 +4359,19 @@ internal sealed class TabletWindow
             glyphHeight * 0.06f);
     }
 
-    private void DrawExpandGlyph(ImDrawListPtr draw, Vector2 center)
+    private void DrawExpandGlyph(ImDrawListPtr draw, Vector2 center, float scale = 1f)
     {
         var color = ImGui.GetColorU32(Vector4.One);
-        draw.AddLine(center + S(new Vector2(-10, -3)), center + S(new Vector2(-10, -10)), color, S(2f));
-        draw.AddLine(center + S(new Vector2(-10, -10)), center + S(new Vector2(-3, -10)), color, S(2f));
-        draw.AddLine(center + S(new Vector2(10, -3)), center + S(new Vector2(10, -10)), color, S(2f));
-        draw.AddLine(center + S(new Vector2(10, -10)), center + S(new Vector2(3, -10)), color, S(2f));
-        draw.AddLine(center + S(new Vector2(-10, 3)), center + S(new Vector2(-10, 10)), color, S(2f));
-        draw.AddLine(center + S(new Vector2(-10, 10)), center + S(new Vector2(-3, 10)), color, S(2f));
-        draw.AddLine(center + S(new Vector2(10, 3)), center + S(new Vector2(10, 10)), color, S(2f));
-        draw.AddLine(center + S(new Vector2(10, 10)), center + S(new Vector2(3, 10)), color, S(2f));
+        Vector2 Offset(float x, float y) => center + S(new Vector2(x, y)) * scale;
+        var thickness = S(2f) * scale;
+        draw.AddLine(Offset(-10, -3), Offset(-10, -10), color, thickness);
+        draw.AddLine(Offset(-10, -10), Offset(-3, -10), color, thickness);
+        draw.AddLine(Offset(10, -3), Offset(10, -10), color, thickness);
+        draw.AddLine(Offset(10, -10), Offset(3, -10), color, thickness);
+        draw.AddLine(Offset(-10, 3), Offset(-10, 10), color, thickness);
+        draw.AddLine(Offset(-10, 10), Offset(-3, 10), color, thickness);
+        draw.AddLine(Offset(10, 3), Offset(10, 10), color, thickness);
+        draw.AddLine(Offset(10, 10), Offset(3, 10), color, thickness);
     }
 
     private void DrawGearGlyph(ImDrawListPtr draw, Vector2 center, Vector4 color)
@@ -3853,6 +4423,77 @@ internal sealed class TabletWindow
             center + S(new Vector2(3, 0)),
             center + S(new Vector2(-3, 8)),
             heart);
+    }
+
+    private void DrawWikiGlyph(ImDrawListPtr draw, Vector2 center, Vector4 color)
+    {
+        var packed = ImGui.GetColorU32(color);
+        var leftTop = center + S(new Vector2(-19f, -15f));
+        var middleTop = center + S(new Vector2(0f, -11f));
+        var rightTop = center + S(new Vector2(19f, -15f));
+        var bottom = center + S(new Vector2(0f, 17f));
+        draw.AddQuad(
+            leftTop,
+            middleTop,
+            bottom,
+            center + S(new Vector2(-19f, 12f)),
+            packed,
+            S(2.6f));
+        draw.AddQuad(
+            middleTop,
+            rightTop,
+            center + S(new Vector2(19f, 12f)),
+            bottom,
+            packed,
+            S(2.6f));
+        draw.AddLine(middleTop, bottom, packed, S(2f));
+        draw.AddLine(
+            center + S(new Vector2(-14f, -6f)),
+            center + S(new Vector2(-5f, -4f)),
+            packed,
+            S(1.5f));
+        draw.AddLine(
+            center + S(new Vector2(5f, -4f)),
+            center + S(new Vector2(14f, -6f)),
+            packed,
+            S(1.5f));
+    }
+
+    private static void DrawNotificationBadge(
+        ImDrawListPtr draw,
+        Vector2 center,
+        float radius,
+        ThemePalette palette,
+        string text)
+    {
+        draw.AddCircleFilled(
+            center,
+            radius,
+            ImGui.GetColorU32(new Vector4(0.96f, 0.20f, 0.25f, 1f)),
+            24);
+        draw.AddCircle(
+            center,
+            radius,
+            ImGui.GetColorU32(new Vector4(
+                palette.Surface.X,
+                palette.Surface.Y,
+                palette.Surface.Z,
+                1f)),
+            24,
+            MathF.Max(1f, radius * 0.16f));
+        var textSize = ImGui.CalcTextSize(text);
+        draw.AddText(
+            center - textSize * 0.5f,
+            ImGui.GetColorU32(Vector4.One),
+            text);
+    }
+
+    private void MarkChangelogRead()
+    {
+        if (!HasUnreadChangelog)
+            return;
+        config.LastReadChangelogVersion = ReleaseVersion;
+        saveImmediate();
     }
 
     private void DrawFeedbackGlyph(ImDrawListPtr draw, Vector2 center, Vector4 color)
@@ -3910,7 +4551,7 @@ internal sealed class TabletWindow
 
     private void DrawTooltip(string text)
     {
-        if (!ImGui.IsItemHovered())
+        if (!config.ShowAirTabOsTooltips || !ImGui.IsItemHovered())
             return;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, C(new Vector2(12, 10)));
         ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, C(8f));

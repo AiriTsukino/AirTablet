@@ -230,7 +230,7 @@ internal sealed class SettingsTab
             config.WaitForVisibleTargetBeforeEmote = waitForTarget;
             persistence.SaveNow();
         }
-        UiHelpers.TooltipOnHover("When enabled, targeted emotes such as /dote <t> are held in an emote queue until AutoGreet can target the correct visitor. The queue checks pending emotes every 3 seconds.");
+        UiHelpers.TooltipOnHover("When enabled, targeted emotes such as /dote <t> are held in an emote queue until AutoGreet can target the correct visitor. The queue checks every 3 seconds and removes an entry after three unsuccessful targeting attempts.");
 
         var greetingTimer = config.GreetingTimerEnabled;
         if (ImGui.Checkbox("Greeting timer for returning visitors", ref greetingTimer))

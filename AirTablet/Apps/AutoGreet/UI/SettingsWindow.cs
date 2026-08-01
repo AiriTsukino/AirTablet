@@ -11,7 +11,7 @@ public sealed class SettingsWindow : Window
     private readonly Configuration config;
     private readonly SettingsTab settings;
 
-    public SettingsWindow(Configuration config, VenueService venueService, VisitorService visitorService, PersistenceService persistence, DetectionService detectionService, GreetingService greetingService, SoundService soundService, EmoteResumeService emoteResumeService)
+    public SettingsWindow(Configuration config, VenueService venueService, VisitorService visitorService, PersistenceService persistence, DetectionService detectionService, GreetingService greetingService, SoundService soundService, EmoteResumeService emoteResumeService, MacroEngine macroEngine)
         : base("AutoGreet Settings###AutoGreetSettingsWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoFocusOnAppearing)
     {
         this.config = config;
@@ -21,7 +21,7 @@ public sealed class SettingsWindow : Window
             MaximumSize = new System.Numerics.Vector2(float.MaxValue, float.MaxValue)
         };
 
-        var greetings = new GreetingsTab(venueService, persistence);
+        var greetings = new GreetingsTab(venueService, persistence, macroEngine);
         var venues = new VenuesTab(venueService, persistence, detectionService);
         var vipBlacklist = new VipBlacklistTab(venueService, visitorService, persistence);
         settings = new SettingsTab(config, venueService, persistence, detectionService, greetingService, soundService, emoteResumeService, greetings, venues, vipBlacklist);

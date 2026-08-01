@@ -1,0 +1,38 @@
+@id shiftkeeper
+@title ShiftKeeper
+@summary Manage staff rosters, shifts, worked time, payroll, and payment records.
+@category Bundled Apps
+@order 50
+
+# Quick start
+- Create/select a venue profile and define its job roles and shift templates.
+- Add permanent staff manually or from the current target.
+- Assign a role, shift, pay format, rate, and attendance mode.
+- Start a venue session, track staff attendance, then review Shifts & Pay before recording payment.
+
+# Staff List
+Permanent roster entries store character name, home world, job role, assigned shift, pay format/rate, attendance behavior, and staff notes. Accurate Name and World values improve tells and target matching.
+
+# Shifts and payable time
+## Worked time
+ShiftKeeper tracks the actual recorded duration for the staff member.
+## Payable time rounding
+Payable work time can be rounded using 15, 30, 45, 60, or custom-minute intervals. Choose rounding up or down according to the venue's policy.
+## Pay formats
+Hourly pay uses payable time and rate. Other configured formats use their displayed shift/pay rules.
+
+# Attendance
+Attendance mode controls when a roster member is considered visible/present for venue tracking. Manual controls remain available when automatic detection is not appropriate.
+
+# Staff tells
+The tell popup sends a message to the selected staff member. Pressing Enter behaves like Send Tell and closes the popup after sending.
+
+# Troubleshooting
+## A staff member is not detected
+Check their full character name, home world, attendance mode, current venue, and whether they are visible under the selected detection rule.
+## Pay differs from raw worked time
+Review payable-time rounding direction and interval, then check the staff member's pay format and rate.
+## An action column becomes wider
+This is expected when a stopped timer exposes Resume and status controls. Other columns size to content and remaining space goes to Staff Name.
+## Tell cannot be sent
+Confirm the character name and world are valid and that chat is currently available.

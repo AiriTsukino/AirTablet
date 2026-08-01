@@ -4,9 +4,13 @@ namespace AutoGreet.Services;
 
 public sealed class PendingEmoteQueueService : IDisposable
 {
+    private const int MaximumTargetingAttempts = 3;
     private static readonly TimeSpan TargetedEmoteTargetHold = TimeSpan.FromSeconds(1.75);
 
-    private sealed record PendingEmote(VisitorKey Target, string Command, string MacroName, DateTimeOffset QueuedUtc);
+    private sealed record PendingEmote(VisitorKey Target, string Command, string MacroName, DateTimeOffset QueuedUtc)
+    {
+        public int TargetingAttempts { get; set; }
+    }
 
     private readonly Configuration config;
     private readonly ChatCommandService chatCommands;
@@ -66,6 +70,7 @@ public sealed class PendingEmoteQueueService : IDisposable
             foreach (var item in snapshot)
             {
                 token.ThrowIfCancellationRequested();
+                item.TargetingAttempts++;
 
                 bool targeted;
                 try
@@ -83,7 +88,22 @@ public sealed class PendingEmoteQueueService : IDisposable
                 }
 
                 if (!targeted)
+                {
+                    if (item.TargetingAttempts >= MaximumTargetingAttempts)
+                    {
+                        Remove(item);
+                        logs.Warning(
+                            "Queued emote expired",
+                            $"Removed the queued emote for {item.Target.Display} after {MaximumTargetingAttempts} unsuccessful targeting attempts. The visitor may have left the venue.");
+                    }
+                    else
+                    {
+                        logs.Info(
+                            "Queued emote waiting",
+                            $"Could not target {item.Target.Display} for the queued emote. Attempt {item.TargetingAttempts}/{MaximumTargetingAttempts}; AutoGreet will try again.");
+                    }
                     continue;
+                }
 
                 await Task.Delay(200, token).ConfigureAwait(false);
                 var sent = await chatCommands.SendAsync(item.Command, token).ConfigureAwait(false);

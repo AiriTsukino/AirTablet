@@ -313,11 +313,12 @@ public sealed class PlayerSessionService
             || string.Equals(a.World, b.World, StringComparison.OrdinalIgnoreCase);
     }
 
-    public bool TryReserveBet(PlayerSessionState player, long amount, out string reason)
+    public bool TryReserveBet(PlayerSessionState player, long amount, out string reason, long? maximumBetOverride = null)
     {
         reason = string.Empty;
         if (session.Round.Phase != BlackjackPhase.BettingOpen) { reason = "Bets can only be confirmed while betting is open."; return false; }
-        if (amount < session.Rules.MinimumBet || amount > session.Rules.MaximumBet) { reason = $"Bet must be between {session.Rules.MinimumBet:N0} and {session.Rules.MaximumBet:N0} gil."; return false; }
+        var maximumBet = Math.Max(session.Rules.MaximumBet, maximumBetOverride ?? session.Rules.MaximumBet);
+        if (amount < session.Rules.MinimumBet || player.Bank.ActiveBet + amount > maximumBet) { reason = $"Bet must be at least {session.Rules.MinimumBet:N0} gil and the total active bet cannot exceed {maximumBet:N0} gil."; return false; }
         if (amount > player.Bank.Available) { reason = "Bet cannot exceed available bank."; return false; }
         player.Bank.Available -= amount;
         player.Bank.ActiveBet += amount;

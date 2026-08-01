@@ -25,6 +25,8 @@ public sealed class MainWindow : Window
     private readonly DeathRollTournamentTab deathRoll;
     private readonly Action openSettings;
     private readonly Configuration config;
+    private readonly BlackjackSession session;
+    private readonly ProfileService profiles;
     private int selectedTab;
     private int selectedBlackjackTab;
     private int selectedDrtTab;
@@ -34,6 +36,8 @@ public sealed class MainWindow : Window
     {
         this.openSettings = openSettings;
         this.config = config;
+        this.session = session;
+        this.profiles = profiles;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = AirTablet.UI.TabletAppTheme.Px(new Vector2(900, 620)), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
         table = new TableTab(config, session, profiles, party, playerService, ledgerService, dice, chat, overlays, undo, log);
         players = new PlayersTab(session, playerService, ledgerService);
@@ -52,6 +56,7 @@ public sealed class MainWindow : Window
 
     public override void Draw()
     {
+        profiles.BindActiveProfileRules(session);
         DrawHeader();
         ImGui.Dummy(AirTablet.UI.TabletAppTheme.Px(new Vector2(0, 5f)));
 
@@ -208,10 +213,14 @@ public sealed class MainWindow : Window
     {
         if (ImGui.BeginTable(
                 "##gamba-toolbar",
-                2,
+                3,
                 ImGuiTableFlags.SizingStretchProp))
         {
             ImGui.TableSetupColumn("overlay", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn(
+                "venue",
+                ImGuiTableColumnFlags.WidthFixed,
+                AirTablet.UI.TabletAppTheme.Px(230f));
             ImGui.TableSetupColumn(
                 "settings",
                 ImGuiTableColumnFlags.WidthFixed,
@@ -229,6 +238,28 @@ public sealed class MainWindow : Window
             if (ImGui.Checkbox("Compact overlay##gamba-top-compact-overlay", ref compactOverlay))
                 config.Overlay.Compact = compactOverlay;
             UiHelpers.Tooltip("Uses the smaller Blackjack overlay layout for crowded screens.");
+
+            ImGui.TableNextColumn();
+            if (session.IsActive)
+                ImGui.BeginDisabled();
+            ImGui.SetNextItemWidth(-1f);
+            if (ImGui.BeginCombo("##gamba-top-active-venue", profiles.ActiveProfile.Name))
+            {
+                foreach (var profile in profiles.Profiles)
+                {
+                    var selected = profile.Id == profiles.ActiveProfile.Id;
+                    if (ImGui.Selectable($"{profile.Name}##gamba-top-venue-{profile.Id}", selected))
+                        profiles.TrySwitchProfile(profile.Id, session, out _);
+                    if (selected)
+                        ImGui.SetItemDefaultFocus();
+                }
+                ImGui.EndCombo();
+            }
+            if (session.IsActive)
+                ImGui.EndDisabled();
+            UiHelpers.Tooltip(session.IsActive
+                ? "Venue switching is locked while a Blackjack session is active."
+                : "Select the active venue profile and its complete Blackjack rule set.");
 
             ImGui.TableNextColumn();
             if (ImGui.Button(

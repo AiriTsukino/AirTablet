@@ -6,10 +6,11 @@ namespace AirTablet;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 13;
+    public int Version { get; set; } = 15;
     public bool SetupCompleted { get; set; }
     public bool TutorialCompleted { get; set; }
     public bool ShowStartupAnimation { get; set; } = true;
+    public bool ShowAirTabOsTooltips { get; set; } = true;
     public bool WindowVisible { get; set; }
     public bool Minimized { get; set; }
     public bool PositionLocked { get; set; }
@@ -24,6 +25,7 @@ public sealed class Configuration : IPluginConfiguration
     public float WallpaperOpacity { get; set; } = 0.55f;
     public bool ShowBattery { get; set; } = true;
     public bool Use24HourClock { get; set; } = true;
+    public string LastReadChangelogVersion { get; set; } = string.Empty;
     public List<string> AppOrder { get; set; } = [];
     public bool AppSelectionInitialized { get; set; }
     public List<string> EnabledApps { get; set; } = [];

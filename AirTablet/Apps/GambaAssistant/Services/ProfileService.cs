@@ -1,4 +1,5 @@
 using GambaAssistant.Games.Blackjack;
+using GambaAssistant.Models.Players;
 
 namespace GambaAssistant.Services;
 
@@ -8,6 +9,8 @@ public sealed class VenueProfile
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "Default";
     public BlackjackRules BlackjackRules { get; set; } = new();
+    public long VipMaximumBet { get; set; } = 500_000;
+    public List<PlayerIdentity> BlackjackVips { get; set; } = [];
 
     // Active templates used by the game/chat systems. Kept as a direct dictionary for backward compatibility.
     public Dictionary<string, string> ChatTemplates { get; set; } = ChatTemplateDefaults.CreateFormal();
@@ -52,6 +55,7 @@ public sealed class ProfileService
         if (session.IsActive) { reason = "Profile switching is locked while a night/session is active."; return false; }
         if (Profiles.All(p => p.Id != id)) { reason = "Profile was not found."; return false; }
         config.ActiveProfileId = id;
+        session.Rules = ActiveProfile.BlackjackRules;
         persistence.SaveNow();
         reason = string.Empty;
         return true;
@@ -258,6 +262,43 @@ public sealed class ProfileService
         persistence.SaveJson($"Profiles/{profile.Id}.json", profile);
     }
 
+    public long GetMaximumBetForPlayer(PlayerIdentity identity, bool isCurrentPartyMember = true)
+        => isCurrentPartyMember && IsBlackjackVip(ActiveProfile, identity)
+            ? Math.Max(ActiveProfile.BlackjackRules.MaximumBet, ActiveProfile.VipMaximumBet)
+            : ActiveProfile.BlackjackRules.MaximumBet;
+
+    public bool IsBlackjackVip(VenueProfile profile, PlayerIdentity identity)
+        => profile.BlackjackVips.Any(vip => IsSamePlayer(vip, identity));
+
+    public bool AddBlackjackVip(VenueProfile profile, PlayerIdentity identity)
+    {
+        var name = identity.Name.Trim();
+        var world = identity.World.Trim();
+        if (string.IsNullOrWhiteSpace(name) || profile.BlackjackVips.Any(vip => IsSamePlayer(vip, new PlayerIdentity(name, world))))
+            return false;
+        profile.BlackjackVips.Add(new PlayerIdentity(name, world));
+        profile.BlackjackVips = profile.BlackjackVips
+            .OrderBy(vip => vip.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(vip => vip.World, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        SaveProfile(profile);
+        return true;
+    }
+
+    public void BindActiveProfileRules(BlackjackSession session)
+    {
+        if (!session.IsActive && !ReferenceEquals(session.Rules, ActiveProfile.BlackjackRules))
+            session.Rules = ActiveProfile.BlackjackRules;
+    }
+
+    public bool RemoveBlackjackVip(VenueProfile profile, PlayerIdentity identity)
+    {
+        var removed = profile.BlackjackVips.RemoveAll(vip => IsSamePlayer(vip, identity)) > 0;
+        if (removed)
+            SaveProfile(profile);
+        return removed;
+    }
+
     private void TryDeleteProfileFile(Guid id)
     {
         var path = Path.Combine(persistence.ConfigRoot, "Profiles", $"{id}.json");
@@ -346,6 +387,13 @@ public sealed class ProfileService
     {
         profile.BlackjackRules ??= new BlackjackRules();
         var rules = profile.BlackjackRules;
+        profile.BlackjackVips ??= [];
+        profile.BlackjackVips = profile.BlackjackVips
+            .Where(vip => !string.IsNullOrWhiteSpace(vip.Name))
+            .DistinctBy(vip => $"{vip.Name.Trim()}@{vip.World.Trim()}", StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (profile.VipMaximumBet <= 0)
+            profile.VipMaximumBet = rules.MaximumBet;
 
         // Migrate older generated defaults to the currently documented venue
         // defaults. User-customized values remain editable in the profile UI.
@@ -378,6 +426,15 @@ public sealed class ProfileService
         "/party" or "party" or "/p" or "p" => "/party",
         _ => "/party",
     };
+
+    private static bool IsSamePlayer(PlayerIdentity left, PlayerIdentity right)
+    {
+        if (!left.Name.Trim().Equals(right.Name.Trim(), StringComparison.OrdinalIgnoreCase))
+            return false;
+        return string.IsNullOrWhiteSpace(left.World)
+               || string.IsNullOrWhiteSpace(right.World)
+               || left.World.Trim().Equals(right.World.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
 
     private void EnsureTemplateLibrary(VenueProfile profile)
     {

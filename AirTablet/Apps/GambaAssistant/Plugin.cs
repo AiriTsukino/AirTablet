@@ -53,7 +53,7 @@ internal sealed class Plugin : IDisposable
             persistence = new PersistenceService(config);
             profiles = new ProfileService(config, persistence, log);
             session = persistence.LoadBlackjackSession() ?? new BlackjackSession();
-            if (session.Rules is null)
+            if (!session.IsActive || session.Rules is null)
                 session.Rules = profiles.ActiveProfile.BlackjackRules;
             chatQueue = new ChatQueueService(config, log);
             party = new PartyService(log);

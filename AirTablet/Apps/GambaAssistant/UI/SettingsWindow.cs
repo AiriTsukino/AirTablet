@@ -14,11 +14,15 @@ public sealed class SettingsWindow : Window
     private readonly GeneralSettingsTab general;
     private readonly ProfileSettingsTab profiles;
     private readonly ChatTemplateSettingsTab templates;
+    private readonly ProfileService profileService;
+    private readonly BlackjackSession session;
     private int selectedTab;
 
     public SettingsWindow(Configuration config, BlackjackSession session, ProfileService profileService, PersistenceService persistence, LogService log)
         : base("GambaAssistant Settings###GambaAssistantSettingsWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoFocusOnAppearing)
     {
+        this.profileService = profileService;
+        this.session = session;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = AirTablet.UI.TabletAppTheme.Px(new Vector2(860, 560)), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
         general = new GeneralSettingsTab(config, session);
         profiles = new ProfileSettingsTab(profileService, session);
@@ -30,6 +34,7 @@ public sealed class SettingsWindow : Window
 
     public override void Draw()
     {
+        profileService.BindActiveProfileRules(session);
         DrawNavigation();
         ImGui.Dummy(AirTablet.UI.TabletAppTheme.Px(new Vector2(0, 5f)));
         ImGui.BeginChild("##GambaSettingsContent", Vector2.Zero, false, ImGuiWindowFlags.NoScrollbar);

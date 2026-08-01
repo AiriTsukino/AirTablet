@@ -61,7 +61,7 @@ internal sealed class Plugin : IDisposable
         detection.PlayerCustomRegionMacroEntered += visitors.OnPlayerCustomRegionMacroEntered;
 
         mainWindow = new MainWindow(config, venues, visitors, queue, detection, persistence, logs, OpenSettingsWindow) { IsOpen = config.WindowVisible };
-        settingsWindow = new SettingsWindow(config, venues, visitors, persistence, detection, greetings, sound, emoteResume) { IsOpen = config.SettingsWindowVisible };
+        settingsWindow = new SettingsWindow(config, venues, visitors, persistence, detection, greetings, sound, emoteResume, macroEngine) { IsOpen = config.SettingsWindowVisible };
         windowSystem.AddWindow(mainWindow);
         windowSystem.AddWindow(settingsWindow);
 

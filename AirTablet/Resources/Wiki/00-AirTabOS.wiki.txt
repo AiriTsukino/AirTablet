@@ -1,0 +1,62 @@
+@id airtabos
+@title AirTabOS - Wiki will improve over time!
+@summary Set up, move, personalize, and recover your AirTablet.
+@category AirTablet
+@order 0
+
+# Quick start
+- Choose the bundled apps you want during Welcome. You can change them later in Settings > Apps.
+- Use the gesture bar at the bottom to return Home without unloading the app you were using.
+- Use the upper side button to lock or unlock the tablet position.
+- Use the lower side button to minimize. Press the restore button on the mini tablet to return to full size.
+- Open Settings to change appearance, app availability, status bar options, and migration settings.
+
+> tip: Returning Home, minimizing, or switching apps does not disable bundled apps. Enabled apps continue running in the background.
+
+# Dock
+## Discord
+Opens the AiriPluginHub community Discord invite link in your default browser.
+## Settings
+Opens AirTabOS settings. A red badge means a new tablet version has unread release notes. Open What's New to clear it for that version.
+## Wiki
+Opens these bundled guides. Search checks article titles, summaries, headings, and body text.
+## Feedback
+Shows what information is useful for bug reports and feature requests.
+## Ko-fi
+Opens Airi's Ko-fi support page.
+
+# Settings reference
+## General
+- Run welcome setup: disables the bundled app selections and replays onboarding without deleting the apps' own configuration files.
+- Anchor mini tablet: places the mini tablet at the selected corner when collapsing. With anchoring off, full and mini positions are remembered separately.
+- Startup animation: controls the short AirTablet loading screen.
+## Appearance
+- Theme colour: changes AirTabOS and compatible app/overlay accent colours.
+- Wallpaper: choose a local image, clear back to the default, and set opacity. A 16:9 image fits best.
+## Apps
+Enable, disable, or retry bundled apps. Disabled apps remain visible on Home with a red X.
+## What's New
+Shows bundled release notes grouped by date and version. Opening this page marks the current AirTabOS version as read.
+## Status Bar
+Choose 12/24-hour time and whether battery information is shown.
+## Migrate Configs
+Copies supported settings from the original standalone plugins. Original files are not modified. Repeating migration may overwrite changes made inside AirTablet with values from the old plugins.
+## About
+Shows the installed AirTabOS version and Ko-fi supporter list.
+
+# Moving and recovery
+- Unlock the tablet before dragging the full tablet.
+- Full and mini tablet positions are saved independently unless mini anchoring is enabled.
+- Use /airtabletrecovery if the tablet is lost off-screen or a monitor layout changes. It restores the full tablet to the active game screen.
+
+# Troubleshooting
+## Tablet does not open at character select
+This is intended. AirTablet waits until your character is loaded into the game.
+## An app has a red X
+The app is disabled. Open Settings > Apps and enable it.
+## An enabled app reports that it did not start
+Use Retry in Settings > Apps, then check the Dalamud log if it fails again.
+## Tablet is on a disconnected monitor
+Run /airtabletrecovery after logging into your character.
+## Wiki edits do not appear
+Edit the .wiki.txt files in Resources/Wiki, save them, then press Reload wiki. A plugin rebuild/update may replace bundled files, so keep your edited source copy.

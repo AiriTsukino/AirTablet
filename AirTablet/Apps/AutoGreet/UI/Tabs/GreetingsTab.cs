@@ -9,15 +9,17 @@ public sealed class GreetingsTab
 {
     private readonly VenueService venues;
     private readonly PersistenceService persistence;
+    private readonly MacroEngine macroEngine;
     private string newProfileName = "New Profile";
     private Guid newProfileVenueId = Guid.Empty;
     private readonly HashSet<Guid> openMacroEditors = new();
     private readonly HashSet<Guid> openProfileEditors = new();
 
-    public GreetingsTab(VenueService venues, PersistenceService persistence)
+    public GreetingsTab(VenueService venues, PersistenceService persistence, MacroEngine macroEngine)
     {
         this.venues = venues;
         this.persistence = persistence;
+        this.macroEngine = macroEngine;
     }
 
     public void Draw()
@@ -286,7 +288,13 @@ public sealed class GreetingsTab
             }
             CaptureKeyboardWhileEditing();
             if (ImGui.IsItemDeactivatedAfterEdit()) persistence.SaveNow();
-            UiHelpers.TextDisabledWrapped("Supported: /tell <t>, /tell <playername>, /t <t>, /t <playername>, FFXIV emote commands such as /dote <t>, /hug <t>, /wave, /hum, or /beesknees, /wait X, /wait.X, /waitX, and inline waits like <wait.02>. <playername> becomes Name@World. Unsupported syntax pauses AutoGreet and appears in the Log tab.");
+            foreach (var issue in macroEngine.Validate(macro))
+            {
+                ImGui.TextColored(
+                    new System.Numerics.Vector4(1f, 0.68f, 0.25f, 1f),
+                    $"Line {issue.LineNumber}: {issue.Message}");
+            }
+            UiHelpers.TextDisabledWrapped("Supported: /tell <t>, /tell <playername>, /t <t>, /t <playername>, /say, /shout, /yell, FFXIV emote commands such as /dote <t>, /hug <t>, /wave, /hum, or /beesknees, /wait X, /wait.X, /waitX, and inline waits like <wait.02>. Use <playername> to show Name@World in non-tell chat. Unsupported syntax pauses AutoGreet and appears in the Log tab.");
             if (ImGui.Button("Clone macro"))
             {
                 var clone = new GreetingMacro

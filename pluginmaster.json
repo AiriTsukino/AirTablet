@@ -3,7 +3,7 @@
     "Author": "Airi Tsukino",
     "Name": "AirTablet",
     "InternalName": "AirTablet",
-    "AssemblyVersion": "1.0.55.0",
+    "AssemblyVersion": "1.0.66.0",
     "Description": "A modern tablet OS for Airi's venue apps.",
     "Punchline": "Your plugin suite in one modern tablet OS.",
     "RepoUrl": "https://github.com/AiriTsukino/AirTablet",

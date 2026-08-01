@@ -1,0 +1,63 @@
+@id autogreet
+@title AutoGreet
+@summary Detect venue guests, organize queues, and send controlled greeting macros.
+@category Bundled Apps
+@order 10
+
+# Quick start
+- Create or select a venue in Settings > Venues.
+- Capture the venue's current plot if you want plot-specific safety.
+- Create a greeting profile and configure First-time, Returning, and VIP macros.
+- Choose the active profile on Main, enable Auto-greet, and use Manual Scan when testing.
+- Watch Ungreeted, Greeted, Queue, and Log while validating a venue setup.
+
+> warning: Test macros with Auto-greet off first. Unsupported macro syntax pauses automated greeting and is recorded in the Log tab.
+
+# Main screen
+## Venue and profile
+The venue contains visitor history, VIPs, blacklist, regions, and plot safety. The greeting profile supplies the active macros for that venue.
+## Auto-greet
+When enabled, eligible detected visitors can be queued automatically according to the venue and region rules.
+## Reset Session
+Clears the current session's visitor/queue state while keeping lifetime visitor history and saved configuration.
+## Manual Scan
+Refreshes visible visitors immediately. It is useful for testing after changing a region or venue.
+
+# Greeting macros
+## Supported targeting
+- /tell <t> and /t <t> resolve the queued visitor as the tell recipient.
+- /tell <playername> and /t <playername> are also supported.
+- <playername> becomes Name@World and can be used in /say, /shout, or /yell text.
+- Supported targeted emotes such as /dote <t> use the emote queue when enabled.
+- /wait commands and inline waits such as <wait.02> control pacing.
+
+> tip: Do not use <t> inside /say, /shout, or /yell. Those channels do not address a specific player. The editor will suggest <playername> instead.
+
+## Categories
+- First-time: for visitors not previously recorded by the venue.
+- Returning: for known visitors coming back.
+- VIP: for visitors assigned to the active VIP tier.
+
+# Venues and safety
+## Plot-specific safety
+When enabled, AutoGreet compares world, housing district, housing type, ward, division, and plot/apartment room. Leaving the saved location prevents that venue from greeting in the wrong house.
+## Houses and apartments
+House plot capture can resolve from inside or outside. An apartment room must be captured from inside that specific room because the room number is not available outside.
+## Detection regions
+Regions can narrow visitor tracking and greeting eligibility. Extra region routes can run a different macro without marking the normal greeting complete.
+
+# VIP and blacklist
+- VIP tiers select which VIP macro a visitor receives.
+- Add a player using the current target or manual Name and World fields.
+- Blacklisted visitors are excluded from normal tracking, queueing, and greetings.
+- VIP and blacklist lists are saved per venue.
+
+# Troubleshooting
+## Guests are visible but not queued
+Check Auto-greet, active venue/profile, macro enabled state, plot safety, and the greeting region assigned to that visitor type.
+## Current plot says Indoor or Any division
+Wait for the house to finish loading and capture again. Current builds use the active house ID as an indoor fallback. An incomplete read will not overwrite a valid saved lock.
+## A macro stops the queue
+Open Settings > Greetings and read the line-specific warning, then check Log. Correct unsupported commands or target tokens before resuming.
+## Busy venue causes a short delay
+Detection work is intentionally processed in batches to reduce frame-time spikes when many guests load together.

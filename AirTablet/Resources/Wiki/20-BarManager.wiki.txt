@@ -1,0 +1,46 @@
+@id barmanager
+@title BarManager
+@summary Track drink sales, gamba rolls, sessions, buyouts, and venue reports.
+@category Bundled Apps
+@order 20
+
+# Quick start
+- Create a venue and configure its drink menu in Settings.
+- Use Audit for normal drink orders and payment tracking.
+- Use the named gamba tab to run roll-based drink sessions.
+- Review completed work in Sessions and Report.
+
+# Audit
+Add items and quantities to the current order, select the customer, and record payment/status. Quantity buttons are shortcuts; the configured menu controls names and prices.
+
+# Gamba sessions
+## Starting
+A customer name is required. Choose the number of rolls, use the current target if helpful, then start the session.
+## Roll tracking
+Party-chat rolls can be detected live. Manual/Paste Entry accepts a roll or pasted results when live detection is unavailable.
+## Ending
+End & Save is available only after rolls remaining reaches zero. Cancel Session discards the active session after confirmation.
+## Roll history
+The last normal or jackpot session remains visible until a new matching session begins, making it possible to review the previous results.
+
+# Settings reference
+## Venues
+Each venue keeps its own menu, gamba rules, money settings, and records.
+## Drink Menu
+Configure sellable drinks, prices, and display order.
+## Gamba Settings
+Configure the gamba drink name, dice expectation, roll rules, and result handling.
+## Buyouts & Jackpot
+Controls buyout/jackpot values and money behavior used by supported sessions.
+## Files
+Choose or review the folders used for saved data and exports.
+
+# Troubleshooting
+## Start Session is disabled
+Enter a customer name and verify the requested roll count is valid.
+## End & Save is disabled
+Resolve every remaining roll first. Use manual entry only for legitimate missing roll results.
+## A roll was not detected
+Confirm the player rolled in the expected party channel with the configured dice range. Paste the visible result as a fallback.
+## Totals do not match the menu
+Check the active venue and its Drink Menu prices before editing session records.

@@ -7,22 +7,44 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-01] AirTabOS v1.0.66.0
+- Added smooth brighten and grow hover effects to the mini tablet's Restore and Close buttons.
+- Added a General setting for disabling AirTabOS tooltips while preserving tooltips inside bundled apps.
+- Added smooth brightening hover feedback to the Home gesture and physical side buttons.
+- Added unread notification update badges to Settings and the What's New tab. The badges clear after opening What's New and return only when a newer AirTabOS version is installed.
+- Added a modern searchable Wiki app containing quick-start guides, option references, and troubleshooting information for AirTabOS and every bundled app.
+
+[2026-08-01] GambaAssistant v0.1.17.0
+- Added per-venue Blackjack VIP lists with manual character entry and Add Target support.
+- Added a Max Bet control that automatically uses the standard or VIP maximum for the current party player.
+- Applied standard and VIP limits to custom, repeated, last, and recent-trade bets.
+- Prevented repeated bet presses from exceeding the player's total effective table maximum.
+- Ensured disconnected players cannot receive a saved VIP limit unless they are currently in the party.
+
+[2026-08-01] AutoGreet v1.0.57.0
+- Added a three-attempt limit to the pending targeted-emote queue so abandoned emotes are automatically removed when a visitor cannot be targeted.
+- Added live macro editor warnings when <t> is used in /say, /shout, or /yell.
+- Added guidance to use <playername> when a visitor's Name@World should appear in non-tell greetings.
+- Expanded the supported syntax help beneath greeting macro editors.
+
 [2026-07-31] AutoGreet v1.0.55.0
 - Fixed indoor plot safety detection by resolving the housing district, ward, division, and plot from the active house ID when the normal housing fields are unavailable.
 
-[2026-07-29] GambaAssistant v1.0.52.0
+[2026-07-29] GambaAssistant v1.0.15.0
 - Changed default state of blackjack overlay to off
 
-[2026-07-29] AirTabOS v1.0.51.0
-- Initial Release of AirTablet
-[2026-07-30] AirTabOS v1.0.53.0
-- Renamed the What's New app section to AirTabOS & App Updates.
-- Added /airtabletrecovery to reopen the full tablet at the center of the active game screen.
-- Added settings to keep the mini tablet movable while the full tablet is locked and choose which corner remains anchored when minimizing.
-- Added a warning confirmation before repeating an original-plugin configuration migration.
 [2026-07-30] AirTabOS v1.0.54.0
 - Fixed full and mini tablet positions so each mode keeps its own independently movable saved location.
 - Replaced the mini-unlock setting with optional corner anchoring; the corner selector is disabled when anchoring is off.
 - Fixed the minimized-tablet settings card height so the diagram has a complete bottom margin.
 - Simplified the /airtablet command entry and kept /airtabletrecovery last in the registered AirTablet command list.
 - Added a confirmation before rerunning the welcome setup.
+
+[2026-07-30] AirTabOS v1.0.53.0
+- Renamed the What's New app section to AirTabOS & App Updates.
+- Added /airtabletrecovery to reopen the full tablet at the center of the active game screen.
+- Added settings to keep the mini tablet movable while the full tablet is locked and choose which corner remains anchored when minimizing.
+- Added a warning confirmation before repeating an original-plugin configuration migration.
+
+[2026-07-29] AirTabOS v1.0.51.0
+- Initial Release of AirTablet

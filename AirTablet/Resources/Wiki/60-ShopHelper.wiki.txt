@@ -1,0 +1,37 @@
+@id shophelper
+@title ShopHelper
+@summary Buy exact quantities or stacks from supported game shop windows.
+@category Bundled Apps
+@order 60
+
+# Quick start
+- Open a supported shop in FFXIV.
+- Open ShopHelper or enable the setting that opens it automatically with a shop.
+- Select the desired shop item.
+- Enter an exact quantity, or enable Stacks and enter the number of stacks.
+- Review the calculated total and complete the purchase.
+
+# Quantity modes
+## Exact quantity
+The number field represents the exact number of items to purchase.
+## Stacks
+The number field represents stack count. Stack size is configurable and defaults to 99, so 2 stacks at 99 means 198 items.
+
+# Automatic opening
+When Open ShopHelper automatically when a shop opens is enabled, AirTablet brings ShopHelper forward and loads the detected shop even if the tablet is minimized or currently displaying another app.
+
+# Safety and compatibility
+ShopHelper reads the active supported shop and uses the game's shop controls. Always review the item, quantity, currency, and total before confirming a large purchase.
+
+# Debug Log
+The Debug Log records shop detection and purchase preparation details. Include relevant lines when reporting a shop that is not recognized.
+
+# Troubleshooting
+## ShopHelper does not load the open shop
+Confirm it is a supported standard shop window, then close and reopen the shop. Check Debug Log for the detected addon/shop information.
+## Automatic opening does not occur
+Verify ShopHelper is enabled in AirTabOS Settings > Apps and automatic opening is enabled in ShopHelper settings.
+## Quantity is larger than expected
+Check whether Stacks is enabled and review the configured stack size.
+## Purchase controls are unavailable
+Make sure an item is selected, quantity is positive, required currency is available, and no other game confirmation is blocking the shop.

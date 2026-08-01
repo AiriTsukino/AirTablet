@@ -17,6 +17,7 @@ public sealed class MacroEngine
 {
     private static readonly TimeSpan TargetedEmoteTargetHold = TimeSpan.FromSeconds(1.75);
     private static readonly Regex InlineWaitRegex = new(@"<wait\.(?<seconds>\d+(?:\.\d+)?)>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex MacroTokenRegex = new(@"<(?<token>[^<>]+)>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly Configuration config;
     private readonly GreetingService greetings;
@@ -124,6 +125,7 @@ public sealed class MacroEngine
     {
         var issues = new List<MacroSyntaxIssue>();
         var lineNumber = 0;
+        var hasContent = false;
 
         foreach (var raw in macro.Script.Replace("\r", string.Empty).Split('\n'))
         {
@@ -131,6 +133,14 @@ public sealed class MacroEngine
             var original = raw.Trim();
             if (string.IsNullOrWhiteSpace(original))
                 continue;
+            hasContent = true;
+
+            var preparationIssue = GetPreparationIssue(original);
+            if (preparationIssue is not null)
+            {
+                issues.Add(new MacroSyntaxIssue(lineNumber, original, preparationIssue));
+                continue;
+            }
 
             var line = original;
             var inlineWaitSeconds = ExtractInlineWaitSeconds(ref line);
@@ -146,6 +156,13 @@ public sealed class MacroEngine
             if (TryParseWaitCommand(line, out _))
                 continue;
 
+            var placeholderIssue = GetPlaceholderIssue(line);
+            if (placeholderIssue is not null)
+            {
+                issues.Add(new MacroSyntaxIssue(lineNumber, original, placeholderIssue));
+                continue;
+            }
+
             string? chatIssue = null;
             if (IsTellToTarget(line) || IsSupportedChatLine(line, out chatIssue) || EmoteCommandRegistry.IsSupportedEmoteLine(line))
             {
@@ -154,8 +171,11 @@ public sealed class MacroEngine
                 continue;
             }
 
-            issues.Add(new MacroSyntaxIssue(lineNumber, original, "This line does not match AutoGreet's supported macro syntax."));
+            issues.Add(new MacroSyntaxIssue(lineNumber, original, GetUnsupportedLineSuggestion(line)));
         }
+
+        if (!hasContent)
+            issues.Add(new MacroSyntaxIssue(0, string.Empty, "Add at least one supported command to the macro script."));
 
         return issues;
     }
@@ -171,6 +191,10 @@ public sealed class MacroEngine
             var original = raw.Trim();
             if (string.IsNullOrWhiteSpace(original))
                 continue;
+
+            var preparationIssue = GetPreparationIssue(original);
+            if (preparationIssue is not null)
+                ThrowSyntax(macro, lineNumber, original, preparationIssue);
 
             var line = original;
             var inlineWaitSeconds = ExtractInlineWaitSeconds(ref line);
@@ -191,6 +215,10 @@ public sealed class MacroEngine
                     parsed.Add(new ParsedMacroLine(MacroLineKind.Wait, string.Empty, inlineWaitSeconds.Value, null));
                 continue;
             }
+
+            var placeholderIssue = GetPlaceholderIssue(line);
+            if (placeholderIssue is not null)
+                ThrowSyntax(macro, lineNumber, original, placeholderIssue);
 
             if (IsTellToTarget(line))
             {
@@ -213,8 +241,11 @@ public sealed class MacroEngine
                 continue;
             }
 
-            ThrowSyntax(macro, lineNumber, original, "This line does not match AutoGreet's supported macro syntax.");
+            ThrowSyntax(macro, lineNumber, original, GetUnsupportedLineSuggestion(line));
         }
+
+        if (parsed.Count == 0)
+            ThrowSyntax(macro, 0, string.Empty, "Add at least one supported command to the macro script.");
 
         return parsed;
     }
@@ -338,10 +369,94 @@ public sealed class MacroEngine
             return false;
 
         if (line.Contains("<t>", StringComparison.OrdinalIgnoreCase))
-            issue = "Use <playername> instead of <t> in /say, /shout, or /yell macros. AutoGreet does not target players for non-tell chat channels.";
+            issue = "Use <playername> instead of <t> in /say, /shout or /yell lines in the macro script. AutoGreet does not target players for non-tell chat channels.";
 
         return true;
     }
+
+    private static string? GetPreparationIssue(string line)
+    {
+        var inlineWaits = InlineWaitRegex.Matches(line);
+        if (inlineWaits.Count > 1)
+            return "Use only one inline wait on each macro line.";
+
+        foreach (Match match in inlineWaits)
+        {
+            if (double.TryParse(match.Groups["seconds"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) &&
+                seconds > 10)
+            {
+                return "Wait values must be between 0 and 10 seconds.";
+            }
+        }
+
+        if (line.Contains("<wait", StringComparison.OrdinalIgnoreCase) && inlineWaits.Count == 0)
+            return "Inline wait was not recognized. Use <wait.1>, <wait.2>, or <wait.02>.";
+
+        if (line.StartsWith("/wait", StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = line[5..].TrimStart('.', ' ');
+            var tokens = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (tokens.Length > 1)
+                return "Use only one numeric value after /wait, between 0 and 10 seconds.";
+            if (tokens.Length == 1 &&
+                double.TryParse(tokens[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var waitSeconds) &&
+                (waitSeconds < 0 || waitSeconds > 10))
+            {
+                return "Wait values must be between 0 and 10 seconds.";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? GetPlaceholderIssue(string line)
+    {
+        foreach (Match match in MacroTokenRegex.Matches(line))
+        {
+            var token = match.Groups["token"].Value.Trim();
+            if (token.Equals("t", StringComparison.OrdinalIgnoreCase) ||
+                token.Equals("playername", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            return $"The <{token}> placeholder is not supported. Use <t> for a target or <playername> for the visitor's Name@World.";
+        }
+
+        if (EmoteCommandRegistry.IsSupportedEmoteLine(line) &&
+            line.Contains("<playername>", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Use <t> instead of <playername> on targeted emote lines. AutoGreet targets the visitor before sending the emote.";
+        }
+        return null;
+    }
+
+    private static string GetUnsupportedLineSuggestion(string line)
+    {
+        if (!line.StartsWith("/", StringComparison.Ordinal))
+            return "Start the line with a supported slash command, such as /tell, /say, /shout, /yell, /wait, or a supported emote.";
+
+        if (StartsWithCommand(line, "/tell") || StartsWithCommand(line, "/t"))
+            return "Tell lines must include a target and message. Use /tell <t> message or /tell <playername> message.";
+
+        if (StartsWithCommand(line, "/say") || StartsWithCommand(line, "/s") ||
+            StartsWithCommand(line, "/shout") || StartsWithCommand(line, "/sh") ||
+            StartsWithCommand(line, "/yell") || StartsWithCommand(line, "/y"))
+        {
+            return "Add message text after the chat command.";
+        }
+
+        if (line.StartsWith("/wait", StringComparison.OrdinalIgnoreCase))
+            return "Wait syntax was not recognized. Use /wait 1, /wait.1, /wait1, or an inline wait such as <wait.02>.";
+
+        if (EmoteCommandRegistry.TryGetCommandName(line, out var command))
+            return $"The /{command} command is not supported by AutoGreet. Check Settings > Help for the supported emote list.";
+
+        return "This line does not match AutoGreet's supported macro syntax.";
+    }
+
+    private static bool StartsWithCommand(string line, string command) =>
+        line.StartsWith(command, StringComparison.OrdinalIgnoreCase) &&
+        (line.Length == command.Length || char.IsWhiteSpace(line[command.Length]));
 
     private static bool TryReadLine(string line, string prefix, int messageStartIndex, out string? message)
     {

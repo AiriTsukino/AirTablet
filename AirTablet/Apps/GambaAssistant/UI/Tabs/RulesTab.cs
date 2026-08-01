@@ -18,7 +18,10 @@ public sealed class RulesTab
 
     public void Draw()
     {
-        var rules = session.Rules;
+        profiles.BindActiveProfileRules(session);
+        var rules = session.IsActive
+            ? session.Rules
+            : profiles.ActiveProfile.BlackjackRules;
 
         UiHelpers.Card("Active Profile", () =>
         {

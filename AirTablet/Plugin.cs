@@ -8,6 +8,7 @@ namespace AirTablet;
 
 public sealed class Plugin : IDalamudPlugin
 {
+    private static readonly TimeSpan InitialWorldReadyDelay = TimeSpan.FromSeconds(1.25);
     private const string MainCommand = "/airtablet";
     private const string SettingsCommand = "/airtabletsettings";
     private const string RecoveryCommand = "/airtabletrecovery";
@@ -27,6 +28,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AppHostService appHost;
     private readonly TabletWindow window;
     private DateTime nextSaveAt = DateTime.MinValue;
+    private DateTime? worldReadySince;
+    private bool initialWorldReady;
     private bool savePending;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
@@ -51,6 +54,18 @@ public sealed class Plugin : IDalamudPlugin
             config.TutorialCompleted = true;
             config.AppOrder ??= [];
             config.Version = 13;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
+        if (hadExistingConfig && previousVersion < 14)
+        {
+            config.LastReadChangelogVersion ??= string.Empty;
+            config.Version = 14;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
+        if (hadExistingConfig && previousVersion < 15)
+        {
+            config.ShowAirTabOsTooltips = true;
+            config.Version = 15;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
         SaveAppSelectionState(config);
@@ -129,8 +144,11 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
-            appHost.TickAll();
-            window.Draw();
+            if (UpdateInitialWorldReady())
+            {
+                appHost.TickAll();
+                window.Draw();
+            }
             if (savePending && DateTime.UtcNow >= nextSaveAt)
                 SaveNow();
         }
@@ -138,6 +156,36 @@ public sealed class Plugin : IDalamudPlugin
         {
             DalamudServices.Log.Error(ex, "AirTablet draw failed.");
         }
+    }
+
+    private bool UpdateInitialWorldReady()
+    {
+        if (!DalamudServices.ClientState.IsLoggedIn)
+        {
+            initialWorldReady = false;
+            worldReadySince = null;
+            return false;
+        }
+
+        if (initialWorldReady)
+            return true;
+
+        var localPlayer = DalamudServices.ObjectTable.LocalPlayer;
+        var ready = DalamudServices.PlayerState.IsLoaded &&
+                    DalamudServices.ClientState.TerritoryType != 0 &&
+                    localPlayer is { IsTargetable: true };
+        if (!ready)
+        {
+            worldReadySince = null;
+            return false;
+        }
+
+        worldReadySince ??= DateTime.UtcNow;
+        if (DateTime.UtcNow - worldReadySince.Value < InitialWorldReadyDelay)
+            return false;
+
+        initialWorldReady = true;
+        return true;
     }
 
     private async Task RefreshRemoteDataAsync()

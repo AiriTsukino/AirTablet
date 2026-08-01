@@ -119,7 +119,11 @@ public sealed class TableTab
                 dealerTurnStarted = false;
                 allBustRoundOverAnnounced = false;
                 session.Round.Phase = BlackjackPhase.BettingOpen;
-                chat.EnqueueParty($"Betting is open for next round. Table limits: {session.Rules.MinimumBet:N0}-{session.Rules.MaximumBet:N0} gil.");
+                var vipLimit = Math.Max(session.Rules.MaximumBet, profiles.ActiveProfile.VipMaximumBet);
+                var vipSuffix = profiles.ActiveProfile.BlackjackVips.Count > 0 && vipLimit > session.Rules.MaximumBet
+                    ? $" VIP max: {vipLimit:N0} gil."
+                    : string.Empty;
+                chat.EnqueueParty($"Betting is open for next round. Table limits: {session.Rules.MinimumBet:N0}-{session.Rules.MaximumBet:N0} gil.{vipSuffix}");
                 log.Add(LogCategory.RoundFlow, $"Betting opened for internal Round {session.Round.RoundNumber}.");
             }
 
@@ -242,6 +246,22 @@ public sealed class TableTab
 
         if (DisabledButtonWithTooltip("Min Bet", p.Bank.Available >= session.Rules.MinimumBet, "Player does not have enough available bank for the table minimum.", "Reserve the configured table minimum as this player's bet."))
             ReserveBetWithUndo(p, session.Rules.MinimumBet, "Min bet");
+        DrawSameLineIfFits("Max Bet");
+        var isCurrentPartyMember = p.Status != PlayerStatus.LeftDisconnected;
+        var playerMaximum = profiles.GetMaximumBetForPlayer(p.Identity, isCurrentPartyMember);
+        var maxBetIncrement = Math.Min(
+            Math.Max(0, playerMaximum - p.Bank.ActiveBet),
+            p.Bank.Available);
+        if (DisabledButtonWithTooltip(
+                "Max Bet",
+                maxBetIncrement >= session.Rules.MinimumBet,
+                "The player has already reached their table limit or lacks enough available bank for another minimum bet.",
+                isCurrentPartyMember && profiles.IsBlackjackVip(profiles.ActiveProfile, p.Identity)
+                    ? $"Reserve up to this venue's VIP maximum of {playerMaximum:N0} gil."
+                    : $"Reserve up to the standard maximum of {playerMaximum:N0} gil."))
+        {
+            ReserveBetWithUndo(p, maxBetIncrement, "Max bet");
+        }
         DrawSameLineIfFits("Last Bet");
         if (DisabledButtonWithTooltip("Last Bet", p.Bank.LastBet > 0 && p.Bank.Available >= p.Bank.LastBet, "No last bet is available, or the player lacks available bank.", "Repeat this player's most recent confirmed bet."))
             ReserveBetWithUndo(p, p.Bank.LastBet, "Last bet");
@@ -525,7 +545,10 @@ public sealed class TableTab
         var beforeConfirmed = p.BetConfirmed;
         var beforeHands = p.Hands.Select(TableTab.CloneHand).ToList();
 
-        if (!players.TryReserveBet(p, amount, out var reason))
+        var maximumBet = profiles.GetMaximumBetForPlayer(
+            p.Identity,
+            p.Status != PlayerStatus.LeftDisconnected);
+        if (!players.TryReserveBet(p, amount, out var reason, maximumBet))
         {
             log.Add(LogCategory.Warnings, reason);
             return;

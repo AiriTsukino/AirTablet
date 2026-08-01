@@ -1,0 +1,46 @@
+@id rafflemanager
+@title RaffleManager
+@summary Sell weighted tickets, manage jackpots, and draw a random winner.
+@category Bundled Apps
+@order 40
+
+# Quick start
+- Select or create a venue profile and set ticket price, base jackpot, and winner split.
+- Enter the contestant's character name and world, then choose ticket quantity.
+- Use VIP / Free for complimentary tickets or BOGO for matching bonus chances.
+- Review Tickets and Paid totals before choosing Pick Random Winner.
+
+# Ticket entry
+## Tickets
+The entered quantity is the purchased or granted base amount.
+## VIP / Free
+Adds chances without increasing the jackpot.
+## BOGO bonus
+Doubles the entered chances. By default, the matching bonus does not add to the jackpot. A profile setting can include BOGO bonus tickets in jackpot growth.
+## Existing contestants
+Adding the same Name and World again increases that contestant's totals. Undo restores the previous raffle state.
+
+# Randomizer
+Each ticket is one chance in the weighted draw. A contestant with 20 of 100 tickets has 20 chances out of 100. The winner display shows the selected player, their tickets, jackpot, split, and payout.
+
+# Settings reference
+## Profiles
+Separates raffle configuration, contestants, branding, and winner history by venue.
+## Raffle
+Controls ticket price, base jackpot, winner percentage, and BOGO jackpot behavior.
+## Branding
+Selects the logos used in the randomizer and winner presentation.
+## Announcement
+Controls whether and where winner text is sent and lets you edit the message template.
+## Sound
+Controls randomizer tick sound and volume.
+
+# Troubleshooting
+## BOGO shows every ticket as paid
+Check whether BOGO bonus tickets add to jackpot is enabled for that venue profile. With it off, one purchased ticket produces one paid and one free chance.
+## Wrong jackpot or payout
+Verify active profile, ticket price, base jackpot, BOGO jackpot setting, and winner split percentage.
+## Delete or Clear All appears blocked
+Complete the centered confirmation. Tablet confirmations intentionally prevent interaction behind them.
+## Logos are missing
+Open Branding and verify the local image paths still exist on this computer.

@@ -1,5 +1,7 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 using GambaAssistant.Games.Blackjack;
+using GambaAssistant.Models.Players;
 using GambaAssistant.Services;
 using GambaAssistant.UI.Components;
 
@@ -14,6 +16,8 @@ public sealed class ProfileSettingsTab
     private string renameBuffer = string.Empty;
     private Guid renameProfileId;
     private string lastMessage = string.Empty;
+    private string vipName = string.Empty;
+    private string vipWorld = string.Empty;
 
     public ProfileSettingsTab(ProfileService profiles, BlackjackSession session)
     {
@@ -44,14 +48,13 @@ public sealed class ProfileSettingsTab
                 return;
             }
 
+            selected = profiles.Profiles.FindIndex(profile => profile.Id == profiles.ActiveProfile.Id);
             selected = Math.Clamp(selected, 0, names.Length - 1);
             if (session.IsActive) ImGui.BeginDisabled();
-            ImGui.Combo("Active profile", ref selected, names, names.Length);
-            if (ImGui.Button("Switch Profile"))
+            if (ImGui.Combo("Active profile", ref selected, names, names.Length))
             {
                 if (profiles.TrySwitchProfile(profiles.Profiles[selected].Id, session, out var reason))
                 {
-                    session.Rules = profiles.ActiveProfile.BlackjackRules;
                     lastMessage = $"Switched to {profiles.ActiveProfile.Name}.";
                 }
                 else
@@ -150,7 +153,8 @@ public sealed class ProfileSettingsTab
 
     public void DrawRules()
     {
-        var rules = session.Rules;
+        profiles.BindActiveProfileRules(session);
+        var rules = profiles.ActiveProfile.BlackjackRules;
         var locked = session.IsActive;
 
         UiHelpers.InfoBox("Rules Lock", locked
@@ -165,20 +169,28 @@ public sealed class ProfileSettingsTab
             if (UiHelpers.InputGil("Minimum bet", ref min))
             {
                 rules.MinimumBet = min;
-                profiles.ActiveProfile.BlackjackRules = rules;
-                profiles.SaveProfile(profiles.ActiveProfile);
+                SaveRules(rules);
             }
 
             var max = rules.MaximumBet;
             if (UiHelpers.InputGil("Maximum bet", ref max))
             {
                 rules.MaximumBet = max;
-                profiles.ActiveProfile.BlackjackRules = rules;
+                SaveRules(rules);
+            }
+
+            var vipMax = profiles.ActiveProfile.VipMaximumBet;
+            if (UiHelpers.InputGil("VIP maximum bet", ref vipMax))
+            {
+                profiles.ActiveProfile.VipMaximumBet = Math.Max(rules.MaximumBet, vipMax);
                 profiles.SaveProfile(profiles.ActiveProfile);
             }
+            UiHelpers.Tooltip("Players on this venue profile's Blackjack VIP list may bet up to this amount. Everyone else remains limited by Maximum bet.");
 
             if (locked) ImGui.EndDisabled();
         });
+
+        DrawBlackjackVipCard();
 
         UiHelpers.Card("Initial Deal", () =>
         {
@@ -298,6 +310,74 @@ public sealed class ProfileSettingsTab
 
             if (locked) ImGui.EndDisabled();
         });
+    }
+
+    private void DrawBlackjackVipCard()
+    {
+        var profile = profiles.ActiveProfile;
+        UiHelpers.Card("Blackjack VIP Limits", () =>
+        {
+            ImGui.TextWrapped($"VIPs may bet up to {Math.Max(profile.BlackjackRules.MaximumBet, profile.VipMaximumBet):N0} gil on the {profile.Name} venue profile. The higher limit is applied only when the matching player is in the current party.");
+            ImGui.SetNextItemWidth(AirTablet.UI.TabletAppTheme.Px(240f));
+            ImGui.InputTextWithHint("##blackjack-vip-name", "Character name", ref vipName, 64);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(AirTablet.UI.TabletAppTheme.Px(180f));
+            ImGui.InputTextWithHint("##blackjack-vip-world", "Home world", ref vipWorld, 64);
+            ImGui.SameLine();
+            if (ImGui.Button("Add VIP"))
+                AddVip(new PlayerIdentity(vipName, vipWorld));
+            ImGui.SameLine();
+            if (ImGui.Button("Add Target"))
+            {
+                if (DalamudServices.TargetManager.Target is IPlayerCharacter player)
+                {
+                    var world = string.Empty;
+                    try { world = player.HomeWorld.Value.Name.ExtractText(); }
+                    catch { world = string.Empty; }
+                    AddVip(new PlayerIdentity(player.Name.TextValue, world));
+                }
+                else
+                {
+                    lastMessage = "Target a player before adding a Blackjack VIP.";
+                }
+            }
+
+            ImGui.Separator();
+            if (profile.BlackjackVips.Count == 0)
+            {
+                ImGui.TextDisabled("No Blackjack VIPs saved for this venue.");
+                return;
+            }
+
+            foreach (var vip in profile.BlackjackVips.ToList())
+            {
+                ImGui.PushID($"blackjack-vip-{vip.Display}");
+                ImGui.TextUnformatted(vip.Display);
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Remove"))
+                {
+                    profiles.RemoveBlackjackVip(profile, vip);
+                    lastMessage = $"Removed {vip.Display} from the Blackjack VIP list.";
+                }
+                ImGui.PopID();
+            }
+        });
+    }
+
+    private void AddVip(PlayerIdentity identity)
+    {
+        if (profiles.AddBlackjackVip(profiles.ActiveProfile, identity))
+        {
+            vipName = string.Empty;
+            vipWorld = string.Empty;
+            lastMessage = $"Added {identity.Display} to the Blackjack VIP list.";
+        }
+        else
+        {
+            lastMessage = string.IsNullOrWhiteSpace(identity.Name)
+                ? "Enter a character name first."
+                : $"{identity.Display} is already on this venue's Blackjack VIP list.";
+        }
     }
 
 
