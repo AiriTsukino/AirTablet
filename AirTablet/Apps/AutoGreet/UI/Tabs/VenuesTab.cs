@@ -11,6 +11,7 @@ internal sealed class VenuesTab
     private readonly PersistenceService persistence;
     private readonly DetectionService detection;
     private string newVenueName = "New Venue";
+    private string plotCaptureStatus = string.Empty;
 
     public VenuesTab(VenueService venues, PersistenceService persistence, DetectionService detection)
     {
@@ -81,12 +82,15 @@ internal sealed class VenuesTab
 
         if (ImGui.Button("Capture current plot"))
         {
-            if (detection.TryGetCurrentPlotLock(out var current))
+            if (detection.TryGetCurrentPlotLock(out var current) && HasCompletePlotLocation(current))
             {
                 venue.PlotLock.CopyFrom(current);
                 venue.PlotLock.Enabled = true;
                 persistence.SaveNow();
+                plotCaptureStatus = "Captured the current housing district, ward, division, and plot.";
             }
+            else
+                plotCaptureStatus = "The game has not exposed the complete housing location yet. Your existing plot lock was not changed; try again after the house finishes loading.";
         }
         UiHelpers.TooltipOnHover("Captures your current world, housing district, house/apartment type, ward, division, plot, and apartment room when the game exposes them. You can still edit the fields manually below.");
 
@@ -95,10 +99,26 @@ internal sealed class VenuesTab
         {
             venue.PlotLock = new VenuePlotLock();
             persistence.SaveNow();
+            plotCaptureStatus = string.Empty;
         }
+
+        if (!string.IsNullOrWhiteSpace(plotCaptureStatus))
+            UiHelpers.TextDisabledWrapped(plotCaptureStatus);
 
         DrawPlotLockManualFields(venue.PlotLock);
         ImGui.TreePop();
+    }
+
+    private static bool HasCompletePlotLocation(VenuePlotLock location)
+    {
+        if (string.IsNullOrWhiteSpace(location.World)
+            || string.IsNullOrWhiteSpace(location.HousingDistrict)
+            || location.Ward < 0
+            || location.Division is not (1 or 2))
+            return false;
+
+        return location.IsPlot && location.Plot >= 0
+               || location.IsApartment && location.Room > 0;
     }
 
     private void DrawPlotLockManualFields(VenuePlotLock plotLock)

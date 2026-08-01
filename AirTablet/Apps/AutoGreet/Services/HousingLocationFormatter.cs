@@ -50,7 +50,8 @@ internal static class HousingLocationFormatter
             .Select(char.ToLowerInvariant)
             .ToArray());
 
-        if (string.IsNullOrWhiteSpace(comparable) || comparable is "none" or "unknown")
+        if (string.IsNullOrWhiteSpace(comparable)
+            || comparable is "none" or "unknown" or "indoor" or "outdoor" or "workshop")
             return string.Empty;
 
         if (comparable.Contains("lavender")) return "The Lavender Beds";
@@ -71,7 +72,10 @@ internal static class HousingLocationFormatter
             return name;
 
         var territoryName = TryGetTerritoryPlaceName(territoryType);
-        return NormalizeHousingDistrictName(territoryName);
+        var normalized = NormalizeHousingDistrictName(territoryName);
+        return normalized is "Mist" or "The Lavender Beds" or "The Goblet" or "Shirogane" or "Empyreum"
+            ? normalized
+            : string.Empty;
     }
 
     private static string? TryGetTerritoryPlaceName(uint territoryType)

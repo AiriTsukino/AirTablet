@@ -7,18 +7,22 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
-
-[2026-07-30] AirTabOS v1.0.54.0
-- Added a warning confirmation before repeating an original-plugin configuration migration.
-- Added a warning confirmation before rerunning the welcome setup.
-- Added /airtabletrecovery to reopen the full tablet at the center of the active game screen incase it is lost.
-- Fixed full and mini tablet positions so each mode keeps its own independently saved location unless new corner anhcor setting is on.
-- Added New corner anchoring setting for mini tablet incase users would like to retain the corner collapsing from before this update.
+[2026-07-31] AutoGreet v1.0.55.0
+- Fixed indoor plot safety detection by resolving the housing district, ward, division, and plot from the active house ID when the normal housing fields are unavailable.
 
 [2026-07-29] GambaAssistant v1.0.52.0
 - Changed default state of blackjack overlay to off
 
 [2026-07-29] AirTabOS v1.0.51.0
 - Initial Release of AirTablet
-
-
+[2026-07-30] AirTabOS v1.0.53.0
+- Renamed the What's New app section to AirTabOS & App Updates.
+- Added /airtabletrecovery to reopen the full tablet at the center of the active game screen.
+- Added settings to keep the mini tablet movable while the full tablet is locked and choose which corner remains anchored when minimizing.
+- Added a warning confirmation before repeating an original-plugin configuration migration.
+[2026-07-30] AirTabOS v1.0.54.0
+- Fixed full and mini tablet positions so each mode keeps its own independently movable saved location.
+- Replaced the mini-unlock setting with optional corner anchoring; the corner selector is disabled when anchoring is off.
+- Fixed the minimized-tablet settings card height so the diagram has a complete bottom margin.
+- Simplified the /airtablet command entry and kept /airtabletrecovery last in the registered AirTablet command list.
+- Added a confirmation before rerunning the welcome setup.

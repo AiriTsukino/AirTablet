@@ -841,19 +841,30 @@ internal static class HousingDetector
                 return location.TerritoryType != 0;
             }
 
-            location.OriginalHouseTerritoryType = HousingManager.GetOriginalHouseTerritoryTypeId();
-            location.HousingDistrict = GetCurrentHousingDistrict(manager, location.OriginalHouseTerritoryType, location.TerritoryType);
-
-            var ward = manager->GetCurrentWard();
-            if (ward >= 0) location.Ward = ward;
-
-            var division = manager->GetCurrentDivision();
-            if (division is 1 or 2) location.Division = division;
-
             var plot = manager->GetCurrentPlot();
             var room = manager->GetCurrentRoom();
             var currentHouseId = manager->GetCurrentHouseId();
             var indoorHouseId = manager->GetCurrentIndoorHouseId();
+            var resolvedHouseId = indoorHouseId.Id != 0 ? indoorHouseId : currentHouseId;
+            var houseTerritoryType = resolvedHouseId.Id == 0 ? 0u : resolvedHouseId.TerritoryTypeId;
+
+            location.OriginalHouseTerritoryType = HousingManager.GetOriginalHouseTerritoryTypeId();
+            if (location.OriginalHouseTerritoryType == 0 && houseTerritoryType != 0)
+                location.OriginalHouseTerritoryType = houseTerritoryType;
+
+            location.HousingDistrict = GetCurrentHousingDistrict(
+                houseTerritoryType,
+                location.OriginalHouseTerritoryType,
+                location.TerritoryType);
+
+            var ward = manager->GetCurrentWard();
+            if (ward >= 0)
+                location.Ward = ward;
+            else if (resolvedHouseId.Id != 0 && resolvedHouseId.WardIndex < 30)
+                location.Ward = resolvedHouseId.WardIndex;
+
+            var division = manager->GetCurrentDivision();
+            if (division is 1 or 2) location.Division = division;
 
             var apartmentByPlot = plot is -128 or -127;
             var apartmentByHouseId = currentHouseId.IsApartment || indoorHouseId.IsApartment;
@@ -866,14 +877,29 @@ internal static class HousingDetector
             {
                 location.LocationKind = VenuePlotLock.LocationKindApartment;
                 location.Plot = -1;
+                if (location.Division is not (1 or 2) && resolvedHouseId.Id != 0 && resolvedHouseId.ApartmentDivision < 2)
+                    location.Division = resolvedHouseId.ApartmentDivision + 1;
+
                 var resolvedRoom = room > 0 ? room : currentHouseId.RoomNumber > 0 ? currentHouseId.RoomNumber : indoorHouseId.RoomNumber;
                 location.Room = resolvedRoom > 0 ? resolvedRoom : -1;
             }
-            else if (plot >= 0)
+            else
             {
-                location.LocationKind = VenuePlotLock.LocationKindPlot;
-                location.Plot = plot;
-                location.Room = -1;
+                // Indoors, GetCurrentPlot/GetCurrentDivision can be unavailable even though the
+                // complete ward and plot are still encoded in the active HouseId.
+                var housePlot = resolvedHouseId.Id != 0 ? resolvedHouseId.PlotIndex : byte.MaxValue;
+                if (resolvedHouseId.Id != 0 && housePlot < 60 && (plot < 0 || manager->IsInside()))
+                    plot = (sbyte)housePlot;
+
+                if (plot >= 0)
+                {
+                    location.LocationKind = VenuePlotLock.LocationKindPlot;
+                    location.Plot = plot % 30;
+                    location.Room = -1;
+
+                    if (location.Division is not (1 or 2))
+                        location.Division = plot >= 30 ? 2 : 1;
+                }
             }
 
             return location.TerritoryType != 0
@@ -891,19 +917,10 @@ internal static class HousingDetector
         }
     }
 
-    private static unsafe string GetCurrentHousingDistrict(HousingManager* manager, uint originalHouseTerritoryType, uint currentTerritoryType)
+    private static string GetCurrentHousingDistrict(uint houseTerritoryType, uint originalHouseTerritoryType, uint currentTerritoryType)
     {
-        try
-        {
-            var housingTypeText = manager->GetCurrentHousingTerritoryType().ToString();
-            var normalized = HousingLocationFormatter.NormalizeHousingDistrictName(housingTypeText);
-            if (!string.IsNullOrWhiteSpace(normalized))
-                return normalized;
-        }
-        catch
-        {
-            // Fall back below.
-        }
+        var fromHouseId = HousingLocationFormatter.GetKnownHousingDistrictFromTerritory(houseTerritoryType);
+        if (!string.IsNullOrWhiteSpace(fromHouseId)) return fromHouseId;
 
         var original = HousingLocationFormatter.GetKnownHousingDistrictFromTerritory(originalHouseTerritoryType);
         if (!string.IsNullOrWhiteSpace(original)) return original;

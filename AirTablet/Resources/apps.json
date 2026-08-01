@@ -2,7 +2,7 @@
   {
     "id": "AutoGreet",
     "name": "AutoGreet",
-    "version": "1.0.54.0",
+    "version": "1.0.55.0",
     "tagline": "Welcome and track venue guests",
     "iconUrl": "Resources/Apps/AutoGreet/AGLogo.png"
   },
