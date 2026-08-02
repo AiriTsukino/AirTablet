@@ -144,11 +144,12 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
-            if (UpdateInitialWorldReady())
-            {
+            var gameReady = UpdateInitialWorldReady();
+            var keepTravelShellVisible = appHost.KeepTabletVisibleDuringTravel;
+            if (gameReady || keepTravelShellVisible)
                 appHost.TickAll();
-                window.Draw();
-            }
+            if (gameReady || keepTravelShellVisible || config.ShowBeforeCharacterLogin)
+                window.Draw(keepTravelShellVisible || config.ShowBeforeCharacterLogin);
             if (savePending && DateTime.UtcNow >= nextSaveAt)
                 SaveNow();
         }

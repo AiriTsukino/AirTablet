@@ -7,6 +7,13 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-02] AirTabOS v1.0.95.0
+- Added an optional General setting to show AirTablet before character login, disabled by default.
+- Added support for keeping AirTablet visible while ShoutRunner performs world and data-center travel.
+
+[2026-08-02] ShoutRunner v1.0.28.0
+- Added ShoutRunner in Devmode until ready, access restricted.
+
 [2026-08-01] AirTabOS v1.0.66.0
 - Added smooth brighten and grow hover effects to the mini tablet's Restore and Close buttons.
 - Added a General setting for disabling AirTabOS tooltips while preserving tooltips inside bundled apps.

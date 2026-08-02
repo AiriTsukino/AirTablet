@@ -7,7 +7,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.0.66.0";
+    private const string ReleaseVersion = "1.0.95.0";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -184,7 +184,7 @@ internal sealed class TabletWindow
         config.Minimized = false;
     }
 
-    public void Draw()
+    public void Draw(bool allowDuringTravel = false)
     {
         ProcessAppForegroundRequest();
         if (recoveryRequested &&
@@ -194,8 +194,9 @@ internal sealed class TabletWindow
             RecoverToActiveGameScreen();
         }
         if (!config.WindowVisible ||
-            !DalamudServices.ClientState.IsLoggedIn ||
-            DalamudServices.ObjectTable.LocalPlayer is null)
+            (!allowDuringTravel &&
+             (!DalamudServices.ClientState.IsLoggedIn ||
+              DalamudServices.ObjectTable.LocalPlayer is null)))
             return;
 
         var drawingMinimized = config.Minimized;
@@ -2402,6 +2403,8 @@ internal sealed class TabletWindow
                 "Schedule staff, track worked time, calculate payroll, and record payments.",
             "SHOPHELPER" =>
                 "Purchase custom item quantities and stacks from supported game shops.",
+            "SHOUTRUNNER" =>
+                "Plan and run venue shout routes across selected cities, worlds, and data centres.",
             _ when !string.IsNullOrWhiteSpace(app.Tagline) => app.Tagline,
             _ => "Bundled AirTablet app.",
         };
@@ -2980,7 +2983,7 @@ internal sealed class TabletWindow
         DrawSettingsGroupLabel("Startup");
         if (BeginSettingsGroup(
                 "##settings-startup-group",
-                84f,
+                136f,
                 palette))
         {
             var showStartupAnimation = config.ShowStartupAnimation;
@@ -2991,6 +2994,18 @@ internal sealed class TabletWindow
                     false))
             {
                 config.ShowStartupAnimation = showStartupAnimation;
+                save();
+            }
+
+            ImGui.Separator();
+            var showBeforeLogin = config.ShowBeforeCharacterLogin;
+            if (DrawSettingsToggleRow(
+                    "show-before-character-login",
+                    "Show AirTablet before character login",
+                    ref showBeforeLogin,
+                    false))
+            {
+                config.ShowBeforeCharacterLogin = showBeforeLogin;
                 save();
             }
         }

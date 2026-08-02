@@ -9,7 +9,8 @@ internal sealed class AppHostService : IDisposable
     private sealed record AppDefinition(
         string Id,
         Type ConfigurationType,
-        Func<IAirTabletApp> Create);
+        Func<IAirTabletApp> Create,
+        bool SupportsOriginalConfigMigration = true);
 
     private static readonly IReadOnlyList<AppDefinition> Definitions =
     [
@@ -19,6 +20,7 @@ internal sealed class AppHostService : IDisposable
         new("RaffleManager", typeof(RaffleManager.Configuration), () => new RaffleManager.AirTabletModule()),
         new("ShiftKeeper", typeof(ShiftKeeper.Configuration), () => new ShiftKeeper.AirTabletModule()),
         new("ShopHelper", typeof(ShopHelper.Configuration), () => new ShopHelper.AirTabletModule()),
+        new("ShoutRunner", typeof(ShoutRunner.Configuration), () => new ShoutRunner.AirTabletModule(), false),
     ];
 
     public static IReadOnlyList<string> BundledAppIds { get; } =
@@ -49,6 +51,12 @@ internal sealed class AppHostService : IDisposable
         : $"{running.Count} apps running; {errors.Count} failed.";
 
     public string ConfigSourceDirectory => ResolveConfigSourceDirectory();
+
+    public bool KeepTabletVisibleDuringTravel => running.Values.Any(app =>
+    {
+        try { return app.KeepTabletVisibleDuringTravel; }
+        catch { return false; }
+    });
 
     public bool IsAvailable(string id) =>
         Definitions.Any(definition => definition.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
@@ -209,7 +217,7 @@ internal sealed class AppHostService : IDisposable
         foreach (var id in running.Keys.Reverse().ToArray())
             Stop(id);
 
-        foreach (var definition in Definitions)
+        foreach (var definition in Definitions.Where(definition => definition.SupportsOriginalConfigMigration))
         {
             var targetDirectory = Path.Combine(
                 appsRoot,

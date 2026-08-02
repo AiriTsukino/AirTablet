@@ -40,5 +40,12 @@
     "version": "0.1.46.0",
     "tagline": "Custom-quantity shop purchases",
     "iconUrl": "Resources/Apps/ShopHelper/SHLogo.png"
+  },
+  {
+    "id": "ShoutRunner",
+    "name": "ShoutRunner",
+      "version": "1.0.28.0",
+    "tagline": "Automated venue shout routes",
+    "iconUrl": "Resources/Apps/ShoutRunner/SRLogo.png"
   }
 ]

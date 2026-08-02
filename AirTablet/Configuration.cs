@@ -10,6 +10,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool SetupCompleted { get; set; }
     public bool TutorialCompleted { get; set; }
     public bool ShowStartupAnimation { get; set; } = true;
+    public bool ShowBeforeCharacterLogin { get; set; }
     public bool ShowAirTabOsTooltips { get; set; } = true;
     public bool WindowVisible { get; set; }
     public bool Minimized { get; set; }
@@ -37,6 +38,7 @@ public sealed class Configuration : IPluginConfiguration
         "RaffleManager",
         "ShiftKeeper",
         "ShopHelper",
+        "ShoutRunner",
     ];
     public string PluginConfigSourceDirectory { get; set; } =
         DefaultPluginConfigSourceDirectory;

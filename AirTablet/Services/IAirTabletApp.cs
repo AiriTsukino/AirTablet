@@ -14,6 +14,8 @@ internal interface IAirTabletApp : IDisposable
     {
     }
 
+    bool KeepTabletVisibleDuringTravel => false;
+
     bool ConsumeForegroundRequest()
     {
         return false;

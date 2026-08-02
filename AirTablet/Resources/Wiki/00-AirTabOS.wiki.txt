@@ -1,6 +1,6 @@
 @id airtabos
-@title AirTabOS - Wiki will improve over time!
-@summary Set up, move, personalize, and recover your AirTablet.
+@title AirTabOS
+@summary Wiki will improve over time!
 @category AirTablet
 @order 0
 

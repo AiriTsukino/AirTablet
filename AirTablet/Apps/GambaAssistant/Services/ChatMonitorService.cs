@@ -19,8 +19,8 @@ public sealed class ChatMonitorService : IDisposable
     private TradeTransferDirection pendingTransferDirection;
 
     // FFXIV/Dalamud/Chat 2 can expose dice text with slightly different formatting,
-    // for example "You roll a 7.", "Airi Tsukino rolls a 7.",
-    // "Random! Airi Tsukino rolls 7 (1-13)", or localized payload fragments.
+    // for example "You roll a 7.", "FirstName LastName rolls a 7.",
+    // "Random! FirstName LastName rolls 7 (1-13)", or localized payload fragments.
     // Keep the parser conservative around the word roll/random/dice, but avoid relying
     // on one exact sentence shape.
     private static readonly Regex DiceResultAfterRangeRegex = new(@"\(\s*\d+\s*-\s*\d+\s*\)\s*(?<value>\d{1,3})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
