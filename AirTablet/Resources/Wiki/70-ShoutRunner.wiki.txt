@@ -1,0 +1,67 @@
+@id shoutrunner
+@title ShoutRunner
+@summary Build repeatable multi-world venue advertising routes with controlled message pacing.
+@category Bundled Apps
+@order 70
+
+# Quick start
+- Select or create a venue profile.
+- Add message blocks in the exact top-to-bottom order they should be sent.
+- Select one or more city states and worlds for the route.
+- Review Travel & retries, including ticket handling and optional return-home travel.
+- Return to Main, confirm the calculated stop count, and choose Start Run.
+
+> warning: Test a new profile with /echo message blocks first. ShoutRunner sends every configured block at every selected city stop, so verify text, channels, route size, and pacing before using public channels.
+
+# Venue profiles
+Each profile independently stores its messages, selected cities and worlds, travel retry behavior, Aetheryte ticket choice, and post-run destination. Profile changes are locked while a run is active so the saved route remains consistent.
+
+# Message blocks
+## Sending order
+Messages are sent from top to bottom. Use each block's up and down arrow buttons to change its position. Each block is sent once at every configured route stop.
+## Channels and limits
+- Shout sends through /shout.
+- Yell sends through /yell.
+- Say sends through /say.
+- Echo sends only to your own chat and is recommended for testing.
+- Each message is limited to 400 characters.
+
+# Route configuration
+## City states
+Limsa Lominsa, Gridania, and Ul'dah are separate stops. Selecting three cities and ten worlds creates thirty route stops. A stop is complete only in the main Aetheryte zone: Limsa Lominsa Lower Decks, New Gridania, or Ul'dah - Steps of Nald. ShoutRunner teleports from connected secondary zones before sending.
+## Worlds and regions
+New profiles select every world in the character's home region by default. Materia remains off by default. Developer mode exposes every region for testing and advanced route setup.
+## Progress
+The Main screen calculates the total number of stops before a run starts. During a run it shows completed, current, pending, and skipped city stops by world and Data Center.
+
+# Travel and retries
+## Retry timing
+Initial retry delay controls the first wait after a failed travel request. Additional seconds per attempt increases later waits. Maximum travel attempts limits primary attempts before optional alternate gateway worlds are tried.
+## Alternate gateway worlds
+When enabled, ShoutRunner can try other worlds on the destination Data Center after the selected destination exhausts its primary attempts. If no gateway works, that unavailable route scope is skipped and the run continues.
+## Aetheryte tickets
+Choose whether ShoutRunner accepts a visible Aetheryte ticket confirmation or cancels it and pays gil. Ticket popups add an extra interface step; disabling tickets or enabling automatic ticket use in FFXIV is faster for long routes.
+## Post-run destination 
+- Starting World : Return to world the shout run started in after run is completed
+- Home World : Return to home world of character that did the shout run after the run is completed
+- Chosen World : Return to chosen world after the run is completed
+
+# Pausing, stopping, and recovery
+- Pause preserves the route and records total paused time for the final report.
+- Resume continues from the saved stop.
+- Stop requires confirmation and clears the active route.
+- Completed runs remain visible until Reset is confirmed.
+- Run state is saved so a compatible reload can continue the active route.
+
+# Completion report
+The receipt shows character, duration, local time zone, date, start time, completion time, teleport gil, receipt code, and successful route totals. Pause time appears only when the run was paused. Skipped stops are separated from successful sends.
+
+# Troubleshooting
+## Aetheryte interaction does not begin
+Stand in one of the supported city-state territories and wait for the local object list to load. ShoutRunner targets the matching city Aetheryte directly and can approach it without its nameplate being visible.
+## A world transfer does not complete
+Open Travel diagnostics, copy the log, and check which game window or travel state is waiting. Confirm that World Visit and Data Center Travel are currently available for the character.
+## No worlds are selected
+Open Route while the character or their saved home world is available. New profile defaults are chosen from that home region; Materia is intentionally left off.
+## A message fails
+Check that the block is not empty, remains within 400 characters, and uses one of the supported channels. Use /echo while isolating text or pacing problems.

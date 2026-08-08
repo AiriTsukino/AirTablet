@@ -33,7 +33,7 @@ public sealed class PlayerSessionService
 
         foreach (var existing in session.SessionPlayers.Where(p => p.Status != PlayerStatus.Dealer).ToList())
         {
-            if (partyList.All(p => p.Status == PlayerStatus.Dealer || (!IsSamePlayerForSync(p.Identity, existing.Identity) && !IsSameNormalizedName(p.Identity, existing.Identity))) && existing.Status != PlayerStatus.CashedOut)
+            if (partyList.All(p => p.Status == PlayerStatus.Dealer || (!IsSamePlayerForSync(p.Identity, existing.Identity) && !IsSameNormalizedName(p.Identity, existing.Identity))))
             {
                 existing.Status = PlayerStatus.LeftDisconnected;
 

@@ -9,7 +9,25 @@ public sealed class PartyService
 
     public int LastLivePartyMemberCount { get; private set; }
     public DateTime LastSyncUtc { get; private set; }
-    public bool IsLocalPlayerLoaded => DalamudServices.PlayerState.IsLoaded;
+    public bool IsLocalPlayerLoaded => CanReadLocalPlayer;
+
+    public bool CanReadLocalPlayer
+    {
+        get
+        {
+            try
+            {
+                return DalamudServices.ClientState.IsLoggedIn &&
+                       DalamudServices.PlayerState.IsLoaded &&
+                       DalamudServices.ObjectTable.LocalPlayer is not null &&
+                       DalamudServices.PlayerState.HomeWorld.ValueNullable is not null;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+    }
 
     public PartyService(LogService log) => this.log = log;
 
@@ -60,11 +78,22 @@ public sealed class PartyService
 
     private static PlayerIdentity GetLocalDealerIdentity()
     {
-        if (!DalamudServices.PlayerState.IsLoaded)
+        if (!DalamudServices.ClientState.IsLoggedIn ||
+            !DalamudServices.PlayerState.IsLoaded ||
+            DalamudServices.ObjectTable.LocalPlayer is null)
             return PlayerIdentity.UnknownDealer();
 
-        var localName = DalamudServices.PlayerState.CharacterName.Trim();
-        var localWorld = DalamudServices.PlayerState.HomeWorld.Value.Name.ExtractText();
+        string localName;
+        string localWorld;
+        try
+        {
+            localName = DalamudServices.PlayerState.CharacterName.Trim();
+            localWorld = DalamudServices.PlayerState.HomeWorld.ValueNullable?.Name.ExtractText() ?? string.Empty;
+        }
+        catch (InvalidOperationException)
+        {
+            return PlayerIdentity.UnknownDealer();
+        }
         if (string.IsNullOrWhiteSpace(localName))
             localName = "Dealer";
 

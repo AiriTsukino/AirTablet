@@ -168,6 +168,27 @@ internal sealed class AppHostService : IDisposable
         return null;
     }
 
+    public bool ConsumeHomeRequest()
+    {
+        foreach (var pair in running.ToArray())
+        {
+            try
+            {
+                if (pair.Value.ConsumeHomeRequest())
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                DalamudServices.Log.Warning(
+                    ex,
+                    "AirTablet app {App} could not report its home request.",
+                    pair.Key);
+            }
+        }
+
+        return false;
+    }
+
     public bool Draw(string id)
     {
         if (!running.TryGetValue(id, out var app))

@@ -24,7 +24,7 @@ internal static class HousingLocationFormatter
 
     public static string GetTerritoryDisplayName(uint territoryType)
     {
-        if (territoryType == 0)
+        if (territoryType == 0 || territoryType >= ushort.MaxValue)
             return "Unknown location";
 
         if (TerritoryNameCache.TryGetValue(territoryType, out var cached))
@@ -65,7 +65,7 @@ internal static class HousingLocationFormatter
 
     public static string GetKnownHousingDistrictFromTerritory(uint territoryType)
     {
-        if (territoryType == 0)
+        if (territoryType == 0 || territoryType >= ushort.MaxValue)
             return string.Empty;
 
         if (KnownHousingTerritories.TryGetValue(territoryType, out var name))
@@ -80,7 +80,7 @@ internal static class HousingLocationFormatter
 
     private static string? TryGetTerritoryPlaceName(uint territoryType)
     {
-        if (territoryType == 0)
+        if (territoryType == 0 || territoryType >= ushort.MaxValue)
             return null;
 
         try

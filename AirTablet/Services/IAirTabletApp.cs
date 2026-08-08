@@ -21,6 +21,11 @@ internal interface IAirTabletApp : IDisposable
         return false;
     }
 
+    bool ConsumeHomeRequest()
+    {
+        return false;
+    }
+
     bool CanNavigateBack();
 
     bool NavigateBack();

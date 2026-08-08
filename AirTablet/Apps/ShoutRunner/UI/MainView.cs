@@ -48,6 +48,7 @@ internal sealed class MainView
             DrawDashboard();
 
         DrawStopConfirmation();
+        DrawResetConfirmation();
     }
 
     public void DrawSettings()
@@ -114,8 +115,6 @@ internal sealed class MainView
 
     private void DrawHeader(bool showSettingsButton)
     {
-        ImGui.TextColored(TabletAppTheme.AccentHover, "ShoutRunner");
-        ImGui.SameLine(0f, TabletAppTheme.Px(12f));
         TextMuted("Profile");
         ImGui.SameLine(0f, TabletAppTheme.Px(6f));
         var profiles = persistence.Profiles.Keys.OrderBy(name => name).ToArray();
@@ -169,7 +168,7 @@ internal sealed class MainView
         ImGui.SameLine();
         if (runner.Phase != RunPhase.Completed) ImGui.BeginDisabled();
         if (ImGui.Button("Reset", TabletAppTheme.Px(new Vector2(100f, 32f))))
-            runner.ResetCompletedRun();
+            TabletAppTheme.OpenCenteredModal("Reset completed ShoutRunner run?");
         if (runner.Phase != RunPhase.Completed) ImGui.EndDisabled();
 
         if (!string.IsNullOrWhiteSpace(statusMessage))
@@ -181,14 +180,18 @@ internal sealed class MainView
 
     private void DrawDashboard()
     {
+        EnsureDefaultWorldSelection();
         var available = ImGui.GetContentRegionAvail();
         var gap = TabletAppTheme.Px(12f);
         var leftWidth = MathF.Max(TabletAppTheme.Px(360f), (available.X - gap) * 0.58f);
         if (BeginCard("##sr-progress", new Vector2(leftWidth, available.Y)))
         {
             SectionHeader("Run progress");
-            var fraction = runner.TotalStops == 0 ? 0f : runner.CompletedStops / (float)runner.TotalStops;
-            ImGui.ProgressBar(fraction, new Vector2(-1f, TabletAppTheme.Px(24f)), $"{runner.CompletedStops} / {runner.TotalStops} stops");
+            var totalStops = runner.Phase == RunPhase.Idle
+                ? runner.GetConfiguredTotalStops(Profile, travel.HomeWorld)
+                : runner.TotalStops;
+            var fraction = totalStops == 0 ? 0f : runner.CompletedStops / (float)totalStops;
+            ImGui.ProgressBar(fraction, new Vector2(-1f, TabletAppTheme.Px(24f)), $"{runner.CompletedStops} / {totalStops} stops");
             ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 8f)));
             ImGui.TextWrapped(runner.Status);
             if (runner.CurrentStop is { } stop)
@@ -219,72 +222,110 @@ internal sealed class MainView
     private void DrawTravelScreen()
     {
         var size = ImGui.GetContentRegionAvail();
-        if (BeginCard("##sr-travel-screen", size, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+        if (BeginCard("##sr-travel-screen-v2", size, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
-            var stop = runner.CurrentStop;
-            ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 2f)));
-            CenteredAccent(runner.Phase switch
+            var gap = TabletAppTheme.Px(10f);
+            var available = ImGui.GetContentRegionAvail();
+            var columnWidth = MathF.Max(TabletAppTheme.Px(260f), (available.X - gap) * 0.5f);
+            var summaryHeight = available.Y * 0.40f;
+
+            if (BeginCard("##sr-live-progress", new Vector2(columnWidth, summaryHeight), ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
             {
-                RunPhase.TravelingDataCenter => "Changing data centres",
-                RunPhase.TravelingWorld => "Changing worlds",
-                RunPhase.TravelingCity or RunPhase.WaitingForArrival => "Teleporting",
-                RunPhase.SendingMessages => "Sending messages",
-                RunPhase.Paused => "Run paused",
-                RunPhase.Completed => "Run complete",
-                _ => "Preparing route",
-            });
-            ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 2f)));
-            if (stop is not null)
-                CenteredText($"{stop.CityName} · {stop.World} · {stop.DataCenter}");
-            ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 3f)));
-            var progress = runner.TotalStops == 0 ? 0f : runner.CompletedStops / (float)runner.TotalStops;
-            var width = MathF.Min(TabletAppTheme.Px(600f), ImGui.GetContentRegionAvail().X - TabletAppTheme.Px(80f));
-            ImGui.SetCursorPosX((ImGui.GetWindowSize().X - width) * 0.5f);
-            ImGui.ProgressBar(progress, new Vector2(width, TabletAppTheme.Px(26f)), $"Route {runner.CompletedStops} / {runner.TotalStops}");
-            ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 2f)));
-            CenteredMuted(runner.CurrentTask, width);
-            ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 3f)));
-            if (runner.Phase == RunPhase.Completed)
-            {
-                DrawCompletionSummary();
-                ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 7f)));
+                SectionHeader("Run progress");
+                var stop = runner.CurrentStop;
+                ImGui.TextWrapped(stop is null
+                    ? runner.Phase == RunPhase.Completed ? "Route complete" : "Preparing route"
+                    : $"{stop.CityName} · {stop.World} · {stop.DataCenter}");
+                ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 3f)));
+                var progress = runner.TotalStops == 0 ? 0f : runner.CompletedStops / (float)runner.TotalStops;
+                ImGui.ProgressBar(
+                    progress,
+                    new Vector2(ImGui.GetContentRegionAvail().X, TabletAppTheme.Px(24f)),
+                    $"Route {runner.CompletedStops} / {runner.TotalStops}");
+                ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 2f)));
+                TextMutedWrapped(runner.CurrentTask);
             }
+            EndCard();
+
+            ImGui.SameLine(0f, gap);
+            if (BeginCard("##sr-live-report", new Vector2(columnWidth, summaryHeight), ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+                DrawLiveRunReport();
+            EndCard();
+
+            ImGui.Dummy(new Vector2(0f, gap));
             DrawRunChecklist();
         }
         EndCard();
     }
 
-    private void DrawCompletionSummary()
+    private void DrawLiveRunReport()
     {
+        var started = runner.ReceiptStartedUtc.ToLocalTime();
+        var completed = runner.ReceiptCompletedUtc == default ? DateTime.Now : runner.ReceiptCompletedUtc.ToLocalTime();
+        var endUtc = runner.ReceiptCompletedUtc == default ? DateTime.UtcNow : runner.ReceiptCompletedUtc;
+        var duration = runner.ReceiptStartedUtc == default ? TimeSpan.Zero : endUtc - runner.ReceiptStartedUtc;
+        var routeWorlds = runner.Route.Select(stop => stop.World).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var routeDataCenters = runner.Route.Select(stop => stop.DataCenter).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var rows = new List<(string Label, string Value)>
+        {
+            ("Character", string.IsNullOrWhiteSpace(runner.ReceiptCharacter) ? "Loading character" : runner.ReceiptCharacter),
+            ("Date", started == default ? DateTime.Now.ToString("yyyy-MM-dd") : started.ToString("yyyy-MM-dd")),
+            ("Time zone", $"{GetLocalTimeZoneAbbreviation(completed)} ({completed:zzz})"),
+            ("Route", $"{runner.TotalStops} stops · {routeWorlds} worlds · {routeDataCenters} DCs"),
+            ("Start time", started == default ? "Waiting for run start" : started.ToString("HH:mm:ss")),
+            ("Completion time", runner.ReceiptCompletedUtc == default ? "Waiting for completion" : completed.ToString("HH:mm:ss")),
+            ("Duration", duration.ToString(@"d\.hh\:mm\:ss")),
+            ("Pause time", TimeSpan.FromSeconds(runner.ReceiptPausedSeconds).ToString(@"d\.hh\:mm\:ss")),
+            ("Teleport gil", runner.TeleportGilSpent.ToString("N0")),
+            ("Receipt", string.IsNullOrWhiteSpace(runner.ReceiptCode) ? "Waiting for completion" : runner.ReceiptCode),
+        };
+
+        SectionHeader(runner.Phase == RunPhase.Completed ? "Complete Run Report" : "Live run report");
         var start = ImGui.GetCursorScreenPos();
-        var size = new Vector2(ImGui.GetContentRegionAvail().X, TabletAppTheme.Px(62f));
+        var rowHeight = TabletAppTheme.Px(24f);
+        var reportWidth = ImGui.GetContentRegionAvail().X;
+        var reportHeight = rowHeight * 5f;
+        var columnWidth = reportWidth * 0.5f;
         var draw = ImGui.GetWindowDrawList();
-        var accent = ImGui.ColorConvertFloat4ToU32(new Vector4(TabletAppTheme.Accent.X, TabletAppTheme.Accent.Y, TabletAppTheme.Accent.Z, 0.82f));
-        draw.AddRectFilled(start, start + size, ImGui.ColorConvertFloat4ToU32(new Vector4(0.09f, 0.07f, 0.14f, 0.96f)), TabletAppTheme.Px(7f));
-        draw.AddRect(start, start + size, accent, TabletAppTheme.Px(7f), ImDrawFlags.None, TabletAppTheme.Px(1.5f));
-        for (var x = TabletAppTheme.Px(10f); x < size.X; x += TabletAppTheme.Px(44f))
-            draw.AddLine(start + new Vector2(x, size.Y), start + new Vector2(x + TabletAppTheme.Px(34f), 0f), ImGui.ColorConvertFloat4ToU32(new Vector4(TabletAppTheme.Accent.X, TabletAppTheme.Accent.Y, TabletAppTheme.Accent.Z, 0.10f)));
-
-        ImGui.SetCursorScreenPos(start + TabletAppTheme.Px(new Vector2(14f, 8f)));
-        ImGui.TextColored(TabletAppTheme.AccentHover, "SHOUTRUNNER RUN COMPLETE");
-        ImGui.SetCursorScreenPos(start + TabletAppTheme.Px(new Vector2(14f, 32f)));
-        ImGui.TextUnformatted(runner.ReceiptCharacter);
-
-        var completed = runner.ReceiptCompletedUtc.ToLocalTime();
-        var duration = runner.ReceiptStartedUtc != default && runner.ReceiptCompletedUtc >= runner.ReceiptStartedUtc
-            ? runner.ReceiptCompletedUtc - runner.ReceiptStartedUtc
-            : TimeSpan.Zero;
-        var timeZoneName = GetLocalTimeZoneAbbreviation(completed);
-        var rightTop = $"{completed:yyyy-MM-dd  HH:mm:ss zzz} {timeZoneName} · Duration {duration:d\\.hh\\:mm\\:ss}";
-        var stopSummary = runner.SkippedStopCount == 0
-            ? $"{runner.SuccessfulStopCount} stops"
-            : $"{runner.SuccessfulStopCount} sent · {runner.SkippedStopCount} skipped";
-        var rightBottom = $"{stopSummary} · {runner.ReceiptWorldCount} worlds · {runner.ReceiptDataCenterCount} data centres · Gil spent on teleports: {runner.TeleportGilSpent:N0} · {runner.ReceiptCode}";
-        ImGui.SetCursorScreenPos(new Vector2(start.X + size.X - ImGui.CalcTextSize(rightTop).X - TabletAppTheme.Px(14f), start.Y + TabletAppTheme.Px(8f)));
-        ImGui.TextUnformatted(rightTop);
-        ImGui.SetCursorScreenPos(new Vector2(start.X + size.X - ImGui.CalcTextSize(rightBottom).X - TabletAppTheme.Px(14f), start.Y + TabletAppTheme.Px(32f)));
-        ImGui.TextColored(TabletAppTheme.MutedText, rightBottom);
-        ImGui.SetCursorScreenPos(start + new Vector2(0f, size.Y));
+        for (var row = 0; row < 5; row++)
+        {
+            var rowMin = start + new Vector2(0f, row * rowHeight);
+            var rowMax = rowMin + new Vector2(reportWidth, rowHeight);
+            draw.AddRectFilled(
+                rowMin,
+                rowMax,
+                ImGui.ColorConvertFloat4ToU32(row % 2 == 0
+                    ? new Vector4(0.08f, 0.065f, 0.13f, 0.72f)
+                    : new Vector4(0.14f, 0.11f, 0.20f, 0.72f)),
+                TabletAppTheme.Px(3f));
+        }
+        draw.PushClipRect(start, start + new Vector2(reportWidth, reportHeight), true);
+        for (var x = -reportHeight; x < reportWidth; x += TabletAppTheme.Px(34f))
+        {
+            draw.AddLine(
+                start + new Vector2(x, reportHeight),
+                start + new Vector2(x + reportHeight, 0f),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(
+                    TabletAppTheme.Accent.X,
+                    TabletAppTheme.Accent.Y,
+                    TabletAppTheme.Accent.Z,
+                    0.09f)),
+                TabletAppTheme.Px(1f));
+        }
+        draw.PopClipRect();
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var column = index % 2;
+            var row = index / 2;
+            ImGui.SetCursorScreenPos(
+                start +
+                new Vector2(column * columnWidth + TabletAppTheme.Px(6f), row * rowHeight) +
+                new Vector2(0f, MathF.Max(0f, (rowHeight - ImGui.GetTextLineHeight()) * 0.5f)));
+            ImGui.TextColored(TabletAppTheme.MutedText, $"{rows[index].Label}:");
+            ImGui.SameLine(0f, TabletAppTheme.Px(4f));
+            ImGui.TextUnformatted(rows[index].Value);
+        }
+        ImGui.SetCursorScreenPos(start + new Vector2(0f, reportHeight));
         ImGui.Dummy(Vector2.Zero);
     }
 
@@ -326,6 +367,7 @@ internal sealed class MainView
 
         ImGui.Separator();
         ImGui.TextColored(TabletAppTheme.AccentHover, "Run checklist");
+        var worldRowHeight = TabletAppTheme.Px(20f);
         ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, TabletAppTheme.Px(new Vector2(4f, 1f)));
         if (!ImGui.BeginTable(
                 "##sr-run-checklist",
@@ -364,21 +406,27 @@ internal sealed class MainView
             var worlds = dataCenter
                 .OrderBy(world => FindFirstWorldStop(route, world.Name))
                 .ThenBy(world => world.Name)
+                .Take(8)
                 .ToArray();
             foreach (var world in worlds)
-                DrawWorldChecklistRow(route, dataCenter.Key, world.Name);
+                DrawWorldChecklistRow(route, dataCenter.Key, world.Name, worldRowHeight);
+            if (worlds.Length < 8)
+                ImGui.Dummy(new Vector2(0f, worldRowHeight * (8 - worlds.Length)));
         }
         ImGui.EndTable();
         ImGui.PopStyleVar();
     }
 
-    private void DrawWorldChecklistRow(IReadOnlyList<RouteStop> route, string dataCenter, string world)
+    private void DrawWorldChecklistRow(
+        IReadOnlyList<RouteStop> route,
+        string dataCenter,
+        string world,
+        float rowHeight)
     {
         var badgeWidth = TabletAppTheme.Px(20f);
         var badgeGap = TabletAppTheme.Px(3f);
         var badgesWidth = badgeWidth * WorldCatalog.Cities.Count + badgeGap * (WorldCatalog.Cities.Count - 1);
         var rightInset = TabletAppTheme.Px(7f);
-        var rowHeight = TabletAppTheme.Px(22f);
         var start = ImGui.GetCursorScreenPos();
         var availableWidth = ImGui.GetContentRegionAvail().X;
         var textSize = ImGui.CalcTextSize(world);
@@ -539,12 +587,31 @@ internal sealed class MainView
 
     private void DrawMessages()
     {
-        TextMutedWrapped("Add one or more message blocks. Each block supports /shout, /yell, /say, or /echo and is limited to 400 characters.");
+        TextMutedWrapped("Add one or more message blocks. Blocks are sent from top to bottom in the order shown. Use the up and down arrow buttons to change their order. Each block supports /shout, /yell, /say, or /echo and is limited to 400 characters.");
         if (runner.IsRunning) ImGui.BeginDisabled();
-        foreach (var block in Profile.Messages.ToArray())
+        for (var index = 0; index < Profile.Messages.Count; index++)
         {
+            var block = Profile.Messages[index];
             if (BeginCard($"##sr-message-{block.Id}", new Vector2(0f, TabletAppTheme.Px(150f))))
             {
+                if (index == 0) ImGui.BeginDisabled();
+                if (ImGui.Button($"↑##move-up-{block.Id}", TabletAppTheme.Px(new Vector2(34f, 24f))))
+                {
+                    (Profile.Messages[index - 1], Profile.Messages[index]) = (Profile.Messages[index], Profile.Messages[index - 1]);
+                    persistence.SaveProfile(Profile);
+                }
+                if (index == 0) ImGui.EndDisabled();
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("Move this message block one position earlier.");
+                ImGui.SameLine();
+                if (index == Profile.Messages.Count - 1) ImGui.BeginDisabled();
+                if (ImGui.Button($"↓##move-down-{block.Id}", TabletAppTheme.Px(new Vector2(34f, 24f))))
+                {
+                    (Profile.Messages[index + 1], Profile.Messages[index]) = (Profile.Messages[index], Profile.Messages[index + 1]);
+                    persistence.SaveProfile(Profile);
+                }
+                if (index == Profile.Messages.Count - 1) ImGui.EndDisabled();
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("Move this message block one position later.");
+                ImGui.SameLine();
                 var channel = (int)block.Channel;
                 ImGui.SetNextItemWidth(TabletAppTheme.Px(150f));
                 if (ImGui.Combo("Channel", ref channel, Enum.GetNames<MessageChannel>(), Enum.GetValues<MessageChannel>().Length))
@@ -581,6 +648,7 @@ internal sealed class MainView
 
     private void DrawRoute()
     {
+        EnsureDefaultWorldSelection();
         if (runner.IsRunning) ImGui.BeginDisabled();
         if (BeginCard("##sr-city-route", new Vector2(0f, TabletAppTheme.Px(96f))))
         {
@@ -683,20 +751,92 @@ internal sealed class MainView
             var increase = Profile.RetryDelayIncreaseSeconds;
             var attempts = Profile.MaximumTravelAttempts;
             var messageDelay = Profile.MessageDelaySeconds;
-            if (ImGui.InputInt("Initial retry delay (seconds)", ref firstDelay, 5, 10)) Profile.InitialRetryDelaySeconds = Math.Clamp(firstDelay, 5, 120);
+            if (ImGui.InputInt("Initial retry delay (seconds)", ref firstDelay, 1, 5)) Profile.InitialRetryDelaySeconds = Math.Clamp(firstDelay, 1, 120);
             if (ImGui.InputInt("Additional seconds per attempt", ref increase, 1, 5)) Profile.RetryDelayIncreaseSeconds = Math.Clamp(increase, 0, 120);
             if (ImGui.InputInt("Maximum travel attempts", ref attempts, 1, 2)) Profile.MaximumTravelAttempts = Math.Clamp(attempts, 1, 20);
             if (ImGui.InputInt("Delay between message blocks", ref messageDelay, 1, 5)) Profile.MessageDelaySeconds = Math.Clamp(messageDelay, 1, 30);
             var tryAlternates = Profile.TryAlternateDataCenterWorlds;
-            var alternatesChanged = ImGui.Checkbox("Try alternate worlds when entering a data centre", ref tryAlternates);
+            var alternatesChanged = ImGui.Checkbox("Try alternate worlds when entering a Data Center", ref tryAlternates);
             if (alternatesChanged)
                 Profile.TryAlternateDataCenterWorlds = tryAlternates;
             if (alternatesChanged || ImGui.IsItemEdited() || ImGui.IsAnyItemActive())
                 persistence.SaveProfile(Profile);
-            TextMutedWrapped("After the selected destination reaches its maximum attempts, try every other world on that data centre once as a gateway. If none work, skip that data centre and continue the run.");
+            TextMutedWrapped("After the selected destination reaches its maximum attempts, try every other world on that Data Center once as a gateway. If none work, skip that Data Center and continue the run.");
+
+            ImGui.Separator();
+            var postRunDestination = (int)Profile.PostRunDestination;
+            var postRunLabels = new[] { "Starting World", "Home World", "Chosen World" };
+            ImGui.SetNextItemWidth(TabletAppTheme.Px(240f));
+            if (ImGui.Combo("After the run", ref postRunDestination, postRunLabels, postRunLabels.Length))
+            {
+                Profile.PostRunDestination = (PostRunDestination)postRunDestination;
+                persistence.SaveProfile(Profile);
+            }
+
+            if (Profile.PostRunDestination == PostRunDestination.ChosenWorld)
+                DrawPostRunWorldPicker();
+
+            var ticketAction = (int)Profile.TicketAction;
+            var ticketLabels = new[] { "Use Aetheryte ticket", "Cancel ticket and pay gil" };
+            ImGui.SetNextItemWidth(TabletAppTheme.Px(260f));
+            if (ImGui.Combo("Aetheryte ticket prompt", ref ticketAction, ticketLabels, ticketLabels.Length))
+            {
+                Profile.TicketAction = (AetheryteTicketAction)ticketAction;
+                persistence.SaveProfile(Profile);
+            }
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.68f, 0.30f, 1f));
+            ImGui.TextWrapped("Ticket confirmation windows add an extra UI step and can slow long runs. Disabling tickets or enabling automatic ticket use in FFXIV's teleport settings is faster.");
+            ImGui.PopStyleColor();
         }
         EndCard();
         if (runner.IsRunning) ImGui.EndDisabled();
+    }
+
+    private void DrawPostRunWorldPicker()
+    {
+        var homeWorld = string.IsNullOrWhiteSpace(travel.HomeWorld)
+            ? config.LastCharacterHomeWorld
+            : travel.HomeWorld;
+        var worlds = WorldCatalog.VisibleWorlds(homeWorld, Profile.DeveloperMode)
+            .OrderBy(world => world.DataCenter)
+            .ThenBy(world => world.Name)
+            .ToArray();
+        if (worlds.Length == 0)
+        {
+            TextMutedWrapped("Load the saved character's region before choosing a destination world.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Profile.ChosenPostRunWorld) ||
+            worlds.All(world => !world.Name.Equals(Profile.ChosenPostRunWorld, StringComparison.OrdinalIgnoreCase)))
+        {
+            Profile.ChosenPostRunWorld = worlds[0].Name;
+            persistence.SaveProfile(Profile);
+        }
+
+        ImGui.SetNextItemWidth(TabletAppTheme.Px(300f));
+        if (!ImGui.BeginCombo("Chosen destination", Profile.ChosenPostRunWorld))
+            return;
+        if (ImGui.BeginTable(
+                "##post-run-world-grid",
+                4,
+                ImGuiTableFlags.SizingStretchSame | ImGuiTableFlags.NoSavedSettings))
+        {
+            foreach (var world in worlds)
+            {
+                ImGui.TableNextColumn();
+                var selected = world.Name.Equals(Profile.ChosenPostRunWorld, StringComparison.OrdinalIgnoreCase);
+                if (ImGui.Selectable($"{world.Name}##post-run-{world.Name}", selected))
+                {
+                    Profile.ChosenPostRunWorld = world.Name;
+                    persistence.SaveProfile(Profile);
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip($"{world.Name} · {world.DataCenter}");
+            }
+            ImGui.EndTable();
+        }
+        ImGui.EndCombo();
     }
 
     private void DrawStopConfirmation()
@@ -737,6 +877,45 @@ internal sealed class MainView
             TabletAppTheme.CloseCenteredModal();
         }
         TabletAppTheme.EndCenteredModal();
+    }
+
+    private void DrawResetConfirmation()
+    {
+        if (!TabletAppTheme.BeginCenteredModal(
+                "Reset completed ShoutRunner run?",
+                ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings))
+            return;
+        ImGui.TextWrapped("Clear the completed run report and return ShoutRunner to a fresh ready state?");
+        if (ImGui.Button("Reset run", TabletAppTheme.Px(new Vector2(120f, 0f))))
+        {
+            runner.ResetCompletedRun();
+            TabletAppTheme.CloseCenteredModal();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Keep report", TabletAppTheme.Px(new Vector2(120f, 0f))))
+            TabletAppTheme.CloseCenteredModal();
+        TabletAppTheme.EndCenteredModal();
+    }
+
+    private void EnsureDefaultWorldSelection()
+    {
+        if (Profile.WorldDefaultsInitialized)
+            return;
+        if (Profile.Worlds.Count > 0)
+        {
+            Profile.WorldDefaultsInitialized = true;
+            persistence.SaveProfile(Profile);
+            return;
+        }
+        var region = WorldCatalog.DetectHomeRegion(string.IsNullOrWhiteSpace(travel.HomeWorld)
+            ? config.LastCharacterHomeWorld
+            : travel.HomeWorld);
+        Profile.Worlds = WorldCatalog.Worlds
+            .Where(world => world.Region == region && world.Region != ShoutRunnerRegion.Oceania)
+            .Select(world => world.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Profile.WorldDefaultsInitialized = true;
+        persistence.SaveProfile(Profile);
     }
 
     private static bool BeginCard(string id, Vector2 size, ImGuiWindowFlags flags = ImGuiWindowFlags.None)

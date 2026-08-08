@@ -1,5 +1,6 @@
 using GambaAssistant.Games.Blackjack;
 using GambaAssistant.Models.Players;
+using System.Text.Json;
 
 namespace GambaAssistant.Services;
 
@@ -36,11 +37,13 @@ public sealed class ChatTemplateSet
 
 public sealed class ProfileService
 {
+    private static readonly JsonSerializerOptions TransferJson = new() { WriteIndented = true };
     private readonly Configuration config;
     private readonly PersistenceService persistence;
     private readonly LogService log;
     public List<VenueProfile> Profiles { get; } = [];
     public VenueProfile ActiveProfile => Profiles.FirstOrDefault(p => p.Id == config.ActiveProfileId) ?? Profiles[0];
+    public string ProfileTransferDirectory => Path.Combine(persistence.ConfigRoot, "Exports", "VenueProfiles");
 
     public ProfileService(Configuration config, PersistenceService persistence, LogService log)
     {
@@ -108,6 +111,101 @@ public sealed class ProfileService
         profile.Name = string.IsNullOrWhiteSpace(name) ? "Unnamed Venue" : name.Trim();
         SaveProfile(profile);
         persistence.SaveNow();
+    }
+
+    public string ExportProfile(VenueProfile profile)
+    {
+        EnsureTemplateLibrary(profile);
+        return JsonSerializer.Serialize(profile, TransferJson);
+    }
+
+    public string ExportProfileToFile(VenueProfile profile, string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+        File.WriteAllText(path, ExportProfile(profile));
+        log.Add(LogCategory.Info, $"Exported venue profile {profile.Name}: {path}.");
+        return path;
+    }
+
+    public string GetDefaultProfileExportFileName(VenueProfile profile)
+    {
+        var safeName = profile.Name;
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            safeName = safeName.Replace(invalid, '-');
+        return $"GambaAssistant-{safeName}-VenueProfile.json";
+    }
+
+    public bool TryImportProfileFile(string path, BlackjackSession session, out VenueProfile? imported, out string reason)
+    {
+        try
+        {
+            return TryImportProfile(File.ReadAllText(path), session, out imported, out reason);
+        }
+        catch (Exception ex)
+        {
+            imported = null;
+            reason = $"The venue profile file could not be read: {ex.Message}";
+            return false;
+        }
+    }
+
+    public bool TryImportProfile(string json, BlackjackSession session, out VenueProfile? imported, out string reason)
+    {
+        imported = null;
+        if (session.IsActive)
+        {
+            reason = "Venue profile import is locked while a night/session is active.";
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            reason = "Paste a venue profile export first.";
+            return false;
+        }
+
+        try
+        {
+            var profile = JsonSerializer.Deserialize<VenueProfile>(json, TransferJson);
+            if (profile is null || string.IsNullOrWhiteSpace(profile.Name))
+            {
+                reason = "The pasted text is not a valid GambaAssistant venue profile.";
+                return false;
+            }
+
+            profile.Id = Guid.NewGuid();
+            var baseName = profile.Name.Trim();
+            var candidate = baseName;
+            var suffix = 2;
+            while (Profiles.Any(existing => existing.Name.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+                candidate = $"{baseName} ({suffix++})";
+            profile.Name = candidate;
+            profile.BlackjackRules ??= new BlackjackRules();
+            profile.Overlay ??= new OverlaySettings();
+            profile.BlackjackVips ??= [];
+            profile.ChatTemplates ??= ChatTemplateDefaults.CreateFormal();
+            profile.ChatTemplateLibrary ??= [];
+            EnsureTemplateLibrary(profile);
+            NormalizeDiceCommand(profile);
+            NormalizeBlackjackRuleDefaults(profile);
+            NormalizeProfileChatChannels(profile);
+
+            Profiles.Add(profile);
+            config.ActiveProfileId = profile.Id;
+            SaveProfile(profile);
+            persistence.SaveNow();
+            session.Rules = profile.BlackjackRules;
+            log.Add(LogCategory.Info, $"Imported venue profile: {profile.Name}.");
+            imported = profile;
+            reason = string.Empty;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            reason = $"The venue profile could not be imported: {ex.Message}";
+            return false;
+        }
     }
 
     public void ApplyTemplatePreset(VenueProfile profile, string presetName)

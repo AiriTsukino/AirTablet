@@ -267,12 +267,14 @@ internal sealed unsafe class TravelService
     private bool dataCenterSelectionChosen;
     private bool worldSelectionChosen;
     private bool aetheryteApproachActive;
+    private bool cityZoneTeleportPending;
     private bool titleStartSelected;
     private bool characterLoginSelected;
     private bool worldVisitSubmitted;
     private bool returnHomeRequested;
     private bool returnHomeConfirmationSubmitted;
     private bool returnHomeProceedSubmitted;
+    private bool returnHomeOnly;
     private bool returningHomeViaAetheryte;
     private string queuedDataCenterWorld = string.Empty;
     private string queuedDataCenterName = string.Empty;
@@ -298,6 +300,7 @@ internal sealed unsafe class TravelService
     }
 
     public bool DestinationArrivalAcknowledged => dataCenterArrivalAcknowledged;
+    public bool IsCityZoneTeleportPending => cityZoneTeleportPending;
 
     public void ClearDebugLog()
     {
@@ -396,8 +399,15 @@ internal sealed unsafe class TravelService
     public bool IsInCity(CityTarget city)
     {
         var current = CurrentTerritoryName;
-        return WorldCatalog.Cities.First(item => item.Id == city).TerritoryNames
-            .Any(name => current.Equals(name, StringComparison.OrdinalIgnoreCase));
+        var mainTerritory = WorldCatalog.Cities.First(item => item.Id == city).TerritoryNames[0];
+        return current.Equals(mainTerritory, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public CityDefinition? GetCurrentCity()
+    {
+        var current = CurrentTerritoryName;
+        return WorldCatalog.Cities.FirstOrDefault(city => city.TerritoryNames.Any(name =>
+            current.Equals(name, StringComparison.OrdinalIgnoreCase)));
     }
 
     public bool RequestWorld(string world, string characterName, string characterHomeWorld)
@@ -449,7 +459,10 @@ internal sealed unsafe class TravelService
                 : $"World request started: {CurrentWorld} -> {requestedWorld} ({requestedDataCenter}); character={runCharacterName}@{runCharacterHomeWorld}.");
 
             if (current.DataCenter.Equals(target.DataCenter, StringComparison.OrdinalIgnoreCase))
-                return TryApproachCityAetheryte();
+            {
+                TryApproachCityAetheryte();
+                return true;
+            }
 
             logoutRequested = false;
             characterTravelMenuOpened = false;
@@ -468,6 +481,26 @@ internal sealed unsafe class TravelService
             DalamudServices.Log.Warning(ex, "ShoutRunner could not request travel to {World}.", world);
             return false;
         }
+    }
+
+    public bool RequestReturnHomeWorld(string characterName, string characterHomeWorld)
+    {
+        var home = WorldCatalog.FindWorld(characterHomeWorld);
+        if (home is null || string.IsNullOrWhiteSpace(characterName))
+            return false;
+        if (returnHomeOnly && requestedWorld.Equals(home.Name, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        ClearNavigation();
+        requestedWorld = home.Name;
+        requestedDataCenter = home.DataCenter;
+        runCharacterName = characterName.Trim();
+        runCharacterHomeWorld = characterHomeWorld.Trim();
+        requestStartedUtc = DateTime.UtcNow;
+        nextUiActionUtc = DateTime.UtcNow;
+        returnHomeOnly = true;
+        Trace($"Return-home request started through character selection: {runCharacterName}@{runCharacterHomeWorld}.");
+        return true;
     }
 
     public void TickNavigation()
@@ -512,6 +545,17 @@ internal sealed unsafe class TravelService
         {
             if (DalamudServices.ClientState.IsLoggedIn)
             {
+                if (returnHomeOnly)
+                {
+                    if (!logoutRequested)
+                    {
+                        logoutRequested = SendShellCommand("/logout");
+                        nextUiActionUtc = DateTime.UtcNow.AddSeconds(1);
+                        return;
+                    }
+                    ConfirmVisibleDialog("log out");
+                    return;
+                }
                 var current = WorldCatalog.FindWorld(CurrentWorld);
                 if (current is not null && current.DataCenter.Equals(requestedDataCenter, StringComparison.OrdinalIgnoreCase))
                 {
@@ -629,6 +673,20 @@ internal sealed unsafe class TravelService
         }
     }
 
+    public unsafe bool HandleAetheryteTicketPopup(AetheryteTicketAction action)
+    {
+        var addon = GetReadyAddon("SelectYesno");
+        if (addon is null || !AddonContains(addon, "aetheryte ticket", "ticket"))
+            return false;
+
+        addon->FireCallbackInt(action == AetheryteTicketAction.UseTicket ? 0 : 1);
+        Trace(action == AetheryteTicketAction.UseTicket
+            ? "Accepted the Aetheryte ticket prompt."
+            : "Declined the Aetheryte ticket prompt and continued with the gil teleport.");
+        nextUiActionUtc = DateTime.UtcNow.AddMilliseconds(750);
+        return true;
+    }
+
     public uint GetCityTeleportCost(CityTarget city)
     {
         if (!cityAetherytes.TryGetValue(city, out var id) || id == 0)
@@ -647,19 +705,41 @@ internal sealed unsafe class TravelService
     private bool TryApproachCityAetheryte()
     {
         var localPlayer = DalamudServices.ObjectTable.LocalPlayer;
-        var currentCity = WorldCatalog.Cities.FirstOrDefault(city => IsInCity(city.Id));
+        var currentTerritory = CurrentTerritoryName;
+        var currentCity = GetCurrentCity();
         if (localPlayer is null || currentCity is null ||
             !cityAetherytes.TryGetValue(currentCity.Id, out var aetheryteId))
             return false;
 
-        var aetheryte = DalamudServices.ObjectTable.FirstOrDefault(gameObject =>
-            gameObject.ObjectKind == ObjectKind.Aetheryte && gameObject.BaseId == aetheryteId);
+        if (!IsInCity(currentCity.Id))
+        {
+            var teleportStarted = RequestCity(currentCity.Id);
+            if (teleportStarted)
+            {
+                cityZoneTeleportPending = true;
+                Trace($"Teleporting from {currentTerritory} to the main {currentCity.Name} Aetheryte zone before world travel.");
+                nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
+            }
+            return teleportStarted;
+        }
+        cityZoneTeleportPending = false;
+
+        var expectedNames = currentCity.AetheryteNames;
+        var aetheryte = DalamudServices.ObjectTable
+            .Where(gameObject => gameObject.ObjectKind == ObjectKind.Aetheryte)
+            .Where(gameObject => gameObject.BaseId == aetheryteId ||
+                                 expectedNames.Any(name => gameObject.Name.TextValue.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(gameObject => Vector3.DistanceSquared(localPlayer.Position, gameObject.Position))
+            .FirstOrDefault();
         if (aetheryte is null)
             return false;
 
         DalamudServices.TargetManager.Target = aetheryte;
-        var distance = Vector3.Distance(localPlayer.Position, aetheryte.Position);
-        if (distance <= 6.5f)
+        var centerDistance = Vector3.Distance(localPlayer.Position, aetheryte.Position);
+        var interactionDistance = MathF.Max(
+            0f,
+            centerDistance - MathF.Max(0f, aetheryte.HitboxRadius) - MathF.Max(0f, localPlayer.HitboxRadius));
+        if (aetheryte.IsTargetable && interactionDistance <= 4.75f)
         {
             StopAetheryteApproach();
             unsafe
@@ -670,7 +750,7 @@ internal sealed unsafe class TravelService
                 targetSystem->InteractWithObject(
                     (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)aetheryte.Address);
             }
-            Trace($"Interacted with {currentCity.Name} Aetheryte at {distance:0.0} yalms; waiting for its menu.");
+            Trace($"Interacted directly with the object-table {currentCity.Name} Aetheryte at {interactionDistance:0.0} yalms from its hitbox ({centerDistance:0.0} center distance); waiting for its menu.");
             nextUiActionUtc = DateTime.UtcNow.AddSeconds(1);
             return true;
         }
@@ -680,7 +760,7 @@ internal sealed unsafe class TravelService
         if (!SendShellCommand("/lockon") || !SendShellCommand("/automove"))
             return false;
         aetheryteApproachActive = true;
-        Trace($"Walking toward the {currentCity.Name} Aetheryte; current distance {distance:0.0} yalms.");
+        Trace($"Walking toward the {currentCity.Name} Aetheryte; current hitbox distance {interactionDistance:0.0} yalms ({centerDistance:0.0} center distance).");
         nextUiActionUtc = DateTime.UtcNow.AddMilliseconds(750);
         return true;
     }
@@ -697,6 +777,15 @@ internal sealed unsafe class TravelService
     private void AdvanceDataCenterTravelMenus()
     {
         if (TryAcknowledgeOk()) return;
+        if (returnHomeOnly &&
+            TryGetRunCharacterCurrentWorld(out var homeLoginWorld) &&
+            homeLoginWorld.Equals(runCharacterHomeWorld, StringComparison.OrdinalIgnoreCase) &&
+            !returnHomeRequested)
+        {
+            if (TryConfirmCharacterLogin()) return;
+            if (TryLoginSelectedCharacter()) return;
+            return;
+        }
         if (dataCenterArrivalAcknowledged)
         {
             if (TryConfirmCharacterLogin()) return;
@@ -737,6 +826,12 @@ internal sealed unsafe class TravelService
                 returnHomeProceedSubmitted = false;
                 characterTravelMenuOpened = false;
                 Trace($"Validated return to home world {runCharacterHomeWorld}; resuming travel to {requestedWorld} on {requestedDataCenter}.");
+                if (returnHomeOnly)
+                {
+                    characterLoginSelected = false;
+                    if (TryLoginSelectedCharacter()) return;
+                    return;
+                }
             }
             else
             {
@@ -1642,9 +1737,11 @@ internal sealed unsafe class TravelService
         titleStartSelected = false;
         characterLoginSelected = false;
         worldVisitSubmitted = false;
+        cityZoneTeleportPending = false;
         returnHomeRequested = false;
         returnHomeConfirmationSubmitted = false;
         returnHomeProceedSubmitted = false;
+        returnHomeOnly = false;
         returningHomeViaAetheryte = false;
         queuedDataCenterWorld = string.Empty;
         queuedDataCenterName = string.Empty;
@@ -1696,6 +1793,15 @@ internal sealed class RunService : IDisposable
             state.StartedUtc = state.StartedUtc == default ? DateTime.UtcNow : state.StartedUtc;
             state.CharacterName = string.IsNullOrWhiteSpace(state.CharacterName) ? travel.CharacterName : state.CharacterName;
             state.CharacterHomeWorld = string.IsNullOrWhiteSpace(state.CharacterHomeWorld) ? travel.HomeWorld : state.CharacterHomeWorld;
+            state.StartingWorld = string.IsNullOrWhiteSpace(state.StartingWorld)
+                ? persistence.LastCharacterCurrentWorld
+                : state.StartingWorld;
+            if (state.ReturnHomeAfterRun)
+            {
+                state.PostRunDestination = PostRunDestination.HomeWorld;
+                state.PostRunWorld = state.CharacterHomeWorld;
+                state.ReturnHomeAfterRun = false;
+            }
             foregroundRequested = true;
         }
     }
@@ -1710,11 +1816,12 @@ internal sealed class RunService : IDisposable
         (!DalamudServices.ClientState.IsLoggedIn ||
          DalamudServices.ObjectTable.LocalPlayer is null ||
          state.AwaitingInitialLogin ||
-         state.Phase is RunPhase.TravelingDataCenter or RunPhase.TravelingWorld or RunPhase.TravelingCity or RunPhase.WaitingForArrival);
+         state.Phase is RunPhase.TravelingDataCenter or RunPhase.TravelingWorld or RunPhase.TravelingCity or RunPhase.WaitingForArrival or RunPhase.ReturningHome);
     public int CompletedStops => state is null ? 0 : Math.Clamp(state.StopIndex, 0, state.Route.Count);
     public int SkippedStopCount => state?.SkippedStopIndexes.Count ?? 0;
     public int SuccessfulStopCount => Math.Max(0, CompletedStops - SkippedStopCount);
     public int TotalStops => state?.Route.Count ?? 0;
+    public double ReceiptPausedSeconds => state?.TotalPausedSeconds ?? 0d;
     public IReadOnlyList<RouteStop> Route => state?.Route ?? [];
     public RouteStop? CurrentStop => state is { StopIndex: >= 0 } value && value.StopIndex < value.Route.Count ? value.Route[value.StopIndex] : null;
     public string ReceiptCharacter => state is null
@@ -1734,10 +1841,13 @@ internal sealed class RunService : IDisposable
     public string CurrentTask => state?.Phase switch
     {
         RunPhase.Preparing => CurrentStop is { } stop ? $"Preparing {stop.World}" : "Preparing route",
-        RunPhase.TravelingDataCenter => CurrentStop is { } stop ? $"Travelling to {stop.DataCenter}" : "Changing data centres",
+        RunPhase.TravelingDataCenter => CurrentStop is { } stop ? $"Transferring to {stop.World}" : "Changing Data Centers",
+        RunPhase.TravelingWorld when travel.IsCityZoneTeleportPending => "Loading",
         RunPhase.TravelingWorld => CurrentStop is { } stop ? $"Changing world to {stop.World}" : "Changing worlds",
-        RunPhase.TravelingCity or RunPhase.WaitingForArrival => CurrentStop is { } stop ? $"Teleporting to {stop.CityName}" : "Teleporting",
+        RunPhase.TravelingCity => CurrentStop is { } stop ? $"Teleporting to {stop.CityName}" : "Teleporting",
+        RunPhase.WaitingForArrival => "Loading",
         RunPhase.SendingMessages => CurrentStop is { } stop ? $"Sending messages in {stop.CityName}" : "Sending messages",
+        RunPhase.ReturningHome => state is null ? "Returning after run" : $"Returning to {state.PostRunWorld}",
         RunPhase.Paused => "Run paused",
         RunPhase.Completed => "Run complete",
         RunPhase.Failed => "Run stopped",
@@ -1748,8 +1858,19 @@ internal sealed class RunService : IDisposable
         .Select((stop, index) => (stop, index))
         .Where(item => !state.SkippedStopIndexes.Contains(item.index)) ?? [];
 
+    public int GetConfiguredTotalStops(VenueProfile profile, string? homeWorld)
+    {
+        var allowedWorlds = WorldCatalog.VisibleWorlds(homeWorld, profile.DeveloperMode)
+            .Select(world => world.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return profile.Worlds.Count(allowedWorlds.Contains) * profile.Cities.Count;
+    }
+
     public bool Start(VenueProfile profile, out string error)
     {
+        EnsureDefaultWorldSelection(profile, string.IsNullOrWhiteSpace(travel.HomeWorld)
+            ? persistence.LastCharacterHomeWorld
+            : travel.HomeWorld);
         profile.Normalize();
         if (profile.Messages.Count == 0 || profile.Messages.All(block => string.IsNullOrWhiteSpace(block.Text)))
         {
@@ -1801,7 +1922,7 @@ internal sealed class RunService : IDisposable
             .ThenBy(world => world.DataCenter)
             .ThenBy(world => world.Name)
             .ToArray();
-        var currentCity = WorldCatalog.Cities.FirstOrDefault(city => travel.IsInCity(city.Id));
+        var currentCity = travel.GetCurrentCity();
         var selectedCities = WorldCatalog.Cities
             .Where(city => profile.Cities.Contains(city.Id))
             .ToArray();
@@ -1813,6 +1934,15 @@ internal sealed class RunService : IDisposable
                 .Select(city => new RouteStop(world.Name, world.DataCenter, city.Id)))
             .ToList();
         var firstRouteWorld = route.Count == 0 ? null : WorldCatalog.FindWorld(route[0].World);
+        var allowedPostRunWorlds = WorldCatalog.VisibleWorlds(characterHomeWorld, profile.DeveloperMode)
+            .Select(world => world.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var postRunWorld = profile.PostRunDestination switch
+        {
+            PostRunDestination.HomeWorld => characterHomeWorld,
+            PostRunDestination.ChosenWorld when allowedPostRunWorlds.Contains(profile.ChosenPostRunWorld) => profile.ChosenPostRunWorld,
+            _ => currentWorldName,
+        };
         var requiresInitialLogin =
             !DalamudServices.ClientState.IsLoggedIn &&
             (current is null || firstRouteWorld is null ||
@@ -1823,6 +1953,9 @@ internal sealed class RunService : IDisposable
             StartedUtc = DateTime.UtcNow,
             CharacterName = characterName,
             CharacterHomeWorld = characterHomeWorld,
+            StartingWorld = currentWorldName,
+            PostRunDestination = profile.PostRunDestination,
+            PostRunWorld = postRunWorld,
             ProfileName = profile.Name,
             Phase = DalamudServices.ClientState.IsLoggedIn
                 ? RunPhase.Preparing
@@ -1847,6 +1980,7 @@ internal sealed class RunService : IDisposable
         if (state is null || !IsRunning)
             return;
         state.Phase = RunPhase.Paused;
+        state.PauseStartedUtc = DateTime.UtcNow;
         state.Status = "Run paused. Resume when you are ready to continue from this stop.";
         Save();
     }
@@ -1855,6 +1989,11 @@ internal sealed class RunService : IDisposable
     {
         if (state?.Phase != RunPhase.Paused)
             return;
+        if (state.PauseStartedUtc != default)
+        {
+            state.TotalPausedSeconds += Math.Max(0d, (DateTime.UtcNow - state.PauseStartedUtc).TotalSeconds);
+            state.PauseStartedUtc = default;
+        }
         state.Phase = RunPhase.Preparing;
         state.NextActionUtc = DateTime.UtcNow;
         state.Status = "Resuming run.";
@@ -1895,6 +2034,13 @@ internal sealed class RunService : IDisposable
             var savedProfile = persistence.Profiles.GetValueOrDefault(state.ProfileName);
             if (savedProfile is not null)
                 profile = savedProfile;
+        }
+        if (travel.HandleAetheryteTicketPopup(profile.TicketAction))
+            return;
+        if (state.Phase == RunPhase.ReturningHome)
+        {
+            HandleReturnHome();
+            return;
         }
         if (state.StopIndex >= state.Route.Count)
         {
@@ -2007,7 +2153,7 @@ internal sealed class RunService : IDisposable
 
     private bool PromoteCurrentCityStop(string currentWorld)
     {
-        var currentCity = WorldCatalog.Cities.FirstOrDefault(city => travel.IsInCity(city.Id));
+        var currentCity = travel.GetCurrentCity();
         if (currentCity is null)
             return false;
         var matchingIndex = state!.Route.FindIndex(
@@ -2035,7 +2181,7 @@ internal sealed class RunService : IDisposable
         {
             state.TravelBusyObserved = true;
             state.Status = crossDc
-                ? $"Changing data centres to {targetDefinition.DataCenter}. The tablet will remain available during logout and login."
+                ? $"Changing Data Centers to {targetDefinition.DataCenter}. The tablet will remain available during logout and login."
                 : $"Visiting {stop.World}. Waiting for world travel to finish.";
             return;
         }
@@ -2233,6 +2379,100 @@ internal sealed class RunService : IDisposable
 
     private void Complete()
     {
+        var destination = state!.PostRunWorld;
+        if (!string.IsNullOrWhiteSpace(destination) &&
+            !travel.CurrentWorld.Equals(destination, StringComparison.OrdinalIgnoreCase))
+        {
+            state.Phase = RunPhase.ReturningHome;
+            state.Status = $"Route complete. Returning to {destination}.";
+            state.NextActionUtc = DateTime.UtcNow;
+            Save();
+            return;
+        }
+        FinalizeCompletion();
+    }
+
+    private void HandleReturnHome()
+    {
+        var destination = state!.PostRunWorld;
+        if (travel.CurrentWorld.Equals(destination, StringComparison.OrdinalIgnoreCase))
+        {
+            travel.Abort();
+            FinalizeCompletion();
+            return;
+        }
+
+        var requested = ContinuePostRunTravel(destination);
+        travel.TickNavigation();
+        if (requested)
+        {
+            state.Status = state.PostRunDestination == PostRunDestination.HomeWorld
+                ? $"Returning to home world {destination} through character selection."
+                : $"Returning to {destination}.";
+            Save();
+            return;
+        }
+        state.Status = $"Travel to {destination} could not start. Retrying shortly.";
+        Save();
+    }
+
+    private bool ContinuePostRunTravel(string destination)
+    {
+        if (state!.PostRunDestination == PostRunDestination.HomeWorld)
+            return travel.RequestReturnHomeWorld(state.CharacterName, state.CharacterHomeWorld);
+
+        var destinationDefinition = WorldCatalog.FindWorld(destination);
+        if (destinationDefinition is null)
+            return false;
+
+        if (DalamudServices.ClientState.IsLoggedIn && DalamudServices.ObjectTable.LocalPlayer is not null)
+        {
+            state.PostRunLoginPrepared = false;
+            return travel.RequestWorld(destination, state.CharacterName, state.CharacterHomeWorld);
+        }
+
+        var lobbyWorldName = travel.GetLobbyCharacterCurrentWorld(state.CharacterName, state.CharacterHomeWorld);
+        var lobbyWorld = WorldCatalog.FindWorld(lobbyWorldName);
+        var homeWorld = WorldCatalog.FindWorld(state.CharacterHomeWorld);
+
+        if (lobbyWorld is not null &&
+            lobbyWorld.DataCenter.Equals(destinationDefinition.DataCenter, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!state.PostRunLoginPrepared)
+            {
+                state.PostRunLoginPrepared = true;
+                Save();
+            }
+            travel.ContinueCharacterLogin(
+                state.CharacterName,
+                state.CharacterHomeWorld,
+                lobbyWorld.Name,
+                allowTitleStart: false);
+            return true;
+        }
+
+        state.PostRunLoginPrepared = false;
+        if (homeWorld is not null &&
+            destinationDefinition.DataCenter.Equals(homeWorld.DataCenter, StringComparison.OrdinalIgnoreCase))
+        {
+            return travel.RequestReturnHomeWorld(state.CharacterName, state.CharacterHomeWorld);
+        }
+
+        return ContinuePostRunDataCenterNavigation(destinationDefinition);
+    }
+
+    private bool ContinuePostRunDataCenterNavigation(WorldDefinition destination)
+    {
+        travel.ContinueDataCenterNavigation(
+            destination.Name,
+            destination.DataCenter,
+            state!.CharacterName,
+            state.CharacterHomeWorld);
+        return true;
+    }
+
+    private void FinalizeCompletion()
+    {
         state!.Phase = RunPhase.Completed;
         state.CompletedUtc = DateTime.UtcNow;
         state.CharacterName = string.IsNullOrWhiteSpace(state.CharacterName) ? travel.CharacterName : state.CharacterName;
@@ -2244,6 +2484,27 @@ internal sealed class RunService : IDisposable
             : $"Run complete with {state.Route.Count - skipped:N0} successful stop(s) and {skipped:N0} skipped stop(s).";
         foregroundRequested = true;
         Save();
+    }
+
+    private void EnsureDefaultWorldSelection(VenueProfile profile, string? homeWorld)
+    {
+        if (profile.WorldDefaultsInitialized)
+            return;
+
+        if (profile.Worlds.Count > 0)
+        {
+            profile.WorldDefaultsInitialized = true;
+            persistence.SaveProfile(profile);
+            return;
+        }
+
+        var region = WorldCatalog.DetectHomeRegion(homeWorld);
+        profile.Worlds = WorldCatalog.Worlds
+            .Where(world => world.Region == region && world.Region != ShoutRunnerRegion.Oceania)
+            .Select(world => world.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        profile.WorldDefaultsInitialized = true;
+        persistence.SaveProfile(profile);
     }
 
     private static string CreateReceiptCode(PersistedRunState completed)

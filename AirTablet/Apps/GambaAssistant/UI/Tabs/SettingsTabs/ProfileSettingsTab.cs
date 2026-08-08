@@ -31,10 +31,60 @@ public sealed class ProfileSettingsTab
 
         DrawActiveProfileCard();
         DrawCreateProfileCard();
+        DrawProfileTransferCard();
         DrawManageProfilesCard();
 
         if (!string.IsNullOrWhiteSpace(lastMessage))
             ImGui.TextDisabled(lastMessage);
+    }
+
+    private void DrawProfileTransferCard()
+    {
+        UiHelpers.Card("Transfer Venue Profile", () =>
+        {
+            ImGui.TextWrapped("Export the active venue profile to a JSON file for another staff member, or import a transferred JSON file as a new venue. Existing profiles are never overwritten.");
+            if (ImGui.Button("Export Active Profile"))
+            {
+                var path = FileDialogService.PickJsonToSave(
+                    profiles.ProfileTransferDirectory,
+                    profiles.GetDefaultProfileExportFileName(profiles.ActiveProfile),
+                    "Export GambaAssistant venue profile");
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    try
+                    {
+                        profiles.ExportProfileToFile(profiles.ActiveProfile, path);
+                        lastMessage = $"Exported {profiles.ActiveProfile.Name} to {path}.";
+                    }
+                    catch (Exception ex)
+                    {
+                        lastMessage = $"The venue profile could not be exported: {ex.Message}";
+                    }
+                }
+            }
+            UiHelpers.Tooltip("Choose where to save a complete JSON copy of the active venue profile for backup or transfer to another staff member.");
+            ImGui.SameLine();
+            if (session.IsActive) ImGui.BeginDisabled();
+            if (ImGui.Button("Import Venue Profile"))
+            {
+                var path = FileDialogService.PickJsonToOpen(
+                    profiles.ProfileTransferDirectory,
+                    "Import GambaAssistant venue profile");
+                var reason = string.Empty;
+                if (!string.IsNullOrWhiteSpace(path) &&
+                    profiles.TryImportProfileFile(path, session, out var imported, out reason))
+                {
+                    selected = profiles.Profiles.FindIndex(profile => profile.Id == imported!.Id);
+                    lastMessage = $"Imported and selected {imported!.Name}.";
+                }
+                else if (!string.IsNullOrWhiteSpace(path))
+                {
+                    lastMessage = reason;
+                }
+            }
+            if (session.IsActive) ImGui.EndDisabled();
+            UiHelpers.Tooltip("Choose a GambaAssistant venue profile JSON file. It is validated, added as a new profile, and selected without overwriting an existing venue.");
+        });
     }
 
     private void DrawActiveProfileCard()

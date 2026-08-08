@@ -7,7 +7,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.0.95.0";
+    private const string ReleaseVersion = "1.0.4.1";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -102,7 +102,11 @@ internal sealed class TabletWindow
     private bool migrationConfirmationPending;
     private bool welcomeSetupConfirmationPending;
     private bool lastRenderedMinimized;
-    private bool forceNextWindowPosition;
+    private bool preserveRememberedMiniOnNextForegroundCheck;
+    // ImGui retains the shell window position across plugin reloads. Force the
+    // first rendered frame to use the position saved for the selected size so
+    // a full-size startup cannot inherit the last mini position (and vice versa).
+    private bool forceNextWindowPosition = true;
 
     private bool HasUnreadChangelog =>
         config.SetupCompleted &&
@@ -134,14 +138,24 @@ internal sealed class TabletWindow
         supporters = LoadSupporters();
         migrationStatus = GetMigrationHistoryStatus();
         NormalizeMiniSettings();
+        if (config.SetupCompleted && config.TutorialCompleted)
+        {
+            config.Minimized = config.StartupTabletMode switch
+            {
+                "Full" => false,
+                "Mini" => true,
+                _ => config.Minimized,
+            };
+        }
         lastRenderedMinimized = config.Minimized;
-        startupAnimationPending = config.ShowStartupAnimation;
-        if (startupAnimationPending)
-            config.Minimized = false;
+        preserveRememberedMiniOnNextForegroundCheck =
+            config.Minimized &&
+            config.StartupTabletMode.Equals("RememberLast", StringComparison.OrdinalIgnoreCase);
+        startupAnimationPending = config.ShowStartupAnimation && !config.Minimized;
         if (config.SetupCompleted && !config.TutorialCompleted)
         {
             tutorialStep = TutorialStep.Home;
-            screen = Screen.Settings;
+            screen = Screen.Home;
             settingsPage = SettingsPage.General;
             config.Minimized = false;
         }
@@ -151,16 +165,19 @@ internal sealed class TabletWindow
 
     public void OpenHome()
     {
-        screen = !config.SetupCompleted
-            ? Screen.Welcome
-            : tutorialStep != TutorialStep.None
-                ? Screen.Settings
-                : Screen.Home;
+        screen = config.SetupCompleted ? Screen.Home : Screen.Welcome;
         if (!config.SetupCompleted)
             welcomePage = 0;
         settingsPage = SettingsPage.General;
         activeModuleId = string.Empty;
-        config.Minimized = false;
+        config.Minimized = config.SetupCompleted && config.TutorialCompleted
+            ? config.StartupTabletMode switch
+            {
+                "Full" => false,
+                "Mini" => true,
+                _ => config.Minimized,
+            }
+            : false;
         config.WindowVisible = true;
         save();
     }
@@ -181,7 +198,6 @@ internal sealed class TabletWindow
     {
         recoveryRequested = true;
         config.WindowVisible = true;
-        config.Minimized = false;
     }
 
     public void Draw(bool allowDuringTravel = false)
@@ -282,6 +298,24 @@ internal sealed class TabletWindow
 
     private void ProcessAppForegroundRequest()
     {
+        var preserveRememberedMini = preserveRememberedMiniOnNextForegroundCheck;
+        preserveRememberedMiniOnNextForegroundCheck = false;
+
+        if (tutorialStep != TutorialStep.None)
+        {
+            appHost.ConsumeHomeRequest();
+            appHost.ConsumeForegroundRequest();
+            return;
+        }
+
+        if (appHost.ConsumeHomeRequest())
+        {
+            activeModuleId = string.Empty;
+            BeginOpening(Screen.Home);
+            saveImmediate();
+            return;
+        }
+
         var requestedAppId = appHost.ConsumeForegroundRequest();
         if (string.IsNullOrWhiteSpace(requestedAppId) ||
             !config.SetupCompleted ||
@@ -292,7 +326,8 @@ internal sealed class TabletWindow
         }
 
         config.WindowVisible = true;
-        config.Minimized = false;
+        if (!preserveRememberedMini)
+            config.Minimized = false;
         activeModuleId = requestedAppId;
         BeginOpening(Screen.Module);
         saveImmediate();
@@ -512,11 +547,22 @@ internal sealed class TabletWindow
     private void RecoverToActiveGameScreen()
     {
         var viewport = ImGui.GetMainViewport();
-        var tabletSize = FullOuterSize * LargeTabletScale;
-        config.Position =
+        var minimized = config.Minimized;
+        var tabletSize = minimized
+            ? MiniOuterSize * SmallTabletScale
+            : FullOuterSize * LargeTabletScale;
+        var centeredPosition =
             viewport.Pos +
             Vector2.Max(Vector2.Zero, (viewport.Size - tabletSize) * 0.5f);
-        config.Minimized = false;
+        if (minimized)
+        {
+            config.MiniPosition = centeredPosition;
+            config.MiniPositionInitialized = true;
+        }
+        else
+        {
+            config.Position = centeredPosition;
+        }
         config.WindowVisible = true;
         recoveryRequested = false;
         forceNextWindowPosition = true;
@@ -827,6 +873,18 @@ internal sealed class TabletWindow
                 palette.AccentHover);
         }
         draw.PopClipRect();
+
+        if (tutorialStep == TutorialStep.Home)
+        {
+            var tutorialHitMin = target - S(new Vector2(75f, 10f));
+            var tutorialHitSize = S(new Vector2(150f, 18f));
+            ImGui.SetCursorScreenPos(tutorialHitMin);
+            if (ImGui.InvisibleButton("##tutorial-home-control", tutorialHitSize))
+            {
+                ReturnHome();
+                AdvanceControlTutorial(TutorialStep.LockPosition);
+            }
+        }
     }
 
     private void DrawMiniTutorial(
@@ -2429,7 +2487,7 @@ internal sealed class TabletWindow
         settingsPage = SettingsPage.General;
         activeModuleId = string.Empty;
         saveImmediate();
-        BeginOpening(Screen.Settings);
+        BeginOpening(Screen.Home);
         if (failed.Count > 0)
             ShowNotice($"Could not start: {string.Join(", ", failed)}.");
     }
@@ -2983,7 +3041,7 @@ internal sealed class TabletWindow
         DrawSettingsGroupLabel("Startup");
         if (BeginSettingsGroup(
                 "##settings-startup-group",
-                136f,
+                250f,
                 palette))
         {
             var showStartupAnimation = config.ShowStartupAnimation;
@@ -2991,13 +3049,12 @@ internal sealed class TabletWindow
                     "startup-animation",
                     "Show AirTablet loading animation",
                     ref showStartupAnimation,
-                    false))
+                    true))
             {
                 config.ShowStartupAnimation = showStartupAnimation;
                 save();
             }
 
-            ImGui.Separator();
             var showBeforeLogin = config.ShowBeforeCharacterLogin;
             if (DrawSettingsToggleRow(
                     "show-before-character-login",
@@ -3008,6 +3065,37 @@ internal sealed class TabletWindow
                 config.ShowBeforeCharacterLogin = showBeforeLogin;
                 save();
             }
+
+            ImGui.Dummy(new Vector2(0f, C(8f)));
+            ImGui.TextUnformatted("Opening size");
+            ImGui.Dummy(new Vector2(0f, C(4f)));
+            var openingButtonWidth = MathF.Max(
+                C(100f),
+                (ImGui.GetContentRegionAvail().X - C(16f)) / 3f);
+            foreach (var option in new[]
+                     {
+                         (Value: "RememberLast", Label: "Remember last size"),
+                         (Value: "Full", Label: "Open full size"),
+                         (Value: "Mini", Label: "Open mini"),
+                     })
+            {
+                var selected = config.StartupTabletMode.Equals(option.Value, StringComparison.OrdinalIgnoreCase);
+                if (selected)
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Button, palette.Accent);
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, palette.AccentHover);
+                }
+                if (ImGui.Button(option.Label, new Vector2(openingButtonWidth, C(30f))))
+                {
+                    config.StartupTabletMode = option.Value;
+                    save();
+                }
+                if (selected)
+                    ImGui.PopStyleColor(2);
+                if (option.Value != "Mini")
+                    ImGui.SameLine(0f, C(8f));
+            }
+            ImGui.Dummy(new Vector2(0f, C(10f)));
         }
         EndSettingsGroup();
 

@@ -12,6 +12,7 @@ public sealed class Configuration : IPluginConfiguration
     public string LastCharacterName { get; set; } = string.Empty;
     public string LastCharacterHomeWorld { get; set; } = string.Empty;
     public string LastCharacterCurrentWorld { get; set; } = string.Empty;
+    public string LastAcknowledgedEarlyAccessVersion { get; set; } = string.Empty;
 
     internal static string CleanProfileName(string? value)
     {
@@ -56,9 +57,23 @@ internal enum RunPhase
     TravelingCity,
     WaitingForArrival,
     SendingMessages,
+    ReturningHome,
     Paused,
     Completed,
     Failed,
+}
+
+internal enum AetheryteTicketAction
+{
+    UseTicket,
+    PayGil,
+}
+
+internal enum PostRunDestination
+{
+    StartingWorld,
+    HomeWorld,
+    ChosenWorld,
 }
 
 internal sealed class MessageBlock
@@ -82,11 +97,16 @@ internal sealed class VenueProfile
         CityTarget.Uldah,
     ];
     public HashSet<string> Worlds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool WorldDefaultsInitialized { get; set; }
     public bool DeveloperMode { get; set; }
+    public PostRunDestination PostRunDestination { get; set; } = PostRunDestination.StartingWorld;
+    public string ChosenPostRunWorld { get; set; } = string.Empty;
+    public bool ReturnHomeAfterRun { get; set; }
+    public AetheryteTicketAction TicketAction { get; set; } = AetheryteTicketAction.UseTicket;
     public int MessageDelaySeconds { get; set; } = 3;
-    public int InitialRetryDelaySeconds { get; set; } = 5;
-    public int RetryDelayIncreaseSeconds { get; set; } = 5;
-    public int MaximumTravelAttempts { get; set; } = 4;
+    public int InitialRetryDelaySeconds { get; set; } = 3;
+    public int RetryDelayIncreaseSeconds { get; set; } = 3;
+    public int MaximumTravelAttempts { get; set; } = 3;
     public bool TryAlternateDataCenterWorlds { get; set; } = true;
 
     public void Normalize()
@@ -106,9 +126,15 @@ internal sealed class VenueProfile
                 block.Text = block.Text[..400];
         }
         MessageDelaySeconds = Math.Clamp(MessageDelaySeconds, 1, 30);
-        InitialRetryDelaySeconds = Math.Clamp(InitialRetryDelaySeconds, 5, 120);
+        InitialRetryDelaySeconds = Math.Clamp(InitialRetryDelaySeconds, 1, 120);
         RetryDelayIncreaseSeconds = Math.Clamp(RetryDelayIncreaseSeconds, 0, 120);
         MaximumTravelAttempts = Math.Clamp(MaximumTravelAttempts, 1, 20);
+        if (ReturnHomeAfterRun)
+        {
+            PostRunDestination = PostRunDestination.HomeWorld;
+            ReturnHomeAfterRun = false;
+        }
+        ChosenPostRunWorld = ChosenPostRunWorld?.Trim() ?? string.Empty;
     }
 }
 
@@ -183,8 +209,14 @@ internal sealed class PersistedRunState
     public string RunId { get; set; } = string.Empty;
     public DateTime StartedUtc { get; set; }
     public DateTime CompletedUtc { get; set; }
+    public DateTime PauseStartedUtc { get; set; }
+    public double TotalPausedSeconds { get; set; }
     public string CharacterName { get; set; } = string.Empty;
     public string CharacterHomeWorld { get; set; } = string.Empty;
+    public string StartingWorld { get; set; } = string.Empty;
+    public PostRunDestination PostRunDestination { get; set; } = PostRunDestination.StartingWorld;
+    public string PostRunWorld { get; set; } = string.Empty;
+    public bool PostRunLoginPrepared { get; set; }
     public string ReceiptCode { get; set; } = string.Empty;
     public string ProfileName { get; set; } = string.Empty;
     public RunPhase Phase { get; set; }
@@ -198,6 +230,7 @@ internal sealed class PersistedRunState
     public bool TravelBusyObserved { get; set; }
     public bool AwaitingInitialLogin { get; set; }
     public bool AwaitingDestinationLogin { get; set; }
+    public bool ReturnHomeAfterRun { get; set; }
     public ulong TeleportGilSpent { get; set; }
     public string Status { get; set; } = string.Empty;
 }

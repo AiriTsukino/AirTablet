@@ -2,7 +2,7 @@
   {
     "id": "AutoGreet",
     "name": "AutoGreet",
-    "version": "1.0.57.0",
+    "version": "1.0.59.0",
     "tagline": "Welcome and track venue guests",
     "iconUrl": "Resources/Apps/AutoGreet/AGLogo.png"
   },
@@ -16,7 +16,7 @@
   {
     "id": "GambaAssistant",
     "name": "GambaAssistant",
-    "version": "0.1.20.0",
+    "version": "0.1.23.0",
     "tagline": "Blackjack and DRT dealer tools",
     "iconUrl": "Resources/Apps/GambaAssistant/GALogo.png"
   },
@@ -44,7 +44,7 @@
   {
     "id": "ShoutRunner",
     "name": "ShoutRunner",
-      "version": "1.0.28.0",
+    "version": "1.0.35.0",
     "tagline": "Automated venue shout routes",
     "iconUrl": "Resources/Apps/ShoutRunner/SRLogo.png"
   }

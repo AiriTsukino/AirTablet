@@ -15,6 +15,7 @@ internal sealed class AirTabletModule : AirTablet.Services.IAirTabletApp
     public void Draw() => runtime?.DrawEmbedded();
     public void Tick() => runtime?.Tick();
     public bool ConsumeForegroundRequest() => runtime?.ConsumeForegroundRequest() ?? false;
+    public bool ConsumeHomeRequest() => runtime?.ConsumeHomeRequest() ?? false;
     public bool CanNavigateBack() => runtime?.CanNavigateBackEmbedded() ?? false;
     public bool NavigateBack() => runtime?.NavigateBackEmbedded() ?? false;
 

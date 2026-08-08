@@ -35,6 +35,7 @@ internal sealed class Plugin : IDisposable
     private DeathRollBracketWindow? drtBracketWindow;
     private DateTimeOffset nextBlackjackAutosaveAt = DateTimeOffset.MinValue;
     private DateTimeOffset nextDeathRollAutosaveAt = DateTimeOffset.MinValue;
+    private DateTimeOffset nextPartySyncAt = DateTimeOffset.MinValue;
     private bool disposed;
     private readonly bool tabletHosted;
 
@@ -161,6 +162,7 @@ internal sealed class Plugin : IDisposable
 
     private void DrawUi()
     {
+        SafeRun("Sync live party", SyncLiveParty);
         SafeRun("Poll trade window", () => tradeMonitor.Tick());
         SafeRun("Draw windows", () => windowSystem.Draw());
         SafeRun("Draw overlays", () => overlays.Draw());
@@ -201,8 +203,12 @@ internal sealed class Plugin : IDisposable
 
     internal void TickEmbedded()
     {
-        SafeRun("Poll trade window", () => tradeMonitor.Tick());
-        SafeRun("Draw overlays", () => overlays.Draw());
+        if (party.CanReadLocalPlayer)
+        {
+            SafeRun("Sync live party", SyncLiveParty);
+            SafeRun("Poll trade window", () => tradeMonitor.Tick());
+            SafeRun("Draw overlays", () => overlays.Draw());
+        }
         SafeRun("Autosave Blackjack session", AutosaveBlackjackSession);
         SafeRun("Autosave DRT session", AutosaveDeathRollTournament);
     }
@@ -238,6 +244,17 @@ internal sealed class Plugin : IDisposable
 
         nextBlackjackAutosaveAt = now.AddSeconds(1);
         persistence.SaveBlackjackSession(session);
+    }
+
+    private void SyncLiveParty()
+    {
+        if (chatQueue.DemoMode || !party.CanReadLocalPlayer)
+            return;
+        var now = DateTimeOffset.UtcNow;
+        if (now < nextPartySyncAt)
+            return;
+        nextPartySyncAt = now.AddSeconds(1);
+        players.SyncParty(party.GetPartyTableOrder());
     }
 
     private void AutosaveDeathRollTournament()

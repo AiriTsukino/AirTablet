@@ -7,6 +7,18 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-08] AirTabOS v1.0.4.1
+- Added startup size preferences with options to remember the last tablet size, always open full size, or always open in Mini Mode.
+
+[2026-08-08] GambaAssistant v0.1.23.0
+- Added venue profile exports to JSON files for sharing complete venue configurations with other staff members.
+- Added venue profile imports through a file picker.
+- Imported venue profiles are added as new profiles without overwriting existing venues.
+
+[2026-08-08] ShoutRunner v1.0.35.0
+- Opened ShoutRunner Early Access to all users, please report bugs in community discord ♥.
+- Added a ShoutRunner page to the AirTabOS Wiki.
+
 [2026-08-02] AirTabOS v1.0.95.0
 - Added an optional General setting to show AirTablet before character login, disabled by default.
 - Added support for keeping AirTablet visible while ShoutRunner performs world and data-center travel.

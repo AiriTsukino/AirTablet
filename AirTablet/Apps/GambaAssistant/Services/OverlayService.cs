@@ -1109,6 +1109,8 @@ public sealed class OverlayService
         {
             lines.Add(player.DisplayName);
             lines.Add(player.Status == PlayerStatus.SpectatorStaff ? "Spectator" : "Sitting Out");
+            if (player.Status == PlayerStatus.SittingOut)
+                lines.Add($"Bank: {player.Bank.Available:N0} gil");
             return lines;
         }
 

@@ -68,6 +68,12 @@ public sealed class Plugin : IDalamudPlugin
             config.Version = 15;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
+        if (hadExistingConfig && previousVersion < 16)
+        {
+            config.StartupTabletMode = "RememberLast";
+            config.Version = 16;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
         SaveAppSelectionState(config);
         catalog = new CatalogService(config);
         changelog = new ChangelogService();
