@@ -273,6 +273,7 @@ internal sealed unsafe class TravelService
     private bool worldVisitSubmitted;
     private bool returnHomeRequested;
     private bool returnHomeConfirmationSubmitted;
+    private DateTime returnHomeConfirmationSubmittedUtc;
     private bool returnHomeProceedSubmitted;
     private bool returnHomeOnly;
     private bool returningHomeViaAetheryte;
@@ -280,6 +281,7 @@ internal sealed unsafe class TravelService
     private string queuedDataCenterName = string.Empty;
     private string runCharacterName = string.Empty;
     private string runCharacterHomeWorld = string.Empty;
+    private int generalReactionDelaySeconds;
 
     public TravelService()
     {
@@ -300,7 +302,11 @@ internal sealed unsafe class TravelService
     }
 
     public bool DestinationArrivalAcknowledged => dataCenterArrivalAcknowledged;
+    public bool AutomaticDataCenterConnectionPending => dataCenterProceedSubmitted && !dataCenterArrivalAcknowledged;
     public bool IsCityZoneTeleportPending => cityZoneTeleportPending;
+
+    public void SetGeneralReactionDelaySeconds(int seconds) =>
+        generalReactionDelaySeconds = Math.Clamp(seconds, 0, 10);
 
     public void ClearDebugLog()
     {
@@ -453,6 +459,7 @@ internal sealed unsafe class TravelService
             worldVisitSubmitted = false;
             returnHomeRequested = false;
             returnHomeConfirmationSubmitted = false;
+            returnHomeConfirmationSubmittedUtc = default;
             returnHomeProceedSubmitted = false;
             Trace(returningHomeViaAetheryte
                 ? $"Data-center request queued: {current.Name} -> {target.Name} ({target.DataCenter}); returning through the Aetheryte to home world {home!.Name} first."
@@ -531,6 +538,7 @@ internal sealed unsafe class TravelService
                 worldVisitSubmitted = false;
                 returnHomeRequested = false;
                 returnHomeConfirmationSubmitted = false;
+                returnHomeConfirmationSubmittedUtc = default;
                 returnHomeProceedSubmitted = false;
                 Trace($"Arrived on home world {completedHomeWorld}; continuing queued data-center travel to {requestedWorld} on {requestedDataCenter}.");
                 return;
@@ -541,6 +549,7 @@ internal sealed unsafe class TravelService
         if (DateTime.UtcNow < nextUiActionUtc)
             return;
 
+        var actionCycleUtc = DateTime.UtcNow;
         try
         {
             if (DalamudServices.ClientState.IsLoggedIn)
@@ -602,13 +611,18 @@ internal sealed unsafe class TravelService
             DalamudServices.Log.Warning(ex, "ShoutRunner's internal travel navigator could not advance its current step.");
             nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
         }
+        finally
+        {
+            ApplyReactionDelayFloor(actionCycleUtc);
+        }
     }
 
     public void ContinueDataCenterNavigation(
         string world,
         string dataCenter,
         string characterName,
-        string characterHomeWorld)
+        string characterHomeWorld,
+        bool awaitingAutomaticConnection = false)
     {
         if (string.IsNullOrWhiteSpace(requestedWorld))
         {
@@ -619,8 +633,11 @@ internal sealed unsafe class TravelService
             requestStartedUtc = DateTime.UtcNow;
             nextUiActionUtc = DateTime.UtcNow;
             logoutRequested = true;
-            titleStartSelected = false;
-            Trace($"Reconstructed data-center navigation after logout/reload: {requestedWorld} on {requestedDataCenter}; character={runCharacterName}@{runCharacterHomeWorld}.");
+            dataCenterProceedSubmitted = awaitingAutomaticConnection;
+            titleStartSelected = awaitingAutomaticConnection;
+            Trace(awaitingAutomaticConnection
+                ? $"Reconstructed submitted data-center travel after reload: {requestedWorld} on {requestedDataCenter}; waiting for the game's automatic destination connection without selecting Start."
+                : $"Reconstructed data-center navigation after logout/reload: {requestedWorld} on {requestedDataCenter}; character={runCharacterName}@{runCharacterHomeWorld}.");
         }
         TickNavigation();
     }
@@ -635,26 +652,34 @@ internal sealed unsafe class TravelService
         runCharacterHomeWorld = characterHomeWorld.Trim();
         if (DateTime.UtcNow < nextUiActionUtc)
             return;
-        if (TryAcknowledgeOk()) return;
-        if (TryConfirmCharacterLogin()) return;
-        if (!string.IsNullOrWhiteSpace(requiredCurrentWorld))
+        var actionCycleUtc = DateTime.UtcNow;
+        try
         {
-            if (!TryGetRunCharacterCurrentWorld(out var loginWorld) ||
-                !loginWorld.Equals(requiredCurrentWorld, StringComparison.OrdinalIgnoreCase))
+            if (TryAcknowledgeOk()) return;
+            if (TryConfirmCharacterLogin()) return;
+            if (!string.IsNullOrWhiteSpace(requiredCurrentWorld))
             {
-                TraceThrottled(
-                    "required-login-world-wait",
-                    $"Destination login is waiting for {requiredCurrentWorld}; the saved character currently reports {loginWorld}. Title-screen Start is disabled during this automatic connection. Addons: {DescribeLobbyAddons()}.",
-                    TimeSpan.FromSeconds(3));
-                return;
+                if (!TryGetRunCharacterCurrentWorld(out var loginWorld) ||
+                    !loginWorld.Equals(requiredCurrentWorld, StringComparison.OrdinalIgnoreCase))
+                {
+                    TraceThrottled(
+                        "required-login-world-wait",
+                        $"Destination login is waiting for {requiredCurrentWorld}; the saved character currently reports {loginWorld}. Title-screen Start is disabled during this automatic connection. Addons: {DescribeLobbyAddons()}.",
+                        TimeSpan.FromSeconds(3));
+                    return;
+                }
             }
+            if (TryLoginSelectedCharacter()) return;
+            if (allowTitleStart && TryOpenTitleStart()) return;
+            TraceThrottled(
+                "character-login-wait",
+                $"Waiting for the unlocked character list before logging in {runCharacterName}@{runCharacterHomeWorld}. Addons: {DescribeLobbyAddons()}. Characters: {DescribeLobbyCharacters()}.",
+                TimeSpan.FromSeconds(3));
         }
-        if (TryLoginSelectedCharacter()) return;
-        if (allowTitleStart && TryOpenTitleStart()) return;
-        TraceThrottled(
-            "character-login-wait",
-            $"Waiting for the unlocked character list before logging in {runCharacterName}@{runCharacterHomeWorld}. Addons: {DescribeLobbyAddons()}. Characters: {DescribeLobbyCharacters()}.",
-            TimeSpan.FromSeconds(3));
+        finally
+        {
+            ApplyReactionDelayFloor(actionCycleUtc);
+        }
     }
 
     public unsafe bool RequestCity(CityTarget city)
@@ -684,6 +709,7 @@ internal sealed unsafe class TravelService
             ? "Accepted the Aetheryte ticket prompt."
             : "Declined the Aetheryte ticket prompt and continued with the gil teleport.");
         nextUiActionUtc = DateTime.UtcNow.AddMilliseconds(750);
+        ApplyReactionDelayFloor(DateTime.UtcNow);
         return true;
     }
 
@@ -823,6 +849,7 @@ internal sealed unsafe class TravelService
             {
                 returnHomeRequested = false;
                 returnHomeConfirmationSubmitted = false;
+                returnHomeConfirmationSubmittedUtc = default;
                 returnHomeProceedSubmitted = false;
                 characterTravelMenuOpened = false;
                 Trace($"Validated return to home world {runCharacterHomeWorld}; resuming travel to {requestedWorld} on {requestedDataCenter}.");
@@ -835,6 +862,21 @@ internal sealed unsafe class TravelService
             }
             else
             {
+                if (returnHomeConfirmationSubmitted &&
+                    !returnHomeProceedSubmitted &&
+                    returnHomeConfirmationSubmittedUtc != default &&
+                    DateTime.UtcNow - returnHomeConfirmationSubmittedUtc >= TimeSpan.FromSeconds(30) &&
+                    GetReadyAddon("_CharaSelectListMenu") is not null)
+                {
+                    Trace($"Return-home confirmation did not advance after 30 seconds while {currentLoginWorld} remained visible. Reopening the saved character's Return to Home World flow.");
+                    returnHomeRequested = false;
+                    returnHomeConfirmationSubmitted = false;
+                    returnHomeConfirmationSubmittedUtc = default;
+                    returnHomeProceedSubmitted = false;
+                    characterTravelMenuOpened = false;
+                    nextUiActionUtc = DateTime.UtcNow.AddSeconds(1);
+                    return;
+                }
                 TraceThrottled(
                     "return-home-wait",
                     $"Waiting for {runCharacterName} to finish returning to home world {runCharacterHomeWorld}. Current login world: {currentLoginWorld}. Addons: {DescribeLobbyAddons()}.",
@@ -1002,6 +1044,7 @@ internal sealed unsafe class TravelService
             characterTravelMenuOpened = true;
             returnHomeRequested = true;
             returnHomeConfirmationSubmitted = false;
+            returnHomeConfirmationSubmittedUtc = default;
             returnHomeProceedSubmitted = false;
             Trace($"Selected Return to Home World for {runCharacterName}: {currentLoginWorld} -> {runCharacterHomeWorld}.");
             nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
@@ -1230,6 +1273,7 @@ internal sealed unsafe class TravelService
             return false;
         FireIntsAndClose(addon, 4);
         returnHomeConfirmationSubmitted = true;
+        returnHomeConfirmationSubmittedUtc = DateTime.UtcNow;
         Trace($"Confirmed return to home data center and home world {runCharacterHomeWorld}.");
         nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
         return true;
@@ -1740,11 +1784,21 @@ internal sealed unsafe class TravelService
         cityZoneTeleportPending = false;
         returnHomeRequested = false;
         returnHomeConfirmationSubmitted = false;
+        returnHomeConfirmationSubmittedUtc = default;
         returnHomeProceedSubmitted = false;
         returnHomeOnly = false;
         returningHomeViaAetheryte = false;
         queuedDataCenterWorld = string.Empty;
         queuedDataCenterName = string.Empty;
+    }
+
+    private void ApplyReactionDelayFloor(DateTime actionCycleUtc)
+    {
+        if (generalReactionDelaySeconds <= 0)
+            return;
+        var reactionNotBefore = actionCycleUtc.AddSeconds(generalReactionDelaySeconds);
+        if (nextUiActionUtc < reactionNotBefore)
+            nextUiActionUtc = reactionNotBefore;
     }
 
     private void ResolveCityAetherytes()
@@ -2035,6 +2089,7 @@ internal sealed class RunService : IDisposable
             if (savedProfile is not null)
                 profile = savedProfile;
         }
+        travel.SetGeneralReactionDelaySeconds(profile.GeneralReactionDelaySeconds);
         if (travel.HandleAetheryteTicketPopup(profile.TicketAction))
             return;
         if (state.Phase == RunPhase.ReturningHome)
@@ -2083,10 +2138,18 @@ internal sealed class RunService : IDisposable
                     stop.World,
                     stop.DataCenter,
                     state.CharacterName,
-                    state.CharacterHomeWorld);
+                    state.CharacterHomeWorld,
+                    state.AwaitingAutomaticDataCenterConnection);
+                if (travel.AutomaticDataCenterConnectionPending &&
+                    !state.AwaitingAutomaticDataCenterConnection)
+                {
+                    state.AwaitingAutomaticDataCenterConnection = true;
+                    Save();
+                }
                 if (travel.DestinationArrivalAcknowledged)
                 {
                     state.AwaitingDestinationLogin = true;
+                    state.AwaitingAutomaticDataCenterConnection = false;
                     state.Status = $"Data-center travel reached {stop.DataCenter}. Waiting for the destination character screen to log in {state.CharacterName}.";
                     Save();
                 }
@@ -2097,6 +2160,7 @@ internal sealed class RunService : IDisposable
         {
             state.AwaitingInitialLogin = false;
             state.AwaitingDestinationLogin = false;
+            state.AwaitingAutomaticDataCenterConnection = false;
             ResetTravelAttempt();
             travel.Abort();
             state.Phase = RunPhase.Preparing;
@@ -2189,12 +2253,15 @@ internal sealed class RunService : IDisposable
         {
             var elapsed = DateTime.UtcNow - state.TravelRequestUtc;
             var acceptedTravelTimedOut = state.TravelBusyObserved && elapsed >= TimeSpan.FromMinutes(10);
-            var unacceptedTravelTimedOut = !state.TravelBusyObserved && elapsed >= TimeSpan.FromSeconds(15);
+            var reactionAllowance = profile.GeneralReactionDelaySeconds * 8;
+            var unacceptedTravelTimedOut = !state.TravelBusyObserved &&
+                                          elapsed >= TimeSpan.FromSeconds(15 + reactionAllowance);
             if (acceptedTravelTimedOut || unacceptedTravelTimedOut)
             {
                 travel.Abort();
                 state.TravelRequestUtc = default;
                 state.TravelBusyObserved = false;
+                state.AwaitingAutomaticDataCenterConnection = false;
                 ScheduleRetry(profile, $"Travel to {stop.World} ended before the destination was reached.");
                 Save();
             }
@@ -2227,6 +2294,8 @@ internal sealed class RunService : IDisposable
             ? stop.World
             : alternatives[state.TravelAttempt - profile.MaximumTravelAttempts];
         state.TravelAttempt++;
+        if (crossDc)
+            state.AwaitingAutomaticDataCenterConnection = false;
         if (travel.RequestWorld(destination, state.CharacterName, state.CharacterHomeWorld))
         {
             state.TravelRequestUtc = DateTime.UtcNow;
@@ -2375,6 +2444,7 @@ internal sealed class RunService : IDisposable
         state.NextActionUtc = DateTime.UtcNow;
         state.TravelRequestUtc = default;
         state.TravelBusyObserved = false;
+        state.AwaitingAutomaticDataCenterConnection = false;
     }
 
     private void Complete()
@@ -2467,7 +2537,9 @@ internal sealed class RunService : IDisposable
             destination.Name,
             destination.DataCenter,
             state!.CharacterName,
-            state.CharacterHomeWorld);
+            state.CharacterHomeWorld,
+            state.AwaitingAutomaticDataCenterConnection);
+        state.AwaitingAutomaticDataCenterConnection = travel.AutomaticDataCenterConnectionPending;
         return true;
     }
 

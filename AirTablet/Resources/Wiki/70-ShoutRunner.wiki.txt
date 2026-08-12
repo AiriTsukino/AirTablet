@@ -37,10 +37,16 @@ The Main screen calculates the total number of stops before a run starts. During
 # Travel and retries
 ## Retry timing
 Initial retry delay controls the first wait after a failed travel request. Additional seconds per attempt increases later waits. Maximum travel attempts limits primary attempts before optional alternate gateway worlds are tried.
+## General reaction time
+General reaction time adds a configurable pause between ShoutRunner travel and interface actions. Set it from 0 seconds for no additional delay to 10 seconds for slower pacing.
 ## Alternate gateway worlds
 When enabled, ShoutRunner can try other worlds on the destination Data Center after the selected destination exhausts its primary attempts. If no gateway works, that unavailable route scope is skipped and the run continues.
 ## Aetheryte tickets
 Choose whether ShoutRunner accepts a visible Aetheryte ticket confirmation or cancels it and pays gil. Ticket popups add an extra interface step; disabling tickets or enabling automatic ticket use in FFXIV is faster for long routes.
+## Reducing teleport costs
+Register frequently used destinations as Favoured Destinations for a 50% teleport discount. FFXIV supports three favoured destinations normally, or four when the companion app is installed and signed in.
+
+Accounts with a One-Time Password (OTP/2FA) can also register one Security Token Free Destination. Teleports to that destination cost no gil. Interact with an Aetheryte and use its registration options to configure favoured and free destinations before a long run.
 ## Post-run destination 
 - Starting World : Return to world the shout run started in after run is completed
 - Home World : Return to home world of character that did the shout run after the run is completed

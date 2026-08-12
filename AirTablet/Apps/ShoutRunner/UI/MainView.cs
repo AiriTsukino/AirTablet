@@ -77,6 +77,11 @@ internal sealed class MainView
                 DrawTravelSettings();
                 ImGui.EndTabItem();
             }
+            if (ImGui.BeginTabItem("Tips"))
+            {
+                DrawTips();
+                ImGui.EndTabItem();
+            }
             if (ImGui.BeginTabItem("Debug Log"))
             {
                 DrawDebugLog();
@@ -751,10 +756,18 @@ internal sealed class MainView
             var increase = Profile.RetryDelayIncreaseSeconds;
             var attempts = Profile.MaximumTravelAttempts;
             var messageDelay = Profile.MessageDelaySeconds;
+            var reactionDelay = Profile.GeneralReactionDelaySeconds;
             if (ImGui.InputInt("Initial retry delay (seconds)", ref firstDelay, 1, 5)) Profile.InitialRetryDelaySeconds = Math.Clamp(firstDelay, 1, 120);
             if (ImGui.InputInt("Additional seconds per attempt", ref increase, 1, 5)) Profile.RetryDelayIncreaseSeconds = Math.Clamp(increase, 0, 120);
             if (ImGui.InputInt("Maximum travel attempts", ref attempts, 1, 2)) Profile.MaximumTravelAttempts = Math.Clamp(attempts, 1, 20);
             if (ImGui.InputInt("Delay between message blocks", ref messageDelay, 1, 5)) Profile.MessageDelaySeconds = Math.Clamp(messageDelay, 1, 30);
+            if (ImGui.SliderInt("General reaction time", ref reactionDelay, 0, 10, "%d sec"))
+            {
+                Profile.GeneralReactionDelaySeconds = Math.Clamp(reactionDelay, 0, 10);
+                persistence.SaveProfile(Profile);
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Adds a pause between ShoutRunner travel and interface actions. Set this to 0 to disable the additional reaction delay.");
             var tryAlternates = Profile.TryAlternateDataCenterWorlds;
             var alternatesChanged = ImGui.Checkbox("Try alternate worlds when entering a Data Center", ref tryAlternates);
             if (alternatesChanged)
@@ -790,6 +803,28 @@ internal sealed class MainView
         }
         EndCard();
         if (runner.IsRunning) ImGui.EndDisabled();
+    }
+
+    private void DrawTips()
+    {
+        if (BeginCard("##sr-teleport-saving-tips", Vector2.Zero))
+        {
+            SectionHeader("Reduce teleport costs");
+            TextMutedWrapped("Register frequently used route destinations as Favoured Destinations for a 50% teleport discount. FFXIV supports three favoured destinations normally, or four when the companion app is installed and signed in.");
+            ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 5f)));
+            TextMutedWrapped("Accounts with a One-Time Password (OTP/2FA) can also register one Security Token Free Destination. Teleports to that destination cost no gil.");
+            ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 5f)));
+            TextMutedWrapped("Interact with the destination Aetheryte and use its registration options to set favoured or free destinations before starting a long route.");
+        }
+        EndCard();
+
+        ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 7f)));
+        if (BeginCard("##sr-route-preparation-tips", Vector2.Zero))
+        {
+            SectionHeader("Before a long run");
+            TextMutedWrapped("Review the calculated route, ticket handling, message pacing, and general reaction time. Testing with /echo blocks first lets you verify the complete route without sending public messages.");
+        }
+        EndCard();
     }
 
     private void DrawPostRunWorldPicker()

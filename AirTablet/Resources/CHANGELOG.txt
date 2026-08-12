@@ -7,6 +7,14 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-11] ShoutRunner v1.0.36.0
+- Improved data-center travel recovery across plugin reloads.
+- Added a profile-specific general reaction time setting from 0 to 10 seconds. (Used to slowdown actions and make it look more natural to others perspectives)
+- Added a Tips settings page and Wiki guidance for Favoured Destinations and Security Token Free Destinations.
+
+[2026-08-11] AutoGreet v1.0.60.0
+- Fixed repeated resume-emote log entries while the queued resume command was still waiting for its configured delay.
+
 [2026-08-08] AirTabOS v1.0.4.1
 - Added startup size preferences with options to remember the last tablet size, always open full size, or always open in Mini Mode.
 

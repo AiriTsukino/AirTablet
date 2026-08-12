@@ -430,8 +430,9 @@ public sealed class QueueService : IDisposable
         if (!queueIdle || !emoteQueueIdle)
             return;
 
-        logs.Info("Resume emote running", "Greeting queue and pending emote queue are clear. Running the configured resume emote.");
-        await emoteResume.RunPendingResumeIfReadyAsync(queueIdle, emoteQueueIdle, token).ConfigureAwait(false);
+        var resumed = await emoteResume.RunPendingResumeIfReadyAsync(queueIdle, emoteQueueIdle, token).ConfigureAwait(false);
+        if (resumed)
+            logs.Info("Resume emote running", "Greeting queue and pending emote queue were clear, so the configured resume emote was run.");
     }
 
     private static bool HasCustomRegionGreeting(VenueProfile venue, Guid routeId, VisitorKey key)

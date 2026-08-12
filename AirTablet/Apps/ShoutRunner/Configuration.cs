@@ -104,6 +104,7 @@ internal sealed class VenueProfile
     public bool ReturnHomeAfterRun { get; set; }
     public AetheryteTicketAction TicketAction { get; set; } = AetheryteTicketAction.UseTicket;
     public int MessageDelaySeconds { get; set; } = 3;
+    public int GeneralReactionDelaySeconds { get; set; }
     public int InitialRetryDelaySeconds { get; set; } = 3;
     public int RetryDelayIncreaseSeconds { get; set; } = 3;
     public int MaximumTravelAttempts { get; set; } = 3;
@@ -126,6 +127,7 @@ internal sealed class VenueProfile
                 block.Text = block.Text[..400];
         }
         MessageDelaySeconds = Math.Clamp(MessageDelaySeconds, 1, 30);
+        GeneralReactionDelaySeconds = Math.Clamp(GeneralReactionDelaySeconds, 0, 10);
         InitialRetryDelaySeconds = Math.Clamp(InitialRetryDelaySeconds, 1, 120);
         RetryDelayIncreaseSeconds = Math.Clamp(RetryDelayIncreaseSeconds, 0, 120);
         MaximumTravelAttempts = Math.Clamp(MaximumTravelAttempts, 1, 20);
@@ -230,6 +232,7 @@ internal sealed class PersistedRunState
     public bool TravelBusyObserved { get; set; }
     public bool AwaitingInitialLogin { get; set; }
     public bool AwaitingDestinationLogin { get; set; }
+    public bool AwaitingAutomaticDataCenterConnection { get; set; }
     public bool ReturnHomeAfterRun { get; set; }
     public ulong TeleportGilSpent { get; set; }
     public string Status { get; set; } = string.Empty;
