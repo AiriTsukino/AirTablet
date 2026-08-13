@@ -91,8 +91,9 @@ public sealed class OverlayService
             ? panelSize.X
             : panelColumns * panelSize.X + Math.Max(0, panelColumns - 1) * style.ItemSpacing.X;
         var windowWidth = gridWidth + 28f;
+        var useCompactActionGrid = panelColumns == 1;
         var activeActionsHeight = hasActiveActions
-            ? GetActiveActionsHeight(textScale, MathF.Max(1f, gridWidth - 14f))
+            ? GetActiveActionsHeight(textScale, MathF.Max(1f, gridWidth - 14f), useCompactActionGrid)
             : 0f;
         var windowHeight = 66f
             + (hasActiveActions ? activeActionsHeight + style.ItemSpacing.Y : 0f)
@@ -132,7 +133,7 @@ public sealed class OverlayService
             ImGui.TextDisabled($"{panelColumns} wide");
             ImGui.Separator();
 
-            DrawActiveTurnActionPanel(activeActionsHeight);
+            DrawActiveTurnActionPanel(activeActionsHeight, useCompactActionGrid);
 
             if (players.Count == 0)
             {
@@ -180,7 +181,7 @@ public sealed class OverlayService
            && session.ActiveHand is not null
            && player.Status != PlayerStatus.Dealer;
 
-    private void DrawActiveTurnActionPanel(float measuredHeight)
+    private void DrawActiveTurnActionPanel(float measuredHeight, bool useCompactGrid)
     {
         if (session.Round.Phase != BlackjackPhase.PlayerTurns
             || session.ActivePlayer is not { } player
@@ -203,42 +204,72 @@ public sealed class OverlayService
         var basicEnabled = actionCallbacksReady && IsActiveUnfinishedHand(player, hand);
         var basicReason = actionCallbacksReady ? "Only the active unfinished hand can use this action." : "Blackjack table actions are not ready yet.";
 
-        if (OverlayActionButton("Hit", basicEnabled, basicReason, "Roll one additional card for the active hand."))
-            hitActiveHand?.Invoke();
-
-        DrawSameLineIfFits("Stand");
-        if (OverlayActionButton("Stand", basicEnabled, basicReason, "Complete the active hand without drawing another card."))
-            standActiveHand?.Invoke();
-
         var doubleReason = actionCallbacksReady ? string.Empty : "Blackjack table actions are not ready yet.";
         var doubleEnabled = actionCallbacksReady && sm.CanDouble(hand, out doubleReason);
         var doubleShortfall = GetDoubleDownAdditionalGilNeeded(player, hand);
         if (!doubleEnabled && doubleShortfall > 0 && IsDoubleDownStructurallyLegal(hand, out _))
             doubleReason = $"Player needs an additional {doubleShortfall:N0} gil to double down.";
-        var doubleLabel = doubleShortfall > 0 && IsDoubleDownStructurallyLegal(hand, out _)
-            ? $"Double Down (+{doubleShortfall:N0})"
-            : "Double Down";
-
-        DrawSameLineIfFits(doubleLabel);
-        if (OverlayActionButton(doubleLabel, doubleEnabled, doubleReason, doubleShortfall > 0
-                ? $"Player must trade an additional {doubleShortfall:N0} gil before Double Down can be used."
-                : "Double the hand wager, roll exactly one more card, then stand."))
-            doubleDownActiveHand?.Invoke();
 
         var splitReason = actionCallbacksReady ? string.Empty : "Blackjack table actions are not ready yet.";
         var splitEnabled = actionCallbacksReady && sm.CanSplit(hand, out splitReason);
         var splitShortfall = GetSplitAdditionalGilNeeded(player, hand);
         if (!splitEnabled && actionCallbacksReady && splitShortfall > 0 && sm.CanSplitStructurally(hand, out _))
             splitReason = $"Player needs an additional {splitShortfall:N0} gil to split this pair.";
-        var splitLabel = actionCallbacksReady && splitShortfall > 0 && sm.CanSplitStructurally(hand, out _)
-            ? $"Split (+{splitShortfall:N0})"
-            : "Split";
 
-        DrawSameLineIfFits(splitLabel);
-        if (OverlayActionButton(splitLabel, splitEnabled, splitReason, splitShortfall > 0
-                ? $"Player must trade an additional {splitShortfall:N0} gil before this matching pair can be split."
-                : "Split a matching pair into two separate hands with an additional matching wager."))
-            splitActiveHand?.Invoke();
+        if (useCompactGrid && ImGui.BeginTable(
+                "##ga_overlay_action_grid",
+                2,
+                ImGuiTableFlags.SizingStretchSame | ImGuiTableFlags.NoSavedSettings))
+        {
+            ImGui.TableNextColumn();
+            if (OverlayActionButton("Hit", basicEnabled, basicReason, "Roll one additional card for the active hand.", new Vector2(-1f, 0f)))
+                hitActiveHand?.Invoke();
+
+            ImGui.TableNextColumn();
+            if (OverlayActionButton("Stand", basicEnabled, basicReason, "Complete the active hand without drawing another card.", new Vector2(-1f, 0f)))
+                standActiveHand?.Invoke();
+
+            ImGui.TableNextColumn();
+            if (OverlayActionButton("Double Down", doubleEnabled, doubleReason, doubleShortfall > 0
+                    ? $"Player must trade an additional {doubleShortfall:N0} gil before Double Down can be used."
+                    : "Double the hand wager, roll exactly one more card, then stand.", new Vector2(-1f, 0f)))
+                doubleDownActiveHand?.Invoke();
+
+            ImGui.TableNextColumn();
+            if (OverlayActionButton("Split", splitEnabled, splitReason, splitShortfall > 0
+                    ? $"Player must trade an additional {splitShortfall:N0} gil before this matching pair can be split."
+                    : "Split a matching pair into two separate hands with an additional matching wager.", new Vector2(-1f, 0f)))
+                splitActiveHand?.Invoke();
+
+            ImGui.EndTable();
+        }
+        else if (!useCompactGrid)
+        {
+            if (OverlayActionButton("Hit", basicEnabled, basicReason, "Roll one additional card for the active hand."))
+                hitActiveHand?.Invoke();
+
+            DrawSameLineIfFits("Stand");
+            if (OverlayActionButton("Stand", basicEnabled, basicReason, "Complete the active hand without drawing another card."))
+                standActiveHand?.Invoke();
+
+            var doubleLabel = doubleShortfall > 0 && IsDoubleDownStructurallyLegal(hand, out _)
+                ? $"Double Down (+{doubleShortfall:N0})"
+                : "Double Down";
+            DrawSameLineIfFits(doubleLabel);
+            if (OverlayActionButton(doubleLabel, doubleEnabled, doubleReason, doubleShortfall > 0
+                    ? $"Player must trade an additional {doubleShortfall:N0} gil before Double Down can be used."
+                    : "Double the hand wager, roll exactly one more card, then stand."))
+                doubleDownActiveHand?.Invoke();
+
+            var splitLabel = splitShortfall > 0 && sm.CanSplitStructurally(hand, out _)
+                ? $"Split (+{splitShortfall:N0})"
+                : "Split";
+            DrawSameLineIfFits(splitLabel);
+            if (OverlayActionButton(splitLabel, splitEnabled, splitReason, splitShortfall > 0
+                    ? $"Player must trade an additional {splitShortfall:N0} gil before this matching pair can be split."
+                    : "Split a matching pair into two separate hands with an additional matching wager."))
+                splitActiveHand?.Invoke();
+        }
 
         ImGui.EndChild();
         ImGui.PopStyleVar(2);
@@ -246,16 +277,26 @@ public sealed class OverlayService
         ImGui.Spacing();
     }
 
-    private float GetActiveActionsHeight(float textScale, float contentWidth)
+    private float GetActiveActionsHeight(float textScale, float contentWidth, bool useCompactGrid)
     {
         var style = ImGui.GetStyle();
         var textLineHeight = ImGui.GetTextLineHeight() * textScale;
         var buttonHeight = textLineHeight + style.FramePadding.Y * 2f;
-        var labels = GetActiveActionLabels();
+        var rows = useCompactGrid ? 2 : MeasureActionRows(textScale, contentWidth, style);
+
+        return ActiveActionsVerticalPadding * 2f
+            + ActiveActionsBottomSafetyPadding
+            + textLineHeight * 2f
+            + style.ItemSpacing.Y * 2f
+            + buttonHeight * rows
+            + style.ItemSpacing.Y * Math.Max(0, rows - 1);
+    }
+
+    private int MeasureActionRows(float textScale, float contentWidth, ImGuiStylePtr style)
+    {
         var rows = 1;
         var usedWidth = 0f;
-
-        foreach (var label in labels)
+        foreach (var label in GetActiveActionLabels())
         {
             var width = ImGui.CalcTextSize(VisibleLabel(label)).X * textScale
                 + style.FramePadding.X * 2f;
@@ -270,13 +311,7 @@ public sealed class OverlayService
                 usedWidth += required;
             }
         }
-
-        return ActiveActionsVerticalPadding * 2f
-            + ActiveActionsBottomSafetyPadding
-            + textLineHeight * 2f
-            + style.ItemSpacing.Y * 2f
-            + buttonHeight * rows
-            + style.ItemSpacing.Y * Math.Max(0, rows - 1);
+        return rows;
     }
 
     private IReadOnlyList<string> GetActiveActionLabels()
@@ -340,7 +375,12 @@ public sealed class OverlayService
     private static long GetSplitAdditionalGilNeeded(PlayerSessionState player, BlackjackHand hand)
         => Math.Max(0, hand.Bet - player.Bank.Available);
 
-    private static bool OverlayActionButton(string label, bool enabled, string disabledReason, string enabledTooltip)
+    private static bool OverlayActionButton(
+        string label,
+        bool enabled,
+        string disabledReason,
+        string enabledTooltip,
+        Vector2 size = default)
     {
         ImGui.PushStyleColor(
             ImGuiCol.Button,
@@ -357,7 +397,7 @@ public sealed class OverlayService
         if (!enabled)
             ImGui.BeginDisabled();
 
-        var clicked = ImGui.Button(label);
+        var clicked = ImGui.Button(label, size);
 
         if (!enabled)
         {

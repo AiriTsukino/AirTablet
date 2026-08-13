@@ -7,6 +7,9 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-12] GambaAssistant v0.1.24.0
+- Fixed Split button being cutoff in 1 wide overlay.
+
 [2026-08-12] RaffleManager v0.2.21.0
 - Fixed some UI text cutoff issues.
 
