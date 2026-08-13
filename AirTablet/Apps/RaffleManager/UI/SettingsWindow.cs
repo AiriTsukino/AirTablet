@@ -63,8 +63,9 @@ internal sealed class SettingsWindow : Window
             var names = config.VenueProfiles.Keys.OrderBy(n => n).ToArray();
             var currentIndex = Array.FindIndex(names, n => n.Equals(config.ActiveVenueProfile, StringComparison.OrdinalIgnoreCase));
             if (currentIndex < 0) currentIndex = 0;
+            ImGui.TextUnformatted("Active profile");
             ImGui.SetNextItemWidth(AirTablet.UI.TabletAppTheme.Px(-1));
-            if (ImGui.Combo("Active profile", ref currentIndex, names, names.Length) && currentIndex >= 0 && currentIndex < names.Length)
+            if (ImGui.Combo("##activeProfile", ref currentIndex, names, names.Length) && currentIndex >= 0 && currentIndex < names.Length)
             {
                 config.ActiveVenueProfile = names[currentIndex];
                 logo.Refresh();
@@ -202,8 +203,9 @@ internal sealed class SettingsWindow : Window
         {
             UiHelpers.Header("Screenshot Branding", "Set a venue name and optional custom logo shown in the raffle window.");
             var venue = Profile.VenueName;
+            ImGui.TextUnformatted("Venue name");
             ImGui.SetNextItemWidth(AirTablet.UI.TabletAppTheme.Px(-1));
-            if (ImGui.InputText("Venue name", ref venue, 128))
+            if (ImGui.InputText("##venueName", ref venue, 128))
             {
                 Profile.VenueName = string.IsNullOrWhiteSpace(venue) ? Profile.Name : venue;
                 persistence.SaveNow();
@@ -269,8 +271,9 @@ internal sealed class SettingsWindow : Window
             }
 
             var message = Profile.WinnerMessageTemplate;
+            ImGui.TextUnformatted("Message template");
             ImGui.SetNextItemWidth(AirTablet.UI.TabletAppTheme.Px(-1));
-            if (ImGui.InputTextMultiline("Message template", ref message, 512, AirTablet.UI.TabletAppTheme.Px(new Vector2(0, 96f))))
+            if (ImGui.InputTextMultiline("##winnerMessageTemplate", ref message, 512, AirTablet.UI.TabletAppTheme.Px(new Vector2(0, 96f))))
             {
                 Profile.WinnerMessageTemplate = message;
                 persistence.SaveNow();

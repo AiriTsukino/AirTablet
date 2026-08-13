@@ -23,7 +23,7 @@
   {
     "id": "RaffleManager",
     "name": "RaffleManager",
-    "version": "0.2.20.0",
+    "version": "0.2.21.0",
     "tagline": "Tickets, jackpots, and draws",
     "iconUrl": "Resources/Apps/RaffleManager/RMLogo.png"
   },
