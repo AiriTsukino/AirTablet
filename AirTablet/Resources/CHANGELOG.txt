@@ -7,6 +7,9 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-18] BarManager v0.1.55.0
+- Added Roll range payout rule that counts a winning roll within specified ranges.
+
 [2026-08-18] BarManager v0.1.54.0
 - Added Runs rule condition for gamba rules with count up and count down toggles ex: (123,567,987,432)
 - Added Roll range multipliers in global bonuses.

@@ -27,16 +27,23 @@ internal static class GambaEngine
         var s = roll.ToString();
         var matched = false;
 
-        if (rule.EqualTo.HasValue)
-            matched |= rule.ExactOnly ? roll == rule.EqualTo.Value : s.Contains(rule.EqualTo.Value.ToString(), StringComparison.Ordinal);
-        if (rule.InValues.Count > 0)
-            matched |= rule.ExactOnly
-                ? rule.InValues.Contains(roll)
-                : rule.InValues.Any(v => s.Contains(v.ToString(), StringComparison.Ordinal));
-        if (rule.ContainsTokens.Count > 0)
-            matched |= rule.ContainsTokens.Any(t => !string.IsNullOrWhiteSpace(t) && s.Contains(t.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (rule.ContainsAnyDigits.Count > 0)
-            matched |= rule.ContainsAnyDigits.Any(d => s.Contains(Math.Abs(d % 10).ToString(), StringComparison.Ordinal));
+        if (rule.WinningRangeEnabled)
+        {
+            matched |= roll >= rule.MinimumWinningRoll && roll <= rule.MaximumWinningRoll;
+        }
+        else
+        {
+            if (rule.EqualTo.HasValue)
+                matched |= rule.ExactOnly ? roll == rule.EqualTo.Value : s.Contains(rule.EqualTo.Value.ToString(), StringComparison.Ordinal);
+            if (rule.InValues.Count > 0)
+                matched |= rule.ExactOnly
+                    ? rule.InValues.Contains(roll)
+                    : rule.InValues.Any(v => s.Contains(v.ToString(), StringComparison.Ordinal));
+            if (rule.ContainsTokens.Count > 0)
+                matched |= rule.ContainsTokens.Any(t => !string.IsNullOrWhiteSpace(t) && s.Contains(t.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (rule.ContainsAnyDigits.Count > 0)
+                matched |= rule.ContainsAnyDigits.Any(d => s.Contains(Math.Abs(d % 10).ToString(), StringComparison.Ordinal));
+        }
 
         // These pattern checks intentionally work even when Winning roll(s) is empty.
         // That lets venues configure rules such as "Any triple" or "Adjacent doubles"

@@ -400,7 +400,7 @@ internal sealed class SettingsWindow : Window
             {
                 for (var i = 0; i < gamba.Rules.Count; i++)
                 {
-                    DrawRuleEditor(gamba.Rules, i);
+                    DrawRuleEditor(gamba, gamba.Rules, i);
                 }
             }
             ImGui.Unindent(AirTablet.UI.TabletAppTheme.Px(8f));
@@ -410,7 +410,7 @@ internal sealed class SettingsWindow : Window
         ImGui.EndChild();
     }
 
-    private void DrawRuleEditor(List<GambaRule> rules, int i)
+    private void DrawRuleEditor(GambaSettings gamba, List<GambaRule> rules, int i)
     {
         var r = rules[i];
         ImGui.PushID(i);
@@ -437,7 +437,7 @@ internal sealed class SettingsWindow : Window
                 DrawRuleDetails(r, detailsWidth);
 
                 ImGui.TableNextColumn();
-                DrawRuleMatchOptions(r);
+                DrawRuleMatchOptions(gamba, r);
 
                 ImGui.EndTable();
             }
@@ -500,19 +500,22 @@ internal sealed class SettingsWindow : Window
         if (UiHelpers.InputIntGil("##rulePayout", ref payout, 5000)) { r.Payout = payout; persistence.SaveNow(); }
         UiHelpers.TooltipOnHover("Fixed gil payout for this rule. This is ignored when 'Pays current jackpot' is enabled.");
 
-        var rollMatch = r.WinningRollExpression;
-        ImGui.TextUnformatted("Winning roll(s)");
-        ImGui.SetNextItemWidth(inputWidth);
-        if (ImGui.InputText("##ruleWinningRolls", ref rollMatch, 128))
+        if (!r.WinningRangeEnabled)
         {
-            ApplyRuleRollExpression(r, rollMatch);
-            UpdateRuleTooltipCache(r, force: true);
-            persistence.SaveNow();
+            var rollMatch = r.WinningRollExpression;
+            ImGui.TextUnformatted("Winning roll(s)");
+            ImGui.SetNextItemWidth(inputWidth);
+            if (ImGui.InputText("##ruleWinningRolls", ref rollMatch, 128))
+            {
+                ApplyRuleRollExpression(r, rollMatch);
+                UpdateRuleTooltipCache(r, force: true);
+                persistence.SaveNow();
+            }
+            UiHelpers.TooltipOnHover(GetWinningRollsTooltip(r));
         }
-        UiHelpers.TooltipOnHover(GetWinningRollsTooltip(r));
     }
 
-    private void DrawRuleMatchOptions(GambaRule r)
+    private void DrawRuleMatchOptions(GambaSettings gamba, GambaRule r)
     {
         UiHelpers.TextMuted("Match options");
         var triples = r.Triples;
@@ -527,6 +530,39 @@ internal sealed class SettingsWindow : Window
         {
             r.AdjacentDoubles = adjacent;
             persistence.SaveNow();
+        }
+
+        var winningRange = r.WinningRangeEnabled;
+        if (UiHelpers.CheckboxWithHelp("Winning range", ref winningRange, "Matches every roll from the minimum through the maximum, inclusive. For example, 100 through 199 makes all 100 rolls in that range win this payout rule."))
+        {
+            r.WinningRangeEnabled = winningRange;
+            persistence.SaveNow();
+        }
+        if (r.WinningRangeEnabled)
+        {
+            ImGui.Indent(AirTablet.UI.TabletAppTheme.Px(12f));
+            var gameMinimum = Math.Max(0, gamba.MinRoll);
+            var gameMaximum = Math.Max(gameMinimum, gamba.MaxRoll);
+            var minimum = Math.Clamp(r.MinimumWinningRoll, gameMinimum, gameMaximum);
+            ImGui.TextUnformatted("Minimum roll");
+            ImGui.SetNextItemWidth(-1f);
+            if (ImGui.InputInt("##winning-range-minimum", ref minimum, 1, 10))
+            {
+                r.MinimumWinningRoll = Math.Clamp(minimum, gameMinimum, gameMaximum);
+                r.MaximumWinningRoll = Math.Clamp(r.MaximumWinningRoll, r.MinimumWinningRoll, gameMaximum);
+                persistence.SaveNow();
+            }
+            var maximum = Math.Clamp(r.MaximumWinningRoll, r.MinimumWinningRoll, gameMaximum);
+            ImGui.TextUnformatted("Maximum roll");
+            ImGui.SetNextItemWidth(-1f);
+            if (ImGui.InputInt("##winning-range-maximum", ref maximum, 1, 10))
+            {
+                r.MaximumWinningRoll = Math.Clamp(maximum, r.MinimumWinningRoll, gameMaximum);
+                persistence.SaveNow();
+            }
+            UiHelpers.TextWrappedMuted($"Wins on every roll from {r.MinimumWinningRoll:N0} through {r.MaximumWinningRoll:N0}.");
+            UiHelpers.TextWrappedMuted("Saved Winning roll(s) values are hidden and ignored until Winning range is turned off.");
+            ImGui.Unindent(AirTablet.UI.TabletAppTheme.Px(12f));
         }
 
         var runs = r.Runs;
@@ -555,7 +591,7 @@ internal sealed class SettingsWindow : Window
             ImGui.Unindent(AirTablet.UI.TabletAppTheme.Px(12f));
         }
 
-        if (ShouldShowExactOnly(r))
+        if (!r.WinningRangeEnabled && ShouldShowExactOnly(r))
         {
             var exactOnly = r.ExactOnly;
             var exactTooltip = GetExactOnlyTooltip(r);
@@ -566,7 +602,7 @@ internal sealed class SettingsWindow : Window
                 persistence.SaveNow();
             }
         }
-        else
+        else if (!r.WinningRangeEnabled)
         {
             r.ExactOnly = true;
             UiHelpers.TextWrappedMuted("Exact only is hidden because every entered winning roll is already 3 digits. /dice 999 cannot roll more than 3 digits, so those values are always exact.");

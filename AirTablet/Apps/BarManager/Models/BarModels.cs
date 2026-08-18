@@ -40,6 +40,9 @@ public sealed class GambaRule
     public List<int> ContainsAnyDigits { get; set; } = new();
     public bool Triples { get; set; }
     public bool AdjacentDoubles { get; set; }
+    public bool WinningRangeEnabled { get; set; }
+    public int MinimumWinningRoll { get; set; } = 1;
+    public int MaximumWinningRoll { get; set; } = 999;
     public bool Runs { get; set; }
     public bool? RunsCountUp { get; set; }
     public bool? RunsCountDown { get; set; }

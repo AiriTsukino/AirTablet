@@ -56,6 +56,11 @@ public sealed class Configuration : IPluginConfiguration
             profile.Gamba.RollRangeMultipliers ??= new List<GambaRollRangeMultiplier>();
             var gameMinimum = Math.Max(0, profile.Gamba.MinRoll);
             var gameMaximum = Math.Max(gameMinimum, profile.Gamba.MaxRoll);
+            foreach (var rule in profile.Gamba.Rules)
+            {
+                rule.MinimumWinningRoll = Math.Clamp(rule.MinimumWinningRoll, gameMinimum, gameMaximum);
+                rule.MaximumWinningRoll = Math.Clamp(rule.MaximumWinningRoll, rule.MinimumWinningRoll, gameMaximum);
+            }
             foreach (var range in profile.Gamba.RollRangeMultipliers)
             {
                 if (range.Id == Guid.Empty) range.Id = Guid.NewGuid();
