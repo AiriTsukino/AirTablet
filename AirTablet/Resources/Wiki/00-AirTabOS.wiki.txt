@@ -7,11 +7,36 @@
 # Quick start
 - Choose the bundled apps you want during Welcome. You can change them later in Settings > Apps.
 - Use the gesture bar at the bottom to return Home without unloading the app you were using.
+- Click the status indicators in the upper-right corner to open Control Center.
 - Use the upper side button to lock or unlock the tablet position.
 - Use the lower side button to minimize. Press the restore button on the mini tablet to return to full size.
 - Open Settings to change appearance, app availability, status bar options, and migration settings.
 
 > tip: Returning Home, minimizing, or switching apps does not disable bundled apps. Enabled apps continue running in the background.
+
+# Control Center
+Control Center is a full-screen quick view drawn above the current tablet app. Open it by clicking the status indicators in the upper-right corner. Close it by clicking the same status area again or by clicking the Home gesture bar. The app underneath remains open and does not receive clicks while Control Center is visible.
+
+## Adding and removing widgets
+- A new Control Center starts with one Add widget tile.
+- Click Add widget, then choose a control or live summary from an enabled bundled app.
+- After adding a widget, another Add widget tile appears while space and unused widgets remain.
+- Click the minus button in a widget's upper-right corner to remove it.
+- Widget choices are saved locally and return the next time AirTablet starts.
+- Long widget text scrolls so the complete value or description can be read.
+
+## Live controls and summaries
+- AutoGreet: toggle auto-greeting, see current visitors, or check the greeting queue.
+- BarManager: view the bar jackpot or current-night sales.
+- GambaAssistant: view Blackjack table state or Death Roll tournament progress.
+- MacroDeck: run four assigned macros from the active venue profile.
+- RaffleManager: view ticket totals, contestants, jackpot, and projected payout information.
+- ShiftKeeper: view current shift timers or scheduled staff currently on shift.
+- ShoutRunner: view the current advertising route and its status.
+
+Controls use the same local app configuration as their full app. For example, changing Auto-greet in Control Center immediately changes the toggle inside AutoGreet, and changing it inside AutoGreet immediately updates Control Center.
+
+> tip: A widget may show a setup message such as No venue when its app needs an active venue, profile, session, or other selection before live data is available.
 
 # Dock
 ## Discord

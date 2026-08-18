@@ -16,14 +16,21 @@
   {
     "id": "GambaAssistant",
     "name": "GambaAssistant",
-    "version": "0.1.24.0",
+    "version": "0.1.25.0",
     "tagline": "Blackjack and DRT dealer tools",
     "iconUrl": "Resources/Apps/GambaAssistant/GALogo.png"
   },
   {
+    "id": "MacroDeck",
+    "name": "MacroDeck",
+    "version": "0.1.5.0",
+    "tagline": "Stream Deck-style venue macros",
+    "iconUrl": "Resources/Apps/MacroDeck/MDLogo.png"
+  },
+  {
     "id": "RaffleManager",
     "name": "RaffleManager",
-    "version": "0.2.21.0",
+    "version": "0.2.22.0",
     "tagline": "Tickets, jackpots, and draws",
     "iconUrl": "Resources/Apps/RaffleManager/RMLogo.png"
   },

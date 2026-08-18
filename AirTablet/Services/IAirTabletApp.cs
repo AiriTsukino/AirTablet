@@ -26,6 +26,8 @@ internal interface IAirTabletApp : IDisposable
         return false;
     }
 
+    IReadOnlyList<ControlCenterWidget> GetControlCenterWidgets() => [];
+
     bool CanNavigateBack();
 
     bool NavigateBack();

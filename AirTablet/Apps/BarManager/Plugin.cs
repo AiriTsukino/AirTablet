@@ -125,6 +125,33 @@ internal sealed class Plugin : IDisposable
         return true;
     }
 
+    internal IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() =>
+    [
+        new(
+            "barmanager.sales",
+            "BarManager",
+            "Night sales",
+            "Drink, buyout, and tip income in the current audit.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () =>
+            {
+                var venue = config.ActiveVenue;
+                var audit = config.CurrentAudit;
+                var total = ReportService.DrinkSales(venue, audit) + ReportService.BuyoutSales(venue, audit) + audit.Tips;
+                var drinks = audit.DrinkSales.Sum(sale => Math.Max(0, sale.Count));
+                return new($"{total:N0} gil", $"{drinks:N0} drinks  •  {audit.Tips:N0} gil tips");
+            }),
+        new(
+            "barmanager.jackpot",
+            "BarManager",
+            "Bar jackpot",
+            "Current gamba drink jackpot.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () => new($"{config.CurrentAudit.JackpotCurrent:N0}", "gil jackpot")),
+    ];
+
     public void Dispose()
     {
         persistence.SaveNow();

@@ -45,10 +45,7 @@ internal sealed class ChangelogService : IDisposable
                 return;
             }
 
-            Items = Parse(File.ReadAllLines(path))
-                .OrderByDescending(item => item.Date)
-                .ThenBy(item => item.PluginName)
-                .ToList();
+            Items = Parse(File.ReadAllLines(path));
             Status = Items.Count == 0
                 ? "The bundled changelog has no entries yet."
                 : $"Loaded {Items.Count} bundled update entr{(Items.Count == 1 ? "y" : "ies")}.";

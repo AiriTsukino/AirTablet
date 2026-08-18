@@ -7,7 +7,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.0.8.1";
+    private const string ReleaseVersion = "1.0.22.1";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -51,6 +51,8 @@ internal sealed class TabletWindow
     {
         None,
         Home,
+        ControlCenterOpen,
+        ControlCenterClose,
         LockPosition,
         Minimize,
         Restore,
@@ -103,6 +105,18 @@ internal sealed class TabletWindow
     private bool welcomeSetupConfirmationPending;
     private bool lastRenderedMinimized;
     private bool preserveRememberedMiniOnNextForegroundCheck;
+    private bool controlCenterOpen;
+    private bool controlCenterPickerOpen;
+    private int controlCenterPickerPage;
+    private float controlCenterProgress;
+    private string controlCenterPickerHoveredWidgetId = string.Empty;
+    private double controlCenterPickerHoverStartedAt;
+    private string controlCenterMacroPickerWidgetId = string.Empty;
+    private int controlCenterMacroPickerSlot = -1;
+    private int controlCenterMacroPickerPage;
+    private string controlCenterMacroHoveredKeyId = string.Empty;
+    private double controlCenterMacroHoverStartedAt;
+    private int controlCenterMacroHoverFrame = -1;
     // ImGui retains the shell window position across plugin reloads. Force the
     // first rendered frame to use the position saved for the selected size so
     // a full-size startup cannot inherit the last mini position (and vice versa).
@@ -114,6 +128,9 @@ internal sealed class TabletWindow
             config.LastReadChangelogVersion,
             ReleaseVersion,
             StringComparison.OrdinalIgnoreCase);
+
+    private bool ControlCenterVisible =>
+        controlCenterOpen || controlCenterProgress > 0.01f;
 
     public TabletWindow(
         Configuration config,
@@ -155,7 +172,7 @@ internal sealed class TabletWindow
         if (config.SetupCompleted && !config.TutorialCompleted)
         {
             tutorialStep = TutorialStep.Home;
-            screen = Screen.Home;
+            screen = Screen.Settings;
             settingsPage = SettingsPage.General;
             config.Minimized = false;
         }
@@ -165,6 +182,9 @@ internal sealed class TabletWindow
 
     public void OpenHome()
     {
+        controlCenterOpen = false;
+        controlCenterPickerOpen = false;
+        controlCenterProgress = 0f;
         screen = config.SetupCompleted ? Screen.Home : Screen.Welcome;
         if (!config.SetupCompleted)
             welcomePage = 0;
@@ -385,7 +405,9 @@ internal sealed class TabletWindow
                     {
                         ImGui.SetWindowFontScale(AppContentScale);
                         UpdateScreenTransition();
-                        if (tutorialStep != TutorialStep.None)
+                        var contentDisabled = tutorialStep != TutorialStep.None ||
+                                              ControlCenterVisible;
+                        if (contentDisabled)
                             ImGui.BeginDisabled();
                         switch (screen)
                         {
@@ -408,16 +430,20 @@ internal sealed class TabletWindow
                             DrawFeedbackApp(palette);
                             break;
                         }
-                        if (tutorialStep != TutorialStep.None)
+                        if (contentDisabled)
                             ImGui.EndDisabled();
                     }
                     ImGui.EndChild();
+                    DrawControlCenter(palette);
+                    if (ControlCenterVisible || tutorialStep is TutorialStep.ControlCenterOpen or TutorialStep.ControlCenterClose)
+                        DrawStatusBarOverlay();
                     if (config.SetupCompleted)
                         DrawGestureBar(palette);
                 }
                 ImGui.EndChild();
             ImGui.PopStyleColor();
-            DrawTabletNotification(screenMin, screenMax, palette);
+            if (!ControlCenterVisible)
+                DrawTabletNotification(screenMin, screenMax, palette);
             DrawTutorialOverlay(screenMin, screenMax, bodyMax, palette);
         }
         else
@@ -515,6 +541,9 @@ internal sealed class TabletWindow
 
     private void MinimizeTablet()
     {
+        controlCenterOpen = false;
+        controlCenterPickerOpen = false;
+        controlCenterProgress = 0f;
         if (config.AnchorMiniToCollapseCorner ||
             !config.MiniPositionInitialized)
         {
@@ -793,6 +822,28 @@ internal sealed class TabletWindow
                 secondLine = "Enabled apps stay loaded and continue working in the background.";
                 action = "Click the highlighted Home bar to continue.";
                 break;
+            case TutorialStep.ControlCenterOpen:
+                target = new Vector2(screenMax.X - S(100f), screenMin.Y + S(14f));
+                cardMin = new Vector2(
+                    screenMax.X - cardWidth - S(34f),
+                    screenMin.Y + S(72f));
+                title = "Open Control Center";
+                firstLine = "Your status indicators open quick controls and live app widgets.";
+                secondLine = "Control Center stays local and can be customized with only the widgets you want.";
+                action = "Click the highlighted status area to open it.";
+                stepNumber = 2;
+                break;
+            case TutorialStep.ControlCenterClose:
+                target = new Vector2(screenMax.X - S(100f), screenMin.Y + S(14f));
+                cardMin = new Vector2(
+                    screenMax.X - cardWidth - S(34f),
+                    screenMin.Y + S(72f));
+                title = "Close Control Center";
+                firstLine = "Control Center appears above the current app without unloading it.";
+                secondLine = "You can close it from this same status area or with the Home bar.";
+                action = "Click the highlighted status area again to close it.";
+                stepNumber = 3;
+                break;
             case TutorialStep.LockPosition:
                 target = new Vector2(
                     screenMax.X - S(3f),
@@ -804,7 +855,7 @@ internal sealed class TabletWindow
                 firstLine = "The upper side button locks AirTablet at its current position.";
                 secondLine = "This prevents accidental dragging while you use the tablet.";
                 action = "Click the upper side button to continue.";
-                stepNumber = 2;
+                stepNumber = 4;
                 break;
             default:
                 target = new Vector2(
@@ -817,7 +868,7 @@ internal sealed class TabletWindow
                 firstLine = "The lower side button changes AirTablet to its compact view.";
                 secondLine = "Your enabled apps remain loaded and continue working.";
                 action = "Click the lower side button to continue.";
-                stepNumber = 3;
+                stepNumber = 5;
                 break;
         }
 
@@ -864,6 +915,28 @@ internal sealed class TabletWindow
                 target - S(new Vector2(0f, 14f)),
                 palette.AccentHover);
         }
+        else if (tutorialStep is TutorialStep.ControlCenterOpen or TutorialStep.ControlCenterClose)
+        {
+            var highlightMin = target - S(new Vector2(96f, 14f));
+            var highlightMax = target + S(new Vector2(84f, 14f));
+            draw.AddRectFilled(
+                highlightMin,
+                highlightMax,
+                ImGui.GetColorU32(new Vector4(palette.Accent.X, palette.Accent.Y, palette.Accent.Z, 0.28f)),
+                S(12f));
+            draw.AddRect(
+                highlightMin,
+                highlightMax,
+                ImGui.GetColorU32(palette.AccentHover),
+                S(12f),
+                ImDrawFlags.None,
+                S(2f));
+            DrawUpArrow(
+                draw,
+                new Vector2(target.X, cardMin.Y - S(12f)),
+                target + S(new Vector2(0f, 18f)),
+                palette.AccentHover);
+        }
         else
         {
             DrawRightArrow(
@@ -882,7 +955,7 @@ internal sealed class TabletWindow
             if (ImGui.InvisibleButton("##tutorial-home-control", tutorialHitSize))
             {
                 ReturnHome();
-                AdvanceControlTutorial(TutorialStep.LockPosition);
+                AdvanceControlTutorial(TutorialStep.ControlCenterOpen);
             }
         }
     }
@@ -919,7 +992,7 @@ internal sealed class TabletWindow
             "This button restores the full tablet.",
             "Your apps stayed loaded while minimized.",
             "Click Restore to finish the tutorial.",
-            4);
+            6);
 
         var target = (expandMin + expandMax) * 0.5f;
         draw.AddRect(
@@ -982,7 +1055,7 @@ internal sealed class TabletWindow
             min + S(new Vector2(18f, 14f)),
             ImGui.GetColorU32(palette.AccentHover),
             title);
-        var progress = $"STEP {stepNumber} OF 4";
+        var progress = $"STEP {stepNumber} OF 6";
         var progressSize = ImGui.CalcTextSize(progress);
         draw.AddText(
             new Vector2(max.X - progressSize.X - S(18f), min.Y + S(14f)),
@@ -1057,6 +1130,21 @@ internal sealed class TabletWindow
             end,
             end - S(new Vector2(8f, 13f)),
             end - S(new Vector2(-8f, 13f)),
+            packed);
+    }
+
+    private void DrawUpArrow(
+        ImDrawListPtr draw,
+        Vector2 start,
+        Vector2 end,
+        Vector4 color)
+    {
+        var packed = ImGui.GetColorU32(color);
+        draw.AddLine(start, end + S(new Vector2(0f, 11f)), packed, S(3f));
+        draw.AddTriangleFilled(
+            end,
+            end + S(new Vector2(-8f, 13f)),
+            end + S(new Vector2(8f, 13f)),
             packed);
     }
 
@@ -1141,11 +1229,18 @@ internal sealed class TabletWindow
         var draw = ImGui.GetWindowDrawList();
         var hovered = ImGui.IsMouseHoveringRect(min, max);
         var hoverAmount = AnimateControlHover(id, hovered);
+        var palette = ThemePalette.Resolve(config.Theme);
         var idleColor = pressed
-            ? new Vector4(0.055f, 0.058f, 0.068f, 1f)
+            ? Vector4.Lerp(
+                new Vector4(0.075f, 0.078f, 0.09f, 1f),
+                new Vector4(palette.Accent.X, palette.Accent.Y, palette.Accent.Z, 1f),
+                0.34f)
             : new Vector4(0.12f, 0.125f, 0.14f, 1f);
         var brightColor = pressed
-            ? new Vector4(0.18f, 0.19f, 0.22f, 1f)
+            ? Vector4.Lerp(
+                new Vector4(0.20f, 0.21f, 0.24f, 1f),
+                new Vector4(palette.AccentHover.X, palette.AccentHover.Y, palette.AccentHover.Z, 1f),
+                0.52f)
             : new Vector4(0.31f, 0.32f, 0.36f, 1f);
         draw.AddRectFilled(
             min + S(new Vector2(2, 3)),
@@ -1160,7 +1255,9 @@ internal sealed class TabletWindow
         draw.AddLine(
             min + S(new Vector2(2, 2)),
             new Vector2(max.X - S(2f), min.Y + S(2f)),
-            ImGui.GetColorU32(new Vector4(0.43f, 0.44f, 0.49f, pressed ? 0.42f : 0.78f)),
+            ImGui.GetColorU32(pressed
+                ? new Vector4(palette.AccentHover.X, palette.AccentHover.Y, palette.AccentHover.Z, 0.82f)
+                : new Vector4(0.43f, 0.44f, 0.49f, 0.78f)),
             S(1f));
         draw.AddLine(
             new Vector2(max.X - S(2f), min.Y + S(4f)),
@@ -1186,6 +1283,27 @@ internal sealed class TabletWindow
         var draw = ImGui.GetWindowDrawList();
         var origin = ImGui.GetWindowPos();
         var width = ImGui.GetWindowSize().X;
+        DrawStatusBarVisual(draw, origin, width);
+
+        ImGui.Dummy(new Vector2(width, S(StatusBarHeight)));
+
+        if (config.SetupCompleted && tutorialStep == TutorialStep.None)
+        {
+            var hitWidth = config.ShowBattery ? S(178f) : S(76f);
+            var hitMin = new Vector2(origin.X + width - hitWidth - S(16f), origin.Y);
+            ImGui.SetCursorScreenPos(hitMin);
+            if (ImGui.InvisibleButton("##control-center-status", new Vector2(hitWidth, S(StatusBarHeight))))
+            {
+                controlCenterOpen = !controlCenterOpen;
+                if (!controlCenterOpen)
+                    controlCenterPickerOpen = false;
+            }
+            DrawTooltip(controlCenterOpen ? "Close Control Center." : "Open Control Center.");
+        }
+    }
+
+    private void DrawStatusBarVisual(ImDrawListPtr draw, Vector2 origin, float width)
+    {
         var textColor = new Vector4(0.93f, 0.94f, 0.98f, 1f);
         var textTop = origin.Y + S(5f);
         var glyphHeight = ImGui.GetTextLineHeight();
@@ -1231,7 +1349,656 @@ internal sealed class TabletWindow
                 glyphHeight);
         }
 
-        ImGui.Dummy(new Vector2(width, S(StatusBarHeight)));
+    }
+
+    private void DrawStatusBarOverlay()
+    {
+        var parentMin = ImGui.GetWindowPos();
+        var parentWidth = ImGui.GetWindowSize().X;
+        var tutorialControlCenterStep = tutorialStep is TutorialStep.ControlCenterOpen or TutorialStep.ControlCenterClose;
+        var flags =
+            ImGuiWindowFlags.NoBackground |
+            ImGuiWindowFlags.NoScrollbar |
+            ImGuiWindowFlags.NoSavedSettings;
+        if (!tutorialControlCenterStep)
+            flags |= ImGuiWindowFlags.NoInputs;
+        ImGui.SetCursorScreenPos(parentMin);
+        if (ImGui.BeginChild(
+                "##control-center-status-visual-layer",
+                new Vector2(parentWidth, S(StatusBarHeight)),
+                false,
+                flags))
+        {
+            DrawStatusBarVisual(
+                ImGui.GetWindowDrawList(),
+                ImGui.GetWindowPos(),
+                ImGui.GetWindowSize().X);
+            if (tutorialControlCenterStep)
+            {
+                var hitWidth = S(180f);
+                var hitMin = new Vector2(parentMin.X + parentWidth - hitWidth - S(16f), parentMin.Y);
+                ImGui.SetCursorScreenPos(hitMin);
+                if (ImGui.InvisibleButton("##tutorial-control-center-status-hit", new Vector2(hitWidth, S(StatusBarHeight))))
+                {
+                    if (tutorialStep == TutorialStep.ControlCenterOpen)
+                    {
+                        controlCenterOpen = true;
+                        controlCenterPickerOpen = false;
+                        AdvanceControlTutorial(TutorialStep.ControlCenterClose);
+                    }
+                    else
+                    {
+                        controlCenterOpen = false;
+                        controlCenterPickerOpen = false;
+                        AdvanceControlTutorial(TutorialStep.LockPosition);
+                    }
+                }
+            }
+        }
+        ImGui.EndChild();
+    }
+
+    private void DrawControlCenter(ThemePalette palette)
+    {
+        var target = controlCenterOpen ? 1f : 0f;
+        var response = 1f - MathF.Exp(-13f * MathF.Max(0.001f, ImGui.GetIO().DeltaTime));
+        controlCenterProgress += (target - controlCenterProgress) * response;
+        if (MathF.Abs(controlCenterProgress - target) < 0.002f)
+            controlCenterProgress = target;
+        if (controlCenterProgress <= 0.002f)
+            return;
+
+        var screenMin = ImGui.GetWindowPos();
+        var screenSize = ImGui.GetWindowSize();
+        var screenMax = screenMin + screenSize;
+        var contentMin = screenMin + new Vector2(0, S(StatusBarHeight));
+        var contentSize = screenSize - new Vector2(0, S(StatusBarHeight + HomeGestureAreaHeight));
+        ImGui.SetCursorScreenPos(contentMin);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
+        if (ImGui.BeginChild(
+                "##control-center-interaction-layer",
+                contentSize,
+                false,
+                ImGuiWindowFlags.NoScrollbar |
+                ImGuiWindowFlags.NoScrollWithMouse |
+                ImGuiWindowFlags.NoBackground |
+                ImGuiWindowFlags.NoNav))
+        {
+            var draw = ImGui.GetWindowDrawList();
+            var min = ImGui.GetWindowPos();
+            var max = min + ImGui.GetWindowSize();
+            var eased = 1f - MathF.Pow(1f - controlCenterProgress, 3f);
+            draw.PushClipRect(screenMin, screenMax, false);
+            draw.AddRectFilled(
+                screenMin,
+                screenMax,
+                ImGui.GetColorU32(new Vector4(0.018f, 0.020f, 0.035f, 0.83f * eased)));
+            draw.AddCircleFilled(
+                screenMin + S(new Vector2(865, 8)),
+                S(245f),
+                ImGui.GetColorU32(new Vector4(palette.Accent.X, palette.Accent.Y, palette.Accent.Z, 0.10f * eased)));
+            draw.AddCircleFilled(
+                screenMin + S(new Vector2(70, 500)),
+                S(220f),
+                ImGui.GetColorU32(new Vector4(palette.AccentHover.X, palette.AccentHover.Y, palette.AccentHover.Z, 0.055f * eased)));
+            draw.PopClipRect();
+
+            if (controlCenterProgress >= 0.72f)
+            {
+                var slide = new Vector2(0, -S(34f) * (1f - eased));
+                if (tutorialStep != TutorialStep.None)
+                    ImGui.BeginDisabled();
+                if (controlCenterPickerOpen)
+                    DrawControlCenterPicker(draw, min + slide, max + slide, palette);
+                else
+                    DrawControlCenterWidgets(draw, min + slide, max + slide, palette);
+                if (tutorialStep != TutorialStep.None)
+                    ImGui.EndDisabled();
+            }
+        }
+        ImGui.EndChild();
+        ImGui.PopStyleColor();
+        ImGui.PopStyleVar();
+    }
+
+    private void DrawControlCenterWidgets(
+        ImDrawListPtr draw,
+        Vector2 panelMin,
+        Vector2 panelMax,
+        ThemePalette palette)
+    {
+        var titlePos = panelMin + S(new Vector2(34, 24));
+        draw.AddText(titlePos, ImGui.GetColorU32(Vector4.One), "Control Center");
+        draw.AddText(
+            titlePos + new Vector2(0, S(24f)),
+            ImGui.GetColorU32(new Vector4(0.70f, 0.72f, 0.80f, 1f)),
+            "Your venue at a glance");
+
+        var available = appHost.GetControlCenterWidgets();
+        var byId = available.ToDictionary(widget => widget.Id, StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(controlCenterMacroPickerWidgetId) &&
+            byId.TryGetValue(controlCenterMacroPickerWidgetId, out var macroWidget))
+        {
+            DrawControlCenterMacroPicker(draw, panelMin, panelMax, palette, macroWidget);
+            return;
+        }
+        config.ControlCenterWidgets ??= [];
+        var selected = config.ControlCenterWidgets
+            .Select(id => byId.GetValueOrDefault(id))
+            .Where(widget => widget is not null)
+            .Cast<ControlCenterWidget>()
+            .OrderByDescending(widget => widget.Size == ControlCenterWidgetSize.Wide)
+            .ToList();
+
+        const int columns = 6;
+        const int maximumSlots = 18;
+        var gap = S(8f);
+        var margin = S(26f);
+        var compactWidth = (panelMax.X - panelMin.X - margin * 2f - gap * (columns - 1)) / columns;
+        var cardHeight = S(92f);
+        var gridTop = panelMin.Y + S(65f);
+        var slot = 0;
+        foreach (var widget in selected)
+        {
+            var units = widget.Size == ControlCenterWidgetSize.Wide ? 2 : 1;
+            if (slot + units > maximumSlots)
+                break;
+            var row = slot / columns;
+            var column = slot % columns;
+            var min = new Vector2(
+                panelMin.X + margin + column * (compactWidth + gap),
+                gridTop + row * (cardHeight + gap));
+            var width = units == 2 ? compactWidth * 2f + gap : compactWidth;
+            DrawControlCenterWidgetCard(draw, min, new Vector2(width, cardHeight), widget, palette);
+            slot += units;
+        }
+
+        var selectedIds = new HashSet<string>(config.ControlCenterWidgets, StringComparer.OrdinalIgnoreCase);
+        var hasWidgetToAdd = available.Any(widget =>
+            !selectedIds.Contains(widget.Id) &&
+            (widget.Size == ControlCenterWidgetSize.Wide ? 2 : 1) <= maximumSlots - slot);
+        if (slot < maximumSlots && hasWidgetToAdd)
+        {
+            var row = slot / columns;
+            var column = slot % columns;
+            var min = new Vector2(
+                panelMin.X + margin + column * (compactWidth + gap),
+                gridTop + row * (cardHeight + gap));
+            DrawControlCenterAddCard(draw, min, new Vector2(compactWidth, cardHeight), palette);
+        }
+
+        var hint = "Click the status indicators or Home bar to close";
+        var hintSize = ImGui.CalcTextSize(hint);
+        draw.AddText(
+            new Vector2((panelMin.X + panelMax.X - hintSize.X) * 0.5f, panelMax.Y - S(27f)),
+            ImGui.GetColorU32(new Vector4(0.57f, 0.59f, 0.67f, 0.92f)),
+            hint);
+    }
+
+    private void DrawControlCenterWidgetCard(
+        ImDrawListPtr draw,
+        Vector2 min,
+        Vector2 size,
+        ControlCenterWidget widget,
+        ThemePalette palette)
+    {
+        ControlCenterWidgetSnapshot snapshot;
+        try
+        {
+            snapshot = widget.Read();
+        }
+        catch (Exception ex)
+        {
+            DalamudServices.Log.Warning(ex, "Control Center widget {Widget} could not refresh.", widget.Id);
+            snapshot = new("Unavailable", "Could not read app state", null, false);
+        }
+
+        var max = min + size;
+        var active = snapshot.IsActive == true;
+        var hovered = ImGui.IsMouseHoveringRect(min, max);
+        draw.AddRectFilled(min + S(new Vector2(2, 3)), max + S(new Vector2(2, 3)), ImGui.GetColorU32(new Vector4(0, 0, 0, 0.26f)), S(18f));
+        var background = active
+            ? new Vector4(palette.Accent.X * 0.58f, palette.Accent.Y * 0.58f, palette.Accent.Z * 0.58f, 0.96f)
+            : new Vector4(0.16f, 0.17f, 0.23f, hovered ? 0.98f : 0.92f);
+        if (!snapshot.IsAvailable)
+            background = new Vector4(0.14f, 0.14f, 0.17f, 0.90f);
+        draw.AddRectFilled(min, max, ImGui.GetColorU32(background), S(18f));
+        draw.AddRect(min, max, ImGui.GetColorU32(new Vector4(1, 1, 1, hovered ? 0.16f : 0.09f)), S(18f), ImDrawFlags.None, S(1f));
+        DrawMarqueeText(
+            draw,
+            widget.AppId,
+            min + S(new Vector2(10, 8)),
+            size.X - S(42f),
+            ImGui.GetColorU32(new Vector4(0.62f, 0.65f, 0.75f, 1f)));
+
+        if (widget.Kind == ControlCenterWidgetKind.MacroPad && widget.ReadMacroPad is not null)
+        {
+            DrawControlCenterMacroPad(draw, min, size, widget, palette);
+        }
+        else if (widget.Kind == ControlCenterWidgetKind.Toggle && widget.SetToggle is not null)
+        {
+            var controlCenter = min + S(new Vector2(28f, 59f));
+            draw.AddCircleFilled(
+                controlCenter,
+                S(17f),
+                ImGui.GetColorU32(active ? palette.AccentHover : new Vector4(0.30f, 0.32f, 0.38f, 1f)));
+            draw.AddCircle(
+                controlCenter + S(new Vector2(0, 1.5f)),
+                S(8f),
+                ImGui.GetColorU32(Vector4.One),
+                24,
+                S(1.7f));
+            draw.AddLine(
+                controlCenter - S(new Vector2(0, 10f)),
+                controlCenter - S(new Vector2(0, 1f)),
+                ImGui.GetColorU32(Vector4.One),
+                S(2f));
+            DrawMarqueeText(
+                draw,
+                widget.Title,
+                min + S(new Vector2(52, 36)),
+                size.X - S(62f),
+                ImGui.GetColorU32(Vector4.One));
+            DrawMarqueeText(
+                draw,
+                !string.IsNullOrWhiteSpace(snapshot.Value) ? snapshot.Value : "Unavailable",
+                min + S(new Vector2(52, 60)),
+                size.X - S(62f),
+                ImGui.GetColorU32(new Vector4(0.72f, 0.74f, 0.82f, 1f)));
+            var toggleHitMin = min + S(new Vector2(7, 29));
+            var toggleHitSize = new Vector2(size.X - S(14f), size.Y - S(36f));
+            ImGui.SetCursorScreenPos(toggleHitMin);
+            if (ImGui.InvisibleButton($"##toggle-{widget.Id}", toggleHitSize) && snapshot.IsAvailable)
+                widget.SetToggle(!active);
+            DrawTooltip(widget.Description);
+        }
+        else
+        {
+            DrawMarqueeText(draw, widget.Title, min + S(new Vector2(10, 29)), size.X - S(20f), ImGui.GetColorU32(new Vector4(0.76f, 0.78f, 0.86f, 1f)));
+            DrawMarqueeText(draw, snapshot.Value, min + S(new Vector2(10, 50)), size.X - S(20f), ImGui.GetColorU32(Vector4.One));
+            DrawMarqueeText(draw, snapshot.Detail, min + S(new Vector2(10, 70)), size.X - S(20f), ImGui.GetColorU32(new Vector4(0.62f, 0.65f, 0.74f, 1f)));
+        }
+
+        var removeMin = new Vector2(max.X - S(25f), min.Y + S(6f));
+        ImGui.SetCursorScreenPos(removeMin);
+        if (ImGui.InvisibleButton($"##remove-{widget.Id}", S(new Vector2(19, 19))))
+        {
+            config.ControlCenterWidgets.RemoveAll(id => id.Equals(widget.Id, StringComparison.OrdinalIgnoreCase));
+            try { widget.Removed?.Invoke(); }
+            catch (Exception ex) { DalamudServices.Log.Warning(ex, "Control Center widget {Widget} could not clear its removed state.", widget.Id); }
+            saveImmediate();
+        }
+        var removeCenter = removeMin + S(new Vector2(9.5f, 9.5f));
+        draw.AddCircleFilled(removeCenter, S(8.5f), ImGui.GetColorU32(new Vector4(0.05f, 0.05f, 0.07f, hovered ? 0.62f : 0.28f)));
+        draw.AddLine(removeCenter - S(new Vector2(3.5f, 0)), removeCenter + S(new Vector2(3.5f, 0)), ImGui.GetColorU32(new Vector4(0.88f, 0.89f, 0.94f, 0.95f)), S(1.3f));
+        DrawTooltip($"Remove {widget.Title} from Control Center.");
+
+    }
+
+    private void DrawControlCenterMacroPad(
+        ImDrawListPtr draw,
+        Vector2 min,
+        Vector2 size,
+        ControlCenterWidget widget,
+        ThemePalette palette)
+    {
+        ControlCenterMacroPadSnapshot pad;
+        try { pad = widget.ReadMacroPad!(); }
+        catch (Exception ex)
+        {
+            DalamudServices.Log.Warning(ex, "Control Center macro pad {Widget} could not refresh.", widget.Id);
+            pad = new([null, null, null, null], []);
+        }
+        var gap = S(3f);
+        var areaMin = min + S(new Vector2(7, 27));
+        var cellSize = new Vector2((size.X - S(17f)) * 0.5f, S(27f));
+        for (var index = 0; index < 4; index++)
+        {
+            var row = index / 2;
+            var column = index % 2;
+            var cellMin = areaMin + new Vector2(column * (cellSize.X + gap), row * (cellSize.Y + gap));
+            var cellMax = cellMin + cellSize;
+            var macro = index < pad.Slots.Count ? pad.Slots[index] : null;
+            var hovered = ImGui.IsMouseHoveringRect(cellMin, cellMax);
+            draw.AddRectFilled(cellMin, cellMax, ImGui.GetColorU32(macro is null
+                ? new Vector4(0.10f, 0.11f, 0.15f, hovered ? 0.95f : 0.76f)
+                : new Vector4(palette.Accent.X * 0.45f, palette.Accent.Y * 0.45f, palette.Accent.Z * 0.45f, hovered ? 1f : 0.92f)), S(7f));
+            draw.AddRect(cellMin, cellMax, ImGui.GetColorU32(new Vector4(palette.AccentHover.X, palette.AccentHover.Y, palette.AccentHover.Z, hovered ? 0.75f : 0.28f)), S(7f));
+            var label = macro?.Title ?? "+";
+            DrawCenteredHoverMarquee(
+                draw,
+                label,
+                cellMin,
+                cellSize,
+                ImGui.GetColorU32(Vector4.One),
+                hovered,
+                $"pad:{widget.Id}:{index}:{macro?.Id ?? "empty"}");
+            ImGui.SetCursorScreenPos(cellMin);
+            ImGui.InvisibleButton($"##macro-pad-{widget.Id}-{index}", cellSize);
+            if (ImGui.IsItemClicked(ImGuiMouseButton.Right) || macro is null && ImGui.IsItemClicked())
+            {
+                controlCenterMacroPickerWidgetId = widget.Id;
+                controlCenterMacroPickerSlot = index;
+                controlCenterMacroPickerPage = 0;
+            }
+            else if (macro is not null && ImGui.IsItemClicked())
+            {
+                widget.ActivateMacro?.Invoke(macro.Id);
+            }
+            DrawTooltip(macro is null ? "Click to assign" : "Right Click to edit");
+        }
+    }
+
+    private void DrawControlCenterMacroPicker(
+        ImDrawListPtr draw,
+        Vector2 panelMin,
+        Vector2 panelMax,
+        ThemePalette palette,
+        ControlCenterWidget widget)
+    {
+        var surfaceMin = panelMin + S(new Vector2(14, 10));
+        var surfaceMax = panelMax - S(new Vector2(14, 34));
+        draw.AddRectFilled(surfaceMin, surfaceMax, ImGui.GetColorU32(new Vector4(0.055f, 0.058f, 0.085f, 0.975f)), S(24f));
+        draw.AddRect(surfaceMin, surfaceMax, ImGui.GetColorU32(new Vector4(palette.AccentHover.X, palette.AccentHover.Y, palette.AccentHover.Z, 0.20f)), S(24f), ImDrawFlags.None, S(1.2f));
+        var backMin = panelMin + S(new Vector2(25, 17));
+        ImGui.SetCursorScreenPos(backMin);
+        if (ImGui.InvisibleButton("##macro-picker-back", S(new Vector2(44, 38))))
+        {
+            controlCenterMacroPickerWidgetId = string.Empty;
+            controlCenterMacroPickerSlot = -1;
+        }
+        DrawChevron(draw, backMin + S(new Vector2(20, 19)), false, ImGui.GetColorU32(palette.AccentHover), S(7f), S(2.8f));
+        draw.AddText(panelMin + S(new Vector2(78, 25)), ImGui.GetColorU32(Vector4.One), $"Choose macro for quick key {controlCenterMacroPickerSlot + 1}");
+        draw.AddText(panelMin + S(new Vector2(78, 49)), ImGui.GetColorU32(new Vector4(0.68f, 0.70f, 0.78f, 1f)), "Macros come from the active MacroDeck venue profile");
+
+        var pad = widget.ReadMacroPad?.Invoke() ?? new ControlCenterMacroPadSnapshot([null, null, null, null], []);
+        const int columns = 6;
+        const int pageSize = 24;
+        var pageCount = Math.Max(1, (int)Math.Ceiling(pad.Available.Count / (double)pageSize));
+        controlCenterMacroPickerPage = Math.Clamp(controlCenterMacroPickerPage, 0, pageCount - 1);
+        var choices = pad.Available.Skip(controlCenterMacroPickerPage * pageSize).Take(pageSize).ToList();
+        var gap = S(8f);
+        var width = (panelMax.X - panelMin.X - S(52f) - gap * (columns - 1)) / columns;
+        var size = new Vector2(width, S(64f));
+        for (var index = 0; index < choices.Count; index++)
+        {
+            var row = index / columns;
+            var column = index % columns;
+            var min = panelMin + new Vector2(S(26f) + column * (width + gap), S(82f) + row * (size.Y + gap));
+            if (min.Y + size.Y > panelMax.Y - S(42f)) break;
+            var macro = choices[index];
+            var hovered = ImGui.IsMouseHoveringRect(min, min + size);
+            draw.AddRectFilled(min, min + size, ImGui.GetColorU32(new Vector4(0.16f, 0.17f, 0.23f, hovered ? 0.99f : 0.92f)), S(14f));
+            draw.AddRect(min, min + size, ImGui.GetColorU32(new Vector4(palette.AccentHover.X, palette.AccentHover.Y, palette.AccentHover.Z, hovered ? 0.68f : 0.22f)), S(14f));
+            DrawCenteredHoverMarquee(
+                draw,
+                macro.Title,
+                min,
+                size,
+                ImGui.GetColorU32(Vector4.One),
+                hovered,
+                $"picker:{widget.Id}:{macro.Id}");
+            ImGui.SetCursorScreenPos(min);
+            if (ImGui.InvisibleButton($"##choose-macro-{macro.Id}", size))
+            {
+                widget.AssignMacro?.Invoke(controlCenterMacroPickerSlot, macro.Id);
+                controlCenterMacroPickerWidgetId = string.Empty;
+                controlCenterMacroPickerSlot = -1;
+            }
+            DrawTooltip($"Assign {macro.Title} to this quick key.");
+        }
+        if (pad.Available.Count == 0)
+            draw.AddText(panelMin + S(new Vector2(28, 94)), ImGui.GetColorU32(new Vector4(0.70f, 0.72f, 0.80f, 1f)), "Create a MacroDeck macro in the active venue profile first.");
+
+        if (pageCount > 1)
+        {
+            var navY = panelMax.Y - S(46f);
+            ImGui.SetCursorScreenPos(new Vector2(panelMin.X + S(170f), navY));
+            if (ImGui.Button("<##macro-page-back", S(new Vector2(34, 28))) && controlCenterMacroPickerPage > 0) controlCenterMacroPickerPage--;
+            ImGui.SetCursorScreenPos(new Vector2(panelMin.X + S(212f), navY + S(5f)));
+            ImGui.TextUnformatted($"{controlCenterMacroPickerPage + 1} of {pageCount}");
+            ImGui.SetCursorScreenPos(new Vector2(panelMin.X + S(276f), navY));
+            if (ImGui.Button(">##macro-page-next", S(new Vector2(34, 28))) && controlCenterMacroPickerPage < pageCount - 1) controlCenterMacroPickerPage++;
+        }
+        if (controlCenterMacroPickerSlot >= 0 && controlCenterMacroPickerSlot < pad.Slots.Count && pad.Slots[controlCenterMacroPickerSlot] is not null)
+        {
+            var clearMin = new Vector2(surfaceMin.X + S(12f), surfaceMax.Y - S(42f));
+            ImGui.SetCursorScreenPos(clearMin);
+            if (ImGui.Button("Clear quick key", S(new Vector2(120, 30))))
+            {
+                widget.AssignMacro?.Invoke(controlCenterMacroPickerSlot, null);
+                controlCenterMacroPickerWidgetId = string.Empty;
+                controlCenterMacroPickerSlot = -1;
+            }
+        }
+    }
+
+    private void DrawControlCenterAddCard(ImDrawListPtr draw, Vector2 min, Vector2 size, ThemePalette palette)
+    {
+        var max = min + size;
+        var hovered = ImGui.IsMouseHoveringRect(min, max);
+        draw.AddRectFilled(min + S(new Vector2(2, 3)), max + S(new Vector2(2, 3)), ImGui.GetColorU32(new Vector4(0, 0, 0, 0.22f)), S(18f));
+        draw.AddRectFilled(min, max, ImGui.GetColorU32(new Vector4(0.14f, 0.15f, 0.20f, hovered ? 0.96f : 0.82f)), S(18f));
+        draw.AddRect(min, max, ImGui.GetColorU32(new Vector4(palette.Accent.X, palette.Accent.Y, palette.Accent.Z, hovered ? 0.62f : 0.34f)), S(18f), ImDrawFlags.None, S(1.3f));
+        var center = (min + max) * 0.5f - new Vector2(0, S(6f));
+        draw.AddCircleFilled(center, S(17f), ImGui.GetColorU32(hovered ? palette.AccentHover : palette.Accent));
+        draw.AddLine(center - new Vector2(S(6f), 0), center + new Vector2(S(6f), 0), ImGui.GetColorU32(Vector4.One), S(2f));
+        draw.AddLine(center - new Vector2(0, S(6f)), center + new Vector2(0, S(6f)), ImGui.GetColorU32(Vector4.One), S(2f));
+        var label = "Add widget";
+        var labelSize = ImGui.CalcTextSize(label);
+        draw.AddText(new Vector2(center.X - labelSize.X * 0.5f, center.Y + S(19f)), ImGui.GetColorU32(new Vector4(0.75f, 0.77f, 0.82f, 1f)), label);
+        ImGui.SetCursorScreenPos(min);
+        if (ImGui.InvisibleButton("##add-control-widget", size))
+            {
+                controlCenterPickerOpen = true;
+                controlCenterPickerPage = 0;
+            }
+        DrawTooltip("Choose a widget to add.");
+    }
+
+    private void DrawControlCenterPicker(
+        ImDrawListPtr draw,
+        Vector2 panelMin,
+        Vector2 panelMax,
+        ThemePalette palette)
+    {
+        var backMin = panelMin + S(new Vector2(25, 17));
+        ImGui.SetCursorScreenPos(backMin);
+        if (ImGui.InvisibleButton("##control-widget-picker-back", S(new Vector2(44, 38))))
+            controlCenterPickerOpen = false;
+        DrawChevron(
+            draw,
+            backMin + S(new Vector2(20f, 19f)),
+            false,
+            ImGui.GetColorU32(palette.AccentHover),
+            S(7f),
+            S(2.8f));
+        DrawTooltip("Go back to Control Center.");
+        draw.AddText(panelMin + S(new Vector2(78, 25)), ImGui.GetColorU32(Vector4.One), "Add a widget");
+        draw.AddText(panelMin + S(new Vector2(78, 49)), ImGui.GetColorU32(new Vector4(0.68f, 0.70f, 0.78f, 1f)), "Choose a local control or live venue summary");
+
+        var allWidgets = appHost.GetControlCenterWidgets();
+        var selected = new HashSet<string>(config.ControlCenterWidgets, StringComparer.OrdinalIgnoreCase);
+        var usedSlots = allWidgets
+            .Where(widget => selected.Contains(widget.Id))
+            .Sum(widget => widget.Size == ControlCenterWidgetSize.Wide ? 2 : 1);
+        var availableSlots = Math.Max(0, 18 - usedSlots);
+        var candidates = allWidgets
+            .Where(widget => !selected.Contains(widget.Id))
+            .Where(widget => (widget.Size == ControlCenterWidgetSize.Wide ? 2 : 1) <= availableSlots)
+            .OrderBy(widget => widget.AppId)
+            .ThenBy(widget => widget.Title)
+            .GroupBy(
+                widget => string.IsNullOrWhiteSpace(widget.RepeatableGroup)
+                    ? $"widget:{widget.Id}"
+                    : $"repeatable:{widget.RepeatableGroup}",
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            draw.AddText(panelMin + S(new Vector2(34, 98)), ImGui.GetColorU32(new Vector4(0.74f, 0.76f, 0.82f, 1f)), "All widgets that fit have been added.");
+            return;
+        }
+
+        const int pageSize = 12;
+        var pageCount = Math.Max(1, (int)Math.Ceiling(candidates.Count / (double)pageSize));
+        controlCenterPickerPage = Math.Clamp(controlCenterPickerPage, 0, pageCount - 1);
+        var pageCandidates = candidates.Skip(controlCenterPickerPage * pageSize).Take(pageSize).ToList();
+        var gap = S(8f);
+        var width = (panelMax.X - panelMin.X - S(52f) - gap * 5f) / 6f;
+        var size = new Vector2(width, S(98f));
+        var hoveredWidgetThisFrame = string.Empty;
+        for (var index = 0; index < pageCandidates.Count; index++)
+        {
+            var column = index % 6;
+            var row = index / 6;
+            var min = panelMin + new Vector2(S(26f) + column * (width + gap), S(78f) + row * (size.Y + gap));
+            if (min.Y + size.Y > panelMax.Y - S(12f))
+                break;
+            var widget = pageCandidates[index];
+            var hovered = ImGui.IsMouseHoveringRect(min, min + size);
+            if (hovered)
+            {
+                hoveredWidgetThisFrame = widget.Id;
+                if (!controlCenterPickerHoveredWidgetId.Equals(widget.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    controlCenterPickerHoveredWidgetId = widget.Id;
+                    controlCenterPickerHoverStartedAt = ImGui.GetTime();
+                }
+            }
+            draw.AddRectFilled(min + S(new Vector2(3, 4)), min + size + S(new Vector2(3, 4)), ImGui.GetColorU32(new Vector4(0, 0, 0, 0.24f)), S(20f));
+            draw.AddRectFilled(min, min + size, ImGui.GetColorU32(new Vector4(0.16f, 0.17f, 0.23f, hovered ? 0.99f : 0.92f)), S(20f));
+            draw.AddRect(min, min + size, ImGui.GetColorU32(new Vector4(1, 1, 1, hovered ? 0.18f : 0.08f)), S(20f));
+            DrawMarqueeText(draw, widget.AppId, min + S(new Vector2(10, 10)), width - S(20f), ImGui.GetColorU32(new Vector4(0.67f, 0.70f, 0.80f, 1f)), hovered, controlCenterPickerHoverStartedAt, 0.18d);
+            DrawMarqueeText(draw, widget.Title, min + S(new Vector2(10, 31)), width - S(20f), ImGui.GetColorU32(Vector4.One), hovered, controlCenterPickerHoverStartedAt, 0.18d);
+            DrawMarqueeText(draw, widget.Description, min + S(new Vector2(10, 51)), width - S(20f), ImGui.GetColorU32(new Vector4(0.61f, 0.64f, 0.73f, 1f)), hovered, controlCenterPickerHoverStartedAt, 0.18d);
+            var plus = min + new Vector2(S(21f), size.Y - S(18f));
+            draw.AddCircleFilled(plus, S(11f), ImGui.GetColorU32(hovered ? palette.AccentHover : palette.Accent));
+            draw.AddLine(plus - new Vector2(S(4.5f), 0), plus + new Vector2(S(4.5f), 0), ImGui.GetColorU32(Vector4.One), S(1.5f));
+            draw.AddLine(plus - new Vector2(0, S(4.5f)), plus + new Vector2(0, S(4.5f)), ImGui.GetColorU32(Vector4.One), S(1.5f));
+            draw.AddText(plus + S(new Vector2(18, -8)), ImGui.GetColorU32(new Vector4(0.72f, 0.74f, 0.82f, 1f)), "Add");
+            ImGui.SetCursorScreenPos(min);
+            if (ImGui.InvisibleButton($"##pick-{widget.Id}", size))
+            {
+                config.ControlCenterWidgets.Add(widget.Id);
+                controlCenterPickerOpen = false;
+                saveImmediate();
+            }
+            DrawTooltip(widget.Description);
+        }
+        if (string.IsNullOrEmpty(hoveredWidgetThisFrame))
+            controlCenterPickerHoveredWidgetId = string.Empty;
+
+        if (pageCount > 1)
+        {
+            var navY = panelMax.Y - S(48f);
+            var pageText = $"{controlCenterPickerPage + 1} of {pageCount}";
+            var pageTextSize = ImGui.CalcTextSize(pageText);
+            draw.AddText(
+                new Vector2((panelMin.X + panelMax.X - pageTextSize.X) * 0.5f, navY + S(6f)),
+                ImGui.GetColorU32(new Vector4(0.72f, 0.74f, 0.80f, 1f)),
+                pageText);
+            var previousMin = new Vector2(panelMin.X + S(22f), navY);
+            var nextMin = new Vector2(panelMax.X - S(56f), navY);
+            ImGui.SetCursorScreenPos(previousMin);
+            if (ImGui.InvisibleButton("##control-picker-previous", S(new Vector2(34, 30))) && controlCenterPickerPage > 0)
+                controlCenterPickerPage--;
+            draw.AddText(previousMin + S(new Vector2(11, 4)), ImGui.GetColorU32(Vector4.One), "‹");
+            ImGui.SetCursorScreenPos(nextMin);
+            if (ImGui.InvisibleButton("##control-picker-next", S(new Vector2(34, 30))) && controlCenterPickerPage < pageCount - 1)
+                controlCenterPickerPage++;
+            draw.AddText(nextMin + S(new Vector2(11, 4)), ImGui.GetColorU32(Vector4.One), "›");
+        }
+    }
+
+    private void DrawMarqueeText(
+        ImDrawListPtr draw,
+        string text,
+        Vector2 position,
+        float maxWidth,
+        uint color,
+        bool animate = true,
+        double animationStartedAt = 0d,
+        double pauseSeconds = 1.15d)
+    {
+        if (string.IsNullOrWhiteSpace(text) || maxWidth <= 0f)
+            return;
+
+        var textWidth = ImGui.CalcTextSize(text).X;
+        if (textWidth <= maxWidth)
+        {
+            draw.AddText(position, color, text);
+            return;
+        }
+
+        var lineHeight = ImGui.GetTextLineHeight();
+        if (!animate)
+        {
+            draw.PushClipRect(position, position + new Vector2(maxWidth, lineHeight), true);
+            draw.AddText(position, color, text);
+            draw.PopClipRect();
+            return;
+        }
+
+        var gap = Math.Max(S(34f), maxWidth * 0.28f);
+        var loopDistance = textWidth + gap;
+        var travelSeconds = Math.Max(0.85d, loopDistance / Math.Max(1f, S(25f)));
+        var cycleSeconds = pauseSeconds + travelSeconds;
+        var phase = Math.Max(0d, ImGui.GetTime() - animationStartedAt) % cycleSeconds;
+        var offset = 0f;
+        if (phase < pauseSeconds)
+            offset = 0f;
+        else
+            offset = loopDistance * (float)((phase - pauseSeconds) / travelSeconds);
+
+        draw.PushClipRect(position, position + new Vector2(maxWidth, lineHeight), true);
+        draw.AddText(position - new Vector2(offset, 0f), color, text);
+        draw.AddText(position + new Vector2(loopDistance - offset, 0f), color, text);
+        draw.PopClipRect();
+    }
+
+    private void DrawCenteredHoverMarquee(
+        ImDrawListPtr draw,
+        string text,
+        Vector2 min,
+        Vector2 size,
+        uint color,
+        bool hovered,
+        string hoverId)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        var padding = S(6f);
+        var availableWidth = MathF.Max(1f, size.X - padding * 2f);
+        var textSize = ImGui.CalcTextSize(text);
+        var y = min.Y + (size.Y - textSize.Y) * 0.5f;
+        if (textSize.X <= availableWidth)
+        {
+            draw.AddText(new Vector2(min.X + (size.X - textSize.X) * 0.5f, y), color, text);
+            return;
+        }
+
+        var frame = ImGui.GetFrameCount();
+        if (hovered)
+        {
+            if (!controlCenterMacroHoveredKeyId.Equals(hoverId, StringComparison.Ordinal) ||
+                controlCenterMacroHoverFrame < frame - 1)
+            {
+                controlCenterMacroHoveredKeyId = hoverId;
+                controlCenterMacroHoverStartedAt = ImGui.GetTime();
+            }
+            controlCenterMacroHoverFrame = frame;
+        }
+        DrawMarqueeText(
+            draw,
+            text,
+            new Vector2(min.X + padding, y),
+            availableWidth,
+            color,
+            hovered,
+            controlCenterMacroHoverStartedAt,
+            0.18d);
     }
 
     private void DrawHome(ThemePalette palette)
@@ -1284,7 +2051,7 @@ internal sealed class TabletWindow
         var bundled = appHost.IsAvailable(app.Id);
         var enabled = appHost.IsEnabled(app.Id);
         var failed = bundled && enabled && !appHost.IsRunning(app.Id);
-        var hovered = ImGui.IsMouseHoveringRect(start, end);
+        var hovered = !ControlCenterVisible && ImGui.IsMouseHoveringRect(start, end);
         var isBeingDragged = draggedAppId.Equals(app.Id, StringComparison.OrdinalIgnoreCase);
         var isDropTarget =
             hovered &&
@@ -1378,10 +2145,10 @@ internal sealed class TabletWindow
                 : new Vector4(0.95f, 0.96f, 1f, 1f));
 
         ImGui.InvisibleButton("##app-tile", new Vector2(width, height));
-        if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 5f))
+        if (!ControlCenterVisible && ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 5f))
             draggedAppId = app.Id;
 
-        if (hovered && ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+        if (!ControlCenterVisible && hovered && ImGui.IsMouseReleased(ImGuiMouseButton.Left))
         {
             if (!string.IsNullOrWhiteSpace(draggedAppId))
             {
@@ -1623,7 +2390,7 @@ internal sealed class TabletWindow
         var baseHitMin = baseCenter -
             new Vector2(S(39f), S(34f));
         var hitSize = S(new Vector2(78, 88));
-        var hovered = ImGui.IsMouseHoveringRect(
+        var hovered = !ControlCenterVisible && ImGui.IsMouseHoveringRect(
             baseHitMin,
             baseHitMin + hitSize);
         var scaleKey = $"dock:{id}";
@@ -1677,7 +2444,7 @@ internal sealed class TabletWindow
 
         ImGui.SetCursorScreenPos(baseHitMin);
         ImGui.InvisibleButton($"##dock-{id}", hitSize);
-        if (ImGui.IsItemClicked())
+        if (!ControlCenterVisible && ImGui.IsItemClicked())
             clicked();
         DrawTooltip(tooltip);
     }
@@ -2455,6 +3222,8 @@ internal sealed class TabletWindow
                 "Track bar sales, venue audits, drink sessions, dice rolls, and payouts.",
             "GAMBAASSISTANT" =>
                 "Run Blackjack tables and Death Roll tournaments with dealer tools.",
+            "MACRODECK" =>
+                "Build Stream Deck-style venue macro panels with folders, images, chat, and emotes.",
             "RAFFLEMANAGER" =>
                 "Sell and manage raffle tickets, grow jackpots, and draw weighted winners.",
             "SHIFTKEEPER" =>
@@ -2487,7 +3256,7 @@ internal sealed class TabletWindow
         settingsPage = SettingsPage.General;
         activeModuleId = string.Empty;
         saveImmediate();
-        BeginOpening(Screen.Home);
+        BeginOpening(Screen.Settings);
         if (failed.Count > 0)
             ShowNotice($"Could not start: {string.Join(", ", failed)}.");
     }
@@ -3619,26 +4388,37 @@ internal sealed class TabletWindow
         }
 
         DrawSettingsGroupLabel("AirTabOS & App Updates");
-        var releases = changelog.Items
-            .GroupBy(item => (item.Date.Date, item.Version))
-            .OrderByDescending(group => group.Key.Date)
-            .ThenByDescending(group => group.Key.Version, StringComparer.OrdinalIgnoreCase);
-        foreach (var release in releases)
+        var releases = new List<List<ChangelogItem>>();
+        foreach (var item in changelog.Items)
         {
-            var items = release
-                .OrderBy(item => item.PluginName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var currentRelease = releases.LastOrDefault();
+            if (currentRelease is not null &&
+                currentRelease[0].Date.Date == item.Date.Date &&
+                currentRelease[0].Version.Equals(item.Version, StringComparison.OrdinalIgnoreCase))
+            {
+                currentRelease.Add(item);
+            }
+            else
+            {
+                releases.Add([item]);
+            }
+        }
+
+        for (var releaseIndex = 0; releaseIndex < releases.Count; releaseIndex++)
+        {
+            var items = releases[releaseIndex];
+            var release = items[0];
             var cardHeight = CalculateChangelogReleaseHeight(items);
             if (BeginSettingsGroup(
-                    $"##change-{release.Key.Date:yyyyMMdd}-{release.Key.Version}",
+                    $"##change-{releaseIndex}-{release.Date:yyyyMMdd}-{release.Version}",
                     cardHeight,
                     palette))
             {
-                ImGui.TextColored(palette.AccentHover, $"Version {release.Key.Version}");
+                ImGui.TextColored(palette.AccentHover, $"Version {release.Version}");
                 ImGui.SameLine();
                 ImGui.TextColored(
                     new Vector4(0.60f, 0.62f, 0.70f, 1f),
-                    items[0].Date.ToLocalTime().ToString("dd MMM yyyy"));
+                    release.Date.ToLocalTime().ToString("dd MMM yyyy"));
                 ImGui.Separator();
                 foreach (var item in items)
                 {
@@ -4129,6 +4909,27 @@ internal sealed class TabletWindow
 
     private void DrawGestureBar(ThemePalette palette)
     {
+        var parentMin = ImGui.GetWindowPos();
+        var parentSize = ImGui.GetWindowSize();
+        var layerHeight = S(HomeGestureAreaHeight);
+        ImGui.SetCursorScreenPos(new Vector2(parentMin.X, parentMin.Y + parentSize.Y - layerHeight));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
+        if (!ImGui.BeginChild(
+                "##home-gesture-visual-layer",
+                new Vector2(parentSize.X, layerHeight),
+                false,
+                ImGuiWindowFlags.NoBackground |
+                ImGuiWindowFlags.NoScrollbar |
+                ImGuiWindowFlags.NoScrollWithMouse |
+                ImGuiWindowFlags.NoSavedSettings))
+        {
+            ImGui.EndChild();
+            ImGui.PopStyleColor();
+            ImGui.PopStyleVar();
+            return;
+        }
+
         var screenSize = ImGui.GetWindowSize();
         var barWidth = S(118f);
         var min = ImGui.GetWindowPos() + new Vector2((screenSize.X - barWidth) * 0.5f, screenSize.Y - S(10f));
@@ -4151,10 +4952,17 @@ internal sealed class TabletWindow
         ImGui.SetCursorScreenPos(hitMin);
         if (ImGui.InvisibleButton("##home-gesture", hitSize))
         {
-            if (tutorialStep == TutorialStep.Home)
+            if (controlCenterOpen)
+            {
+                controlCenterOpen = false;
+                controlCenterPickerOpen = false;
+                if (tutorialStep == TutorialStep.ControlCenterClose)
+                    AdvanceControlTutorial(TutorialStep.LockPosition);
+            }
+            else if (tutorialStep == TutorialStep.Home)
             {
                 ReturnHome();
-                AdvanceControlTutorial(TutorialStep.LockPosition);
+                AdvanceControlTutorial(TutorialStep.ControlCenterOpen);
             }
             else if (tutorialStep == TutorialStep.None)
             {
@@ -4162,6 +4970,9 @@ internal sealed class TabletWindow
             }
         }
         DrawTooltip("Return to the AirTablet home screen.");
+        ImGui.EndChild();
+        ImGui.PopStyleColor();
+        ImGui.PopStyleVar();
     }
 
     private float AnimateControlHover(string key, bool hovered)
@@ -4208,6 +5019,9 @@ internal sealed class TabletWindow
 
     private void BeginOpening(Screen target)
     {
+        controlCenterOpen = false;
+        controlCenterPickerOpen = false;
+        controlCenterProgress = 0f;
         screen = target;
         transitionPhase = TransitionPhase.Opening;
         transitionStartedAt = ImGui.GetTime();

@@ -7,6 +7,19 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-17] AirTabOS v1.0.22.1
+- [NEW APP] MacroDeck a generalized macro app where it can be used for organizing your venue macros, emotes and more.
+- [NEW AirTabOS Feature] Added control center with addable information widgets from various apps. (Click near battery/signal icon in status bar)
+- Updated What's New to preserve the exact order of entries in the bundled changelog file.
+- Added themed tint to tablet lock button to make it more obvious when tablet is locked in position
+
+[2026-08-17] RaffleManager v0.2.22.0
+- Fixed the selected venue profile reverting to Default after plugin reloads and updates.
+- Added a confirmation prompt before picking a random winner.
+
+[2026-08-17] GambaAssistant v0.1.25.0
+- Fixed DRT bracket open in separate window not actually opening a window outside the tablet.
+
 [2026-08-12] GambaAssistant v0.1.24.0
 - Fixed Split button being cutoff in 1 wide overlay.
 

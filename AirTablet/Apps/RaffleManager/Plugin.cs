@@ -33,7 +33,6 @@ internal sealed class Plugin : IDisposable
         DalamudServices.Initialize(pluginInterface);
         config = DalamudServices.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var migrateDefaultSplitter = config.Version < 4;
-        config.EnsureDefaults();
         persistence = new PersistenceService(config);
         if (migrateDefaultSplitter)
         {
@@ -149,6 +148,26 @@ internal sealed class Plugin : IDisposable
         persistence.SaveNow();
         return true;
     }
+
+    internal IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() =>
+    [
+        new(
+            "raffle.tickets",
+            "RaffleManager",
+            "Raffle tickets",
+            "Total chances currently entered in the active raffle.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () => new(raffle.TotalTickets.ToString("N0"), $"{raffle.ParticipantCount:N0} contestants")),
+        new(
+            "raffle.jackpot",
+            "RaffleManager",
+            "Raffle jackpot",
+            "Current jackpot and projected winner payout.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () => new($"{raffle.Jackpot:N0} gil", $"Payout {raffle.WinnerPayout:N0} gil")),
+    ];
 
     public void Dispose()
     {

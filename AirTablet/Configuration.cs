@@ -27,6 +27,7 @@ public sealed class Configuration : IPluginConfiguration
     public float WallpaperOpacity { get; set; } = 0.55f;
     public bool ShowBattery { get; set; } = true;
     public bool Use24HourClock { get; set; } = true;
+    public List<string> ControlCenterWidgets { get; set; } = [];
     public string LastReadChangelogVersion { get; set; } = string.Empty;
     public List<string> AppOrder { get; set; } = [];
     public bool AppSelectionInitialized { get; set; }
@@ -36,6 +37,7 @@ public sealed class Configuration : IPluginConfiguration
         "AutoGreet",
         "BarManager",
         "GambaAssistant",
+        "MacroDeck",
         "RaffleManager",
         "ShiftKeeper",
         "ShopHelper",

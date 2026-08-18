@@ -81,6 +81,26 @@ internal sealed class Plugin : IDisposable
         return true;
     }
 
+    public IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() =>
+    [
+        new(
+            "shoutrunner.progress",
+            "ShoutRunner",
+            "Shout route",
+            "Current advertising route progress and task.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () => new(
+                runner.IsPaused
+                    ? $"Paused · {runner.CompletedStops:N0}/{runner.TotalStops:N0}"
+                    : runner.IsRunning
+                        ? $"{runner.CompletedStops:N0}/{runner.TotalStops:N0} stops"
+                        : runner.Phase == RunPhase.Completed
+                            ? "Run complete"
+                            : "Not running",
+                runner.IsRunning || runner.IsPaused ? runner.CurrentTask : runner.Status)),
+    ];
+
     private void OpenSettings()
     {
         settingsOpen = true;

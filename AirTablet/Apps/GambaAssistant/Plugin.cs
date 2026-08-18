@@ -74,8 +74,11 @@ internal sealed class Plugin : IDisposable
             mainWindow = new MainWindow(config, session, profiles, party, players, ledger, tradeMonitor, dice, chatQueue, overlays, undo, demo, exports, deathRoll, log, OpenSettingsWindow, SetDrtBracketWindowOpen) { IsOpen = config.WindowVisible };
             settingsWindow = new SettingsWindow(config, session, profiles, persistence, log) { IsOpen = config.SettingsWindowVisible };
             drtBracketWindow = new DeathRollBracketWindow(mainWindow) { IsOpen = config.DeathRoll.BracketWindowOpen };
-            windowSystem.AddWindow(mainWindow);
-            windowSystem.AddWindow(settingsWindow);
+            if (!tabletHosted)
+            {
+                windowSystem.AddWindow(mainWindow);
+                windowSystem.AddWindow(settingsWindow);
+            }
             windowSystem.AddWindow(drtBracketWindow);
 
             if (tabletHosted)
@@ -192,9 +195,7 @@ internal sealed class Plugin : IDisposable
     {
         SafeRun("Draw embedded GambaAssistant", () =>
         {
-            if (drtBracketWindow is { IsOpen: true })
-                drtBracketWindow.Draw();
-            else if (settingsWindow.IsOpen)
+            if (settingsWindow.IsOpen)
                 settingsWindow.Draw();
             else
                 mainWindow.Draw();
@@ -203,6 +204,7 @@ internal sealed class Plugin : IDisposable
 
     internal void TickEmbedded()
     {
+        SafeRun("Draw detached GambaAssistant windows", DrawEmbeddedDetachedWindows);
         if (party.CanReadLocalPlayer)
         {
             SafeRun("Sync live party", SyncLiveParty);
@@ -213,24 +215,76 @@ internal sealed class Plugin : IDisposable
         SafeRun("Autosave DRT session", AutosaveDeathRollTournament);
     }
 
-    internal bool CanNavigateBackEmbedded() =>
-        drtBracketWindow is { IsOpen: true } || settingsWindow.IsOpen;
+    private void DrawEmbeddedDetachedWindows()
+    {
+        windowSystem.Draw();
+        if (drtBracketWindow is null ||
+            config.DeathRoll.BracketWindowOpen == drtBracketWindow.IsOpen)
+        {
+            return;
+        }
+
+        config.DeathRoll.BracketWindowOpen = drtBracketWindow.IsOpen;
+        persistence.SaveNow();
+    }
+
+    internal bool CanNavigateBackEmbedded() => settingsWindow.IsOpen;
 
     internal bool NavigateBackEmbedded()
     {
-        if (drtBracketWindow is { IsOpen: true })
-        {
-            drtBracketWindow.IsOpen = false;
-            config.DeathRoll.BracketWindowOpen = false;
-            SafeRun("Save embedded bracket visibility", () => persistence.SaveNow());
-            return true;
-        }
         if (!settingsWindow.IsOpen)
             return false;
         settingsWindow.IsOpen = false;
         config.SettingsWindowVisible = false;
         SafeRun("Save embedded settings visibility", () => persistence.SaveNow());
         return true;
+    }
+
+    internal IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() =>
+    [
+        new(
+            "gamba.blackjack",
+            "GambaAssistant",
+            "Blackjack table",
+            "Current blackjack phase, players, and tracked table bank.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () =>
+            {
+                var tablePlayers = session.SessionPlayers
+                    .Where(player => player.Status != GambaAssistant.Models.Players.PlayerStatus.Dealer)
+                    .ToList();
+                var bank = tablePlayers.Sum(player => player.Bank.TotalTracked);
+                var phase = session.Round.Phase == BlackjackPhase.Idle ? "Table idle" : session.Round.Phase.ToString();
+                return new(phase, $"{tablePlayers.Count:N0} players  •  {FormatWidgetGil(bank)} gil");
+            }),
+        new(
+            "gamba.deathroll",
+            "GambaAssistant",
+            "Death Roll tournament",
+            "Entrants and progress for the current tournament bracket.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () =>
+            {
+                var tournament = deathRoll.Tournament;
+                var complete = tournament.AllMatches.Count(match => match.Status is DeathRollMatchStatus.Complete or DeathRollMatchStatus.Bye);
+                var total = tournament.AllMatches.Count();
+                return new(tournament.Status.ToString(), $"{tournament.Entrants.Count:N0} entrants  •  {complete:N0}/{total:N0}");
+            }),
+    ];
+
+    private static string FormatWidgetGil(long amount)
+    {
+        var absolute = Math.Abs((double)amount);
+        return absolute switch
+        {
+            >= 1_000_000_000_000d => $"{amount / 1_000_000_000_000d:0.#}T",
+            >= 1_000_000_000d => $"{amount / 1_000_000_000d:0.#}B",
+            >= 1_000_000d => $"{amount / 1_000_000d:0.#}M",
+            >= 1_000d => $"{amount / 1_000d:0.#}K",
+            _ => amount.ToString("N0"),
+        };
     }
 
     private void AutosaveBlackjackSession()

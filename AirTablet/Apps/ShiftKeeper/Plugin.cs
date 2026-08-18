@@ -165,6 +165,61 @@ internal sealed class Plugin : IDisposable
         return true;
     }
 
+    internal IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() =>
+    [
+        new(
+            "shiftkeeper.active",
+            "ShiftKeeper",
+            "Staff on shift",
+            "Scheduled staff currently being timed.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            ReadActiveStaffWidget),
+        new(
+            "shiftkeeper.times",
+            "ShiftKeeper",
+            "Current shift times",
+            "Live worked time for staff currently on shift.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            ReadShiftTimesWidget),
+    ];
+
+    private AirTablet.Services.ControlCenterWidgetSnapshot ReadActiveStaffWidget()
+    {
+        var venue = persistence.ActiveVenue;
+        var working = venue.Staff.Count(member => IsActivelyTimed(venue, member));
+        var scheduled = venue.Staff.Count(member =>
+            member.Enabled && venue.CurrentNight.GetOrCreate(member.Id).Scheduled);
+        return new(working.ToString("N0"), $"of {scheduled:N0} scheduled");
+    }
+
+    private AirTablet.Services.ControlCenterWidgetSnapshot ReadShiftTimesWidget()
+    {
+        var venue = persistence.ActiveVenue;
+        var active = venue.Staff
+            .Where(member => IsActivelyTimed(venue, member))
+            .Select(member =>
+            {
+                var record = venue.CurrentNight.GetOrCreate(member.Id);
+                return $"{member.Name}: {StaffTrackingService.FormatDuration(record.AccruedSeconds)}";
+            })
+            .Take(3)
+            .ToArray();
+        return active.Length == 0
+            ? new("No active timers", venue.Name)
+            : new($"{active.Length} active", string.Join("  •  ", active));
+    }
+
+    private static bool IsActivelyTimed(ShiftKeeper.Models.VenueProfile venue, ShiftKeeper.Models.StaffMember member)
+    {
+        if (!member.Enabled || member.PresenceMode == ShiftKeeper.Models.PresenceMode.NoTimer)
+            return false;
+        var record = venue.CurrentNight.GetOrCreate(member.Id);
+        return record.Scheduled && !record.ShiftEndedEarly &&
+               (record.ManualClockedIn || record.IsVisible || record.InCrashGrace);
+    }
+
     public void Dispose()
     {
         persistence.SaveNow();

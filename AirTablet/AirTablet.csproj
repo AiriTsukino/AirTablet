@@ -8,7 +8,7 @@
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
     <AssemblyName>AirTablet</AssemblyName>
     <RootNamespace>AirTablet</RootNamespace>
-    <Version>1.0.8.1</Version>
+    <Version>1.0.22.1</Version>
     <Description>A modern tablet OS for Airi's bundled venue apps.</Description>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
@@ -27,6 +27,7 @@
     <Content Include="Apps\AutoGreet\Resources\AGLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\AutoGreet\AGLogo.png" />
     <Content Include="Apps\BarManager\Resources\BMLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\BarManager\BMLogo.png" />
     <Content Include="Apps\GambaAssistant\Resources\GALogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\GambaAssistant\GALogo.png" />
+    <Content Include="Apps\MacroDeck\Resources\MDLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\MacroDeck\MDLogo.png" />
     <Content Include="Apps\RaffleManager\Resources\RMLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\RaffleManager\RMLogo.png" />
     <Content Include="Apps\ShiftKeeper\Resources\SKLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShiftKeeper\SKLogo.png" />
     <Content Include="Apps\ShopHelper\Resources\SHLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShopHelper\SHLogo.png" />

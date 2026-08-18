@@ -31,6 +31,7 @@ internal sealed class MainWindow : Window, IDisposable
     private WinnerRecord? winnerPopup;
     private Guid? pendingDelete;
     private bool pendingClearWinnerHistory;
+    private bool pendingWinnerPick;
 
     public MainWindow(Configuration config, PersistenceService persistence, RaffleService raffle, SoundService sound, LogoService logo, AnnouncementService announcements, Action openSettings)
         : base("RaffleManager###RaffleManagerMain")
@@ -82,6 +83,7 @@ internal sealed class MainWindow : Window, IDisposable
         }
 
         DrawWinnerPopup();
+        DrawPickWinnerConfirmation();
         DrawDeleteConfirmation();
         DrawClearHistoryConfirmation();
     }
@@ -509,7 +511,10 @@ internal sealed class MainWindow : Window, IDisposable
                 buttonLabel,
                 new Vector2(buttonWidth, buttonHeight)))
         {
-            StartSpin();
+            if (raffle.TotalTickets <= 0)
+                DalamudServices.ChatGui.Print("Add contestants before pulling a winner.", "RaffleManager");
+            else
+                pendingWinnerPick = true;
         }
         ImGui.EndDisabled();
     }
@@ -980,6 +985,35 @@ internal sealed class MainWindow : Window, IDisposable
             if (ImGui.Button("Cancel", AirTablet.UI.TabletAppTheme.Px(new Vector2(120, 0))))
             {
                 pendingClearWinnerHistory = false;
+                AirTablet.UI.TabletAppTheme.CloseCenteredModal();
+            }
+            AirTablet.UI.TabletAppTheme.EndCenteredModal();
+        }
+    }
+
+    private void DrawPickWinnerConfirmation()
+    {
+        if (!pendingWinnerPick) return;
+        AirTablet.UI.TabletAppTheme.OpenCenteredModal("Pick random winner?");
+        if (AirTablet.UI.TabletAppTheme.BeginCenteredModal(
+                "Pick random winner?",
+                ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoResize))
+        {
+            ImGui.PushTextWrapPos(ImGui.GetFontSize() * 34f);
+            ImGui.TextWrapped($"Pick a random winner from the {raffle.TotalTickets:N0} ticket(s) in the '{Profile.Name}' venue profile?");
+            ImGui.PopTextWrapPos();
+            ImGui.Spacing();
+
+            if (ImGui.Button("Pick Winner", AirTablet.UI.TabletAppTheme.Px(new Vector2(140, 0))))
+            {
+                pendingWinnerPick = false;
+                AirTablet.UI.TabletAppTheme.CloseCenteredModal();
+                StartSpin();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", AirTablet.UI.TabletAppTheme.Px(new Vector2(120, 0))))
+            {
+                pendingWinnerPick = false;
                 AirTablet.UI.TabletAppTheme.CloseCenteredModal();
             }
             AirTablet.UI.TabletAppTheme.EndCenteredModal();

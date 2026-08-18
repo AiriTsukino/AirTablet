@@ -195,6 +195,51 @@ internal sealed class Plugin : IDisposable
         return true;
     }
 
+    internal IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() =>
+    [
+        new(
+            "autogreet.enabled",
+            "AutoGreet",
+            "Auto-greet",
+            "Turn AutoGreet on or off for the active venue.",
+            AirTablet.Services.ControlCenterWidgetKind.Toggle,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () =>
+            {
+                var activeVenue = venues.ActiveVenueOrNull;
+                return activeVenue is null
+                    ? new("No venue", "Select an active venue", config.AutoGreetEnabled, false)
+                    : new(config.AutoGreetEnabled ? "On" : "Off", activeVenue.Name, config.AutoGreetEnabled);
+            },
+            enabled =>
+            {
+                config.AutoGreetEnabled = enabled;
+                persistence.SaveNow();
+                if (enabled)
+                    queue.EnqueueEligibleUngreeted(true);
+            }),
+        new(
+            "autogreet.visitors",
+            "AutoGreet",
+            "Current visitors",
+            "People currently detected in the active venue area.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () => new(
+                detection.PresentKeys.Count.ToString("N0"),
+                detection.IsScanningActive ? "currently detected" : "detection inactive",
+                null,
+                detection.IsScanningActive)),
+        new(
+            "autogreet.queue",
+            "AutoGreet",
+            "Greeting queue",
+            "Visitors waiting for their greeting macro.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            () => new(queue.Entries.Count.ToString("N0"), "waiting to greet")),
+    ];
+
     public void Dispose()
     {
         persistence.SaveNow();

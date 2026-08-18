@@ -1,0 +1,61 @@
+@id macrodeck
+@title MacroDeck
+@summary Build Stream Deck-style panels for multiline chat and emote macros.
+@category Bundled Apps
+@order 35
+
+# Quick start
+- Enable MacroDeck in AirTabOS Settings > Apps. Existing AirTablet installations leave this new app disabled until you choose to enable it.
+- Choose or create a venue profile from the selector at the top of MacroDeck.
+- Click Edit Deck, then click an empty key to create a macro or folder.
+- Click Finish Editing, then press a macro key to run it.
+- Right-click an existing key at any time to edit it.
+- Deleting a macro or folder requires confirmation; deleting a folder also deletes every key inside it.
+- Editors, profile management, and confirmations open as panels contained within the tablet screen.
+
+> warning: Say, shout, and yell commands are sent to game chat immediately. Use /echo while building and testing a deck because echo output is visible only to you.
+
+# Deck keys
+The root deck uses a fully configurable 8 by 4 layout with all 32 keys available. Inside a first-level folder, the first key is a protected Home key. Inside a folder nested below that, the first key is a protected Back key. Folder pages therefore have 31 configurable keys. Protected navigation keys cannot be edited or deleted.
+
+A configurable key can use a title, a PNG/JPG/WebP image, or both. Images are centered and fitted without stretching or changing their aspect ratio. Square 1:1 artwork makes the best use of a key. Empty keys remain inactive outside Edit Deck mode. Titles are limited to 128 characters and scroll while the key is hovered when they do not fit.
+
+## Macro keys
+Enter one FFXIV command per line in the macro script. There is no separate channel or emote field: place chat, emote, and wait commands in the order they should run.
+
+Supported chat commands include /say, /shout, /yell, and /echo. Supported in-game emotes such as /wave, /dance, or /bow can be placed directly on their own lines. Add an explicit wait with /wait 1, /wait.1, or /wait1, or append an inline wait such as <wait.1> to a supported command.
+
+Example:
+```
+/echo Testing this key
+/wave
+/wait 1
+/say Welcome to the venue!
+```
+
+## Folder keys
+Choose Folder as the key type to create a category. Opening a folder displays another deck, and folders can contain additional folders. A first-level folder has a protected Home key that returns directly to the root deck. Deeper folders have a protected Back key that returns one folder level. The root deck has no navigation key, so its first key remains configurable.
+
+# Venue profiles
+Venue profiles keep separate decks and separate Control Center quick-key assignments. The active profile is remembered across reloads and updates.
+
+Open Profiles to rename the active profile, create or delete profiles, export the active profile to JSON, or import a profile with the native Windows file picker. Button images also use the native Windows image picker. Import always creates a separate profile with new internal IDs and does not overwrite an existing venue.
+
+# Control Center macro pad
+Add a MacroDeck Macro pad from Control Center's Add widget screen. Each pad uses the space of one normal widget but contains four quarter-size quick keys. You can add multiple independent pads.
+
+- Click a + key to choose a macro from the active venue profile.
+- Click an assigned key to run its macro.
+- Right-click an assigned key to replace or clear it.
+- Long quick-key and chooser titles scroll while hovered and remain centered when they fit.
+- A macro can be assigned to only one quick key across all active pads in the profile.
+- Removing a pad clears that pad's assignments; adding another pad creates a new empty set of four keys.
+- Changing the active MacroDeck venue automatically displays that profile's four saved assignments.
+
+# Troubleshooting
+## A macro does nothing
+Open Edit Deck and confirm that the script contains supported slash commands. Start with a line such as `/echo Testing this key` while testing the script.
+## An image does not appear
+Confirm the image still exists at the saved path and uses PNG, JPG, JPEG, or WebP format.
+## A Control Center key is empty
+The assigned macro may have been deleted or the active venue profile may have changed. Right-click the key and assign a macro from the current profile.

@@ -17,6 +17,7 @@ internal sealed class AppHostService : IDisposable
         new("AutoGreet", typeof(AutoGreet.Configuration), () => new AutoGreet.AirTabletModule()),
         new("BarManager", typeof(BarManager.Configuration), () => new BarManager.AirTabletModule()),
         new("GambaAssistant", typeof(GambaAssistant.Configuration), () => new GambaAssistant.AirTabletModule()),
+        new("MacroDeck", typeof(MacroDeck.Configuration), () => new MacroDeck.AirTabletModule(), false),
         new("RaffleManager", typeof(RaffleManager.Configuration), () => new RaffleManager.AirTabletModule()),
         new("ShiftKeeper", typeof(ShiftKeeper.Configuration), () => new ShiftKeeper.AirTabletModule()),
         new("ShopHelper", typeof(ShopHelper.Configuration), () => new ShopHelper.AirTabletModule()),
@@ -204,6 +205,27 @@ internal sealed class AppHostService : IDisposable
             DalamudServices.Log.Error(ex, "AirTablet app {App} failed while drawing.", id);
             return false;
         }
+    }
+
+    public IReadOnlyList<ControlCenterWidget> GetControlCenterWidgets()
+    {
+        var widgets = new List<ControlCenterWidget>();
+        foreach (var pair in running.ToArray())
+        {
+            try
+            {
+                widgets.AddRange(pair.Value.GetControlCenterWidgets());
+            }
+            catch (Exception ex)
+            {
+                DalamudServices.Log.Warning(
+                    ex,
+                    "AirTablet app {App} could not provide Control Center widgets.",
+                    pair.Key);
+            }
+        }
+
+        return widgets;
     }
 
     public bool NavigateBack(string id)

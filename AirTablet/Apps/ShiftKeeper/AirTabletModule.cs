@@ -13,6 +13,9 @@ internal sealed class AirTabletModule : AirTablet.Services.IAirTabletApp
 
     public void Draw() => runtime?.DrawEmbedded();
 
+    public IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() =>
+        runtime?.GetControlCenterWidgets() ?? [];
+
     public bool CanNavigateBack() => runtime?.CanNavigateBackEmbedded() ?? false;
 
     public bool NavigateBack() => runtime?.NavigateBackEmbedded() ?? false;
