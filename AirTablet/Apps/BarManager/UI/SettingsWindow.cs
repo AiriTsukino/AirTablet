@@ -15,6 +15,7 @@ internal sealed class SettingsWindow : Window
     private string statusMessage = string.Empty;
     private int pendingDrinkDeleteIndex = -1;
     private int pendingVenueDeleteIndex = -1;
+    private Guid? pendingRangeMultiplierDeleteId;
 
     public SettingsWindow(Configuration config, PersistenceService persistence)
         : base("BarManager Settings###BarManagerSettings")
@@ -297,7 +298,9 @@ internal sealed class SettingsWindow : Window
 
             UiHelpers.SectionTitle("Global Bonus Multipliers");
             ImGui.Indent(AirTablet.UI.TabletAppTheme.Px(8f));
-            UiHelpers.TextWrappedMuted("These bonus settings apply to the gamba game as a whole instead of individual payout rules. They are off by default and only affect the next win while active.");
+            UiHelpers.TextWrappedMuted("These bonuses apply to the gamba game as a whole instead of individual payout rules. Roll ranges apply whenever a winning roll lands in their range; activation bonuses affect the next win while active.");
+
+            DrawRollRangeMultipliers(gamba);
 
             var lossEnabled = gamba.LossStreakBonusEnabled;
             if (ImGui.Checkbox("Enable loss streak bonus", ref lossEnabled)) { gamba.LossStreakBonusEnabled = lossEnabled; persistence.SaveNow(); }
@@ -526,6 +529,32 @@ internal sealed class SettingsWindow : Window
             persistence.SaveNow();
         }
 
+        var runs = r.Runs;
+        if (UiHelpers.CheckboxWithHelp("Runs", ref runs, "Matches a three-digit sequence in the selected direction. Count up matches 123, 234, 345, 456, 567, 678, and 789. Count down matches 321, 432, 543, 654, 765, 876, and 987."))
+        {
+            r.Runs = runs;
+            persistence.SaveNow();
+        }
+        if (r.Runs)
+        {
+            ImGui.Indent(AirTablet.UI.TabletAppTheme.Px(12f));
+            var countUp = r.RunsCountUp ?? r.RunDirection == GambaRunDirection.CountUp;
+            if (UiHelpers.CheckboxWithHelp("Count up", ref countUp, "Matches ascending runs: 123, 234, 345, 456, 567, 678, and 789."))
+            {
+                r.RunsCountUp = countUp;
+                persistence.SaveNow();
+            }
+            var countDown = r.RunsCountDown ?? r.RunDirection == GambaRunDirection.CountDown;
+            if (UiHelpers.CheckboxWithHelp("Count down", ref countDown, "Matches descending runs: 321, 432, 543, 654, 765, 876, and 987."))
+            {
+                r.RunsCountDown = countDown;
+                persistence.SaveNow();
+            }
+            if (!countUp && !countDown)
+                UiHelpers.TextWrappedMuted("Enable Count up, Count down, or both for this Runs condition to match a roll.");
+            ImGui.Unindent(AirTablet.UI.TabletAppTheme.Px(12f));
+        }
+
         if (ShouldShowExactOnly(r))
         {
             var exactOnly = r.ExactOnly;
@@ -542,6 +571,113 @@ internal sealed class SettingsWindow : Window
             r.ExactOnly = true;
             UiHelpers.TextWrappedMuted("Exact only is hidden because every entered winning roll is already 3 digits. /dice 999 cannot roll more than 3 digits, so those values are always exact.");
         }
+    }
+
+    private void DrawRollRangeMultipliers(GambaSettings gamba)
+    {
+        ImGui.Spacing();
+        ImGui.TextColored(BarManagerTheme.Gold, "Roll range multipliers");
+        UiHelpers.TextWrappedMuted("A winning payout inside the first enabled matching range is multiplied by that range amount. Range bonuses can stack with an active loss-streak or bartender bonus.");
+        if (ImGui.Button("+ Add multiplier range"))
+        {
+            var lower = Math.Max(0, gamba.MinRoll);
+            var upper = Math.Max(lower, gamba.MaxRoll);
+            var midpoint = Math.Max(lower, lower + Math.Max(0, upper - lower + 1) / 2 - 1);
+            gamba.RollRangeMultipliers.Add(new GambaRollRangeMultiplier
+            {
+                MinimumRoll = lower,
+                MaximumRoll = midpoint,
+                Multiplier = 2f,
+            });
+            persistence.SaveNow();
+        }
+        UiHelpers.TooltipOnHover("Adds a profile-specific roll range. For example, 1-499 at x2 doubles any winning payout whose roll falls in that range.");
+
+        if (gamba.RollRangeMultipliers.Count == 0)
+        {
+            UiHelpers.TextWrappedMuted("No roll range multipliers configured. Add one to multiply winning payouts based on the rolled number.");
+            ImGui.Spacing();
+            return;
+        }
+
+        if (ImGui.BeginTable("##RollRangeMultipliers", 7, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings))
+        {
+            ImGui.TableSetupColumn("On", ImGuiTableColumnFlags.WidthFixed, AirTablet.UI.TabletAppTheme.Px(34f));
+            ImGui.TableSetupColumn("From", ImGuiTableColumnFlags.WidthFixed, AirTablet.UI.TabletAppTheme.Px(112f));
+            ImGui.TableSetupColumn("Through", ImGuiTableColumnFlags.WidthFixed, AirTablet.UI.TabletAppTheme.Px(112f));
+            ImGui.TableSetupColumn("Multiplier", ImGuiTableColumnFlags.WidthStretch, 1f);
+            ImGui.TableSetupColumn("Jackpot", ImGuiTableColumnFlags.WidthFixed, AirTablet.UI.TabletAppTheme.Px(62f));
+            ImGui.TableSetupColumn("Order", ImGuiTableColumnFlags.WidthFixed, AirTablet.UI.TabletAppTheme.Px(116f));
+            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, AirTablet.UI.TabletAppTheme.Px(58f));
+            ImGui.TableHeadersRow();
+            for (var i = 0; i < gamba.RollRangeMultipliers.Count; i++)
+            {
+                var range = gamba.RollRangeMultipliers[i];
+                ImGui.PushID(range.Id.ToString());
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                var enabled = range.Enabled;
+                if (ImGui.Checkbox("##enabled", ref enabled)) { range.Enabled = enabled; persistence.SaveNow(); }
+
+                ImGui.TableNextColumn();
+                var minimum = range.MinimumRoll;
+                ImGui.SetNextItemWidth(-1f);
+                if (ImGui.InputInt("##minimum", ref minimum))
+                {
+                    range.MinimumRoll = Math.Clamp(minimum, Math.Max(0, gamba.MinRoll), Math.Max(gamba.MinRoll, gamba.MaxRoll));
+                    range.MaximumRoll = Math.Clamp(range.MaximumRoll, range.MinimumRoll, Math.Max(range.MinimumRoll, gamba.MaxRoll));
+                    persistence.SaveNow();
+                }
+
+                ImGui.TableNextColumn();
+                var maximum = range.MaximumRoll;
+                ImGui.SetNextItemWidth(-1f);
+                if (ImGui.InputInt("##maximum", ref maximum))
+                {
+                    range.MaximumRoll = Math.Clamp(maximum, range.MinimumRoll, Math.Max(range.MinimumRoll, gamba.MaxRoll));
+                    persistence.SaveNow();
+                }
+
+                ImGui.TableNextColumn();
+                var multiplier = range.Multiplier;
+                ImGui.SetNextItemWidth(-1f);
+                if (ImGui.InputFloat("##multiplier", ref multiplier, 0.25f, 1f))
+                {
+                    range.Multiplier = Math.Clamp(multiplier, 1f, 100f);
+                    persistence.SaveNow();
+                }
+
+                ImGui.TableNextColumn();
+                var jackpot = range.AppliesToJackpot;
+                if (ImGui.Checkbox("##jackpot", ref jackpot)) { range.AppliesToJackpot = jackpot; persistence.SaveNow(); }
+                UiHelpers.TooltipOnHover("When enabled, this range may also multiply a jackpot payout. It is off by default.");
+
+                ImGui.TableNextColumn();
+                if (i > 0 && ImGui.SmallButton("Up"))
+                {
+                    (gamba.RollRangeMultipliers[i - 1], gamba.RollRangeMultipliers[i]) = (gamba.RollRangeMultipliers[i], gamba.RollRangeMultipliers[i - 1]);
+                    persistence.SaveNow();
+                }
+                if (i > 0 && i < gamba.RollRangeMultipliers.Count - 1) ImGui.SameLine();
+                if (i < gamba.RollRangeMultipliers.Count - 1 && ImGui.SmallButton("Down"))
+                {
+                    (gamba.RollRangeMultipliers[i + 1], gamba.RollRangeMultipliers[i]) = (gamba.RollRangeMultipliers[i], gamba.RollRangeMultipliers[i + 1]);
+                    persistence.SaveNow();
+                }
+
+                ImGui.TableNextColumn();
+                if (ImGui.SmallButton("Delete"))
+                {
+                    pendingRangeMultiplierDeleteId = range.Id;
+                    AirTablet.UI.TabletAppTheme.OpenCenteredModal("Confirm delete multiplier range");
+                }
+                ImGui.PopID();
+            }
+            ImGui.EndTable();
+        }
+        UiHelpers.TextWrappedMuted("Ranges are checked from top to bottom; only the first enabled range containing the roll applies. Jackpot payouts are multiplied only when Jackpot is checked for that range.");
+        DrawDeleteRangeMultiplierConfirmation(gamba);
+        ImGui.Spacing();
     }
 
     private void DrawFileSettings()
@@ -662,7 +798,7 @@ internal sealed class SettingsWindow : Window
     private static string BuildExactOnlyTooltip(List<string> tokens)
     {
         if (tokens.Count == 0)
-            return "Exact only changes how Winning roll(s) are matched. No winning roll is currently entered, so exact matching is not used. Checked pattern types, such as Any triple or Adjacent doubles, can still win on any roll that fits those patterns.";
+            return "Exact only changes how Winning roll(s) are matched. No winning roll is currently entered, so exact matching is not used. Checked pattern types, such as Any triple, Adjacent doubles, or Runs, can still win on any roll that fits those patterns.";
 
         if (HasOnlyThreeDigitWinningRolls(tokens))
             return "Exact only is hidden for this rule because every entered winning roll is already 3 digits. With /dice 999, a 3-digit value can only match itself.";
@@ -750,6 +886,46 @@ internal sealed class SettingsWindow : Window
         rule.InValues = values.Count > 1 ? values : new List<int>();
         rule.ContainsTokens.Clear();
         rule.ContainsAnyDigits.Clear();
+    }
+
+    private void DrawDeleteRangeMultiplierConfirmation(GambaSettings gamba)
+    {
+        if (!AirTablet.UI.TabletAppTheme.BeginCenteredModal(
+                "Confirm delete multiplier range",
+                ImGuiWindowFlags.AlwaysAutoResize |
+                ImGuiWindowFlags.NoResize |
+                ImGuiWindowFlags.NoSavedSettings))
+            return;
+
+        var range = pendingRangeMultiplierDeleteId.HasValue
+            ? gamba.RollRangeMultipliers.FirstOrDefault(candidate => candidate.Id == pendingRangeMultiplierDeleteId.Value)
+            : null;
+        var description = range is null
+            ? "this multiplier range"
+            : $"the {range.MinimumRoll:N0}-{range.MaximumRoll:N0} x{range.Multiplier:0.##} multiplier range";
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + AirTablet.UI.TabletAppTheme.Px(380f));
+        ImGui.TextUnformatted($"Delete {description} from this venue's gamba profile?");
+        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
+
+        if (ImGui.Button("Delete range", AirTablet.UI.TabletAppTheme.Px(new Vector2(125f, 0f))))
+        {
+            if (range is not null)
+            {
+                gamba.RollRangeMultipliers.Remove(range);
+                persistence.SaveNow();
+            }
+            pendingRangeMultiplierDeleteId = null;
+            AirTablet.UI.TabletAppTheme.CloseCenteredModal();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel", AirTablet.UI.TabletAppTheme.Px(new Vector2(100f, 0f))))
+        {
+            pendingRangeMultiplierDeleteId = null;
+            AirTablet.UI.TabletAppTheme.CloseCenteredModal();
+        }
+
+        AirTablet.UI.TabletAppTheme.EndCenteredModal();
     }
 
 

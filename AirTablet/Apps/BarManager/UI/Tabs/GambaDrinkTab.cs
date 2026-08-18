@@ -80,6 +80,8 @@ internal sealed class GambaDrinkTab : IDisposable
         DalamudServices.Framework.Update -= OnFrameworkUpdate;
     }
 
+    public bool HasActiveSession => current is not null && current.EndedAt is null;
+
     public void Draw()
     {
         var venue = config.ActiveVenue;
@@ -407,24 +409,52 @@ internal sealed class GambaDrinkTab : IDisposable
 
         if (isWin)
         {
+            var appliedBonuses = new List<string>();
+            var rangeBonus = GambaEngine.FindRollRangeMultiplier(roll, gamba);
+            if (rangeBonus is not null && (!result.JackpotWin || rangeBonus.AppliesToJackpot))
+            {
+                var rangeMultiplier = MathF.Max(1f, rangeBonus.Multiplier);
+                if (rangeMultiplier > 1f)
+                {
+                    appliedMultiplier *= rangeMultiplier;
+                    appliedBonuses.Add($"Roll range {rangeBonus.MinimumRoll:N0}-{rangeBonus.MaximumRoll:N0}");
+                }
+            }
+
             if (current.LossStreakBonusActive)
             {
-                appliedBonusName = string.IsNullOrWhiteSpace(gamba.LossStreakBonusName) ? "Loss Streak Bonus" : gamba.LossStreakBonusName.Trim();
-                appliedMultiplier = MathF.Max(1f, gamba.LossStreakBonusMultiplier);
                 if (!result.JackpotWin || gamba.LossStreakBonusAppliesToJackpot)
-                    payout = ApplyBonusMultiplier(basePayout, appliedMultiplier);
+                {
+                    var multiplier = MathF.Max(1f, gamba.LossStreakBonusMultiplier);
+                    if (multiplier > 1f)
+                    {
+                        appliedMultiplier *= multiplier;
+                        appliedBonuses.Add(string.IsNullOrWhiteSpace(gamba.LossStreakBonusName) ? "Loss Streak Bonus" : gamba.LossStreakBonusName.Trim());
+                    }
+                }
                 current.LossStreakBonusActive = false;
                 current.LossStreakBonusTurnsRemaining = 0;
                 current.ConsecutiveLosses = 0;
             }
             else if (current.BartenderRollBonusActive)
             {
-                appliedBonusName = string.IsNullOrWhiteSpace(gamba.BartenderRollBonusName) ? "Bartender Bonus" : gamba.BartenderRollBonusName.Trim();
-                appliedMultiplier = MathF.Max(1f, gamba.BartenderRollBonusMultiplier);
                 if (!result.JackpotWin || gamba.BartenderRollBonusAppliesToJackpot)
-                    payout = ApplyBonusMultiplier(basePayout, appliedMultiplier);
+                {
+                    var multiplier = MathF.Max(1f, gamba.BartenderRollBonusMultiplier);
+                    if (multiplier > 1f)
+                    {
+                        appliedMultiplier *= multiplier;
+                        appliedBonuses.Add(string.IsNullOrWhiteSpace(gamba.BartenderRollBonusName) ? "Bartender Bonus" : gamba.BartenderRollBonusName.Trim());
+                    }
+                }
                 current.BartenderRollBonusActive = false;
                 current.BartenderRollBonusTurnsRemaining = 0;
+            }
+
+            if (appliedMultiplier > 1f)
+            {
+                payout = ApplyBonusMultiplier(basePayout, appliedMultiplier);
+                appliedBonusName = string.Join(" + ", appliedBonuses);
             }
         }
 
@@ -507,7 +537,8 @@ internal sealed class GambaDrinkTab : IDisposable
     {
         if (payout <= 0)
             return payout;
-        return Math.Max(0, (int)MathF.Round(payout * MathF.Max(1f, multiplier)));
+        var multiplied = Math.Round(payout * (double)MathF.Max(1f, multiplier), MidpointRounding.AwayFromZero);
+        return (int)Math.Clamp(multiplied, 0d, int.MaxValue);
     }
 
     private void UpdateBonusStateAfterRoll(GambaSettings gamba, bool isWin)

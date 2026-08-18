@@ -13,6 +13,7 @@ internal sealed class Plugin : IDisposable
     private const int DeckSize = 32;
     private const int MaximumControlCenterPads = 18;
     private static readonly Regex InlineWaitRegex = new(@"<wait\.(?<seconds>\d+(?:\.\d+)?)>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex TextCommandRegex = new(@"^/(?:[A-Za-z][A-Za-z0-9]*|\?)(?:\s.*)?$", RegexOptions.Compiled);
     private readonly Configuration config;
     private readonly PersistenceService persistence;
     private readonly DialogService dialogs = new();
@@ -372,10 +373,13 @@ internal sealed class Plugin : IDisposable
             ImGui.TextColored(TabletAppTheme.MutedText, "Macro script — one command per line");
             var lineCount = Math.Clamp(editScript.Count(character => character == '\n') + 2, 3, 10);
             var desiredHeight = TabletAppTheme.Px(28f + lineCount * 18f);
-            var reservedHeight = TabletAppTheme.Px(string.IsNullOrWhiteSpace(editorValidation) ? 78f : 100f);
+            var reservedHeight = TabletAppTheme.Px(string.IsNullOrWhiteSpace(editorValidation) ? 140f : 162f);
             var maximumHeight = MathF.Max(TabletAppTheme.Px(72f), ImGui.GetContentRegionAvail().Y - reservedHeight);
             ImGui.InputTextMultiline("##macrodeck-script", ref editScript, 4000, new Vector2(-1, MathF.Min(desiredHeight, maximumHeight)));
-            ImGui.TextColored(TabletAppTheme.MutedText, "Supports /say, /shout, /yell, /echo, in-game emotes, /wait 1, and <wait.1>.");
+            ImGui.PushStyleColor(ImGuiCol.Text, TabletAppTheme.MutedText);
+            ImGui.TextWrapped("Supports FFXIV text commands such as /random, /dice, /action, /mount, chat, emotes, and more.");
+            ImGui.TextWrapped("Use /wait 1 or <wait.1> between commands. FFXIV validates command arguments and availability.");
+            ImGui.PopStyleColor();
             if (!string.IsNullOrWhiteSpace(editorValidation))
                 ImGui.TextColored(new Vector4(1f, 0.45f, 0.45f, 1f), editorValidation);
         }
@@ -484,8 +488,8 @@ internal sealed class Plugin : IDisposable
             double? inlineWait = null;
             if (matches.Count == 1)
             {
-                if (!double.TryParse(matches[0].Groups["seconds"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) || parsed is < 0 or > 10)
-                { issue = $"Line {lineNumber}: wait values must be between 0 and 10 seconds."; return false; }
+                if (!double.TryParse(matches[0].Groups["seconds"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) || parsed is < 0 or > 60)
+                { issue = $"Line {lineNumber}: wait values must be between 0 and 60 seconds."; return false; }
                 inlineWait = parsed;
             }
             else if (original.Contains("<wait", StringComparison.OrdinalIgnoreCase))
@@ -503,9 +507,14 @@ internal sealed class Plugin : IDisposable
                 if (inlineWait is not null) steps.Add(new(null, inlineWait.Value));
                 continue;
             }
+            if (LooksLikeWaitCommand(line))
+            {
+                issue = $"Line {lineNumber}: wait syntax was not recognized. Use /wait 1, /wait.1, or /wait1 with a value from 0 to 60.";
+                return false;
+            }
             if (!IsSupportedMacroCommand(line))
             {
-                issue = $"Line {lineNumber}: unsupported command. Use chat, echo, /wait, or a supported in-game emote.";
+                issue = $"Line {lineNumber}: start the line with a valid FFXIV text command, such as /random, /action, /say, or an emote.";
                 return false;
             }
             steps.Add(new(line, inlineWait ?? 0.25d));
@@ -514,17 +523,11 @@ internal sealed class Plugin : IDisposable
         return true;
     }
 
-    private static bool IsSupportedMacroCommand(string line) =>
-        HasCommandText(line, "/say") || HasCommandText(line, "/s") ||
-        HasCommandText(line, "/shout") || HasCommandText(line, "/sh") ||
-        HasCommandText(line, "/yell") || HasCommandText(line, "/y") ||
-        HasCommandText(line, "/echo") || HasCommandText(line, "/e") ||
-        AutoGreet.Services.EmoteCommandRegistry.IsSupportedEmoteLine(line);
+    private static bool IsSupportedMacroCommand(string line) => TextCommandRegex.IsMatch(line);
 
-    private static bool HasCommandText(string line, string command) =>
-        line.StartsWith(command, StringComparison.OrdinalIgnoreCase) &&
-        line.Length > command.Length && char.IsWhiteSpace(line[command.Length]) &&
-        !string.IsNullOrWhiteSpace(line[(command.Length + 1)..]);
+    private static bool LooksLikeWaitCommand(string line) =>
+        line.StartsWith("/wait", StringComparison.OrdinalIgnoreCase) &&
+        (line.Length == 5 || char.IsWhiteSpace(line[5]) || line[5] == '.' || char.IsDigit(line[5]));
 
     private static bool TryParseWaitCommand(string line, out double seconds)
     {
@@ -535,8 +538,8 @@ internal sealed class Plugin : IDisposable
         rest = rest.Trim();
         if (rest.StartsWith(".", StringComparison.Ordinal)) rest = rest[1..].Trim();
         if (string.IsNullOrWhiteSpace(rest)) return true;
-        var token = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? string.Empty;
-        if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) || parsed is < 0 or > 10) return false;
+        var tokens = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length != 1 || !double.TryParse(tokens[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) || parsed is < 0 or > 60) return false;
         seconds = parsed;
         return true;
     }

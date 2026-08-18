@@ -18,6 +18,10 @@ internal static class GambaEngine
         return new RollResolution("NONE", 0, false, false);
     }
 
+    public static GambaRollRangeMultiplier? FindRollRangeMultiplier(int roll, GambaSettings settings) =>
+        settings.RollRangeMultipliers.FirstOrDefault(range =>
+            range.Enabled && roll >= range.MinimumRoll && roll <= range.MaximumRoll);
+
     private static bool Matches(int roll, GambaRule rule)
     {
         var s = roll.ToString();
@@ -41,7 +45,22 @@ internal static class GambaEngine
             matched |= s.Length == 3 && s.Distinct().Count() == 1;
         if (rule.AdjacentDoubles)
             matched |= s.Length >= 2 && Enumerable.Range(0, s.Length - 1).Any(i => s[i] == s[i + 1]);
+        if (rule.Runs)
+        {
+            var countUp = rule.RunsCountUp ?? rule.RunDirection == GambaRunDirection.CountUp;
+            var countDown = rule.RunsCountDown ?? rule.RunDirection == GambaRunDirection.CountDown;
+            matched |= countUp && IsThreeDigitRun(s, 1);
+            matched |= countDown && IsThreeDigitRun(s, -1);
+        }
 
         return matched;
+    }
+
+    private static bool IsThreeDigitRun(string value, int step)
+    {
+        if (value.Length != 3 || value.Any(c => c is < '1' or > '9'))
+            return false;
+
+        return value[1] - value[0] == step && value[2] - value[1] == step;
     }
 }

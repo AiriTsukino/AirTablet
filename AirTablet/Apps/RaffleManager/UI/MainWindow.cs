@@ -219,8 +219,12 @@ internal sealed class MainWindow : Window, IDisposable
 
     private void DrawHeader()
     {
-        if (ImGui.BeginTable("##raffle-toolbar", 2, ImGuiTableFlags.SizingStretchProp))
+        if (ImGui.BeginTable("##raffle-toolbar", 3, ImGuiTableFlags.SizingStretchProp))
         {
+            ImGui.TableSetupColumn(
+                "profile",
+                ImGuiTableColumnFlags.WidthFixed,
+                AirTablet.UI.TabletAppTheme.Px(220f));
             ImGui.TableSetupColumn("context", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn(
                 "settings",
@@ -228,9 +232,21 @@ internal sealed class MainWindow : Window, IDisposable
                 AirTablet.UI.TabletAppTheme.Px(104f));
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
+            var profiles = config.VenueProfiles.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+            var activeIndex = Math.Max(0, Array.FindIndex(profiles, name => name.Equals(config.ActiveVenueProfile, StringComparison.OrdinalIgnoreCase)));
+            ImGui.SetNextItemWidth(-1f);
+            if (spinning) ImGui.BeginDisabled();
+            if (ImGui.Combo("##raffle-active-profile", ref activeIndex, profiles, profiles.Length) && activeIndex < profiles.Length)
+            {
+                config.ActiveVenueProfile = profiles[activeIndex];
+                persistence.SaveNow();
+            }
+            if (spinning) ImGui.EndDisabled();
+            UiHelpers.TooltipOnHover(spinning
+                ? "Venue profile switching is locked while the winner animation is running."
+                : "Select the active RaffleManager venue profile.");
+            ImGui.TableNextColumn();
             ImGui.TextColored(RaffleTheme.Pink, Profile.VenueName);
-            ImGui.SameLine();
-            UiHelpers.TextMuted($"Profile: {Profile.Name}");
             ImGui.TableNextColumn();
             if (ImGui.Button(
                     "Settings",

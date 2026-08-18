@@ -120,8 +120,6 @@ internal sealed class MainView
 
     private void DrawHeader(bool showSettingsButton)
     {
-        TextMuted("Profile");
-        ImGui.SameLine(0f, TabletAppTheme.Px(6f));
         var profiles = persistence.Profiles.Keys.OrderBy(name => name).ToArray();
         var selectedProfile = Math.Max(0, Array.FindIndex(profiles, name => name.Equals(config.ActiveVenueProfile, StringComparison.OrdinalIgnoreCase)));
         ImGui.SetNextItemWidth(TabletAppTheme.Px(180f));

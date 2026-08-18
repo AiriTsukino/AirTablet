@@ -7,6 +7,13 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-18] BarManager v0.1.54.0
+- Added Runs rule condition for gamba rules with count up and count down toggles ex: (123,567,987,432)
+- Added Roll range multipliers in global bonuses.
+
+[2026-08-18] MacroDeck v0.1.6.0
+- Added support for most in game commands to be used in macros.
+
 [2026-08-17] AirTabOS v1.0.22.1
 - [NEW APP] MacroDeck a generalized macro app where it can be used for organizing your venue macros, emotes and more.
 - [NEW AirTabOS Feature] Added control center with addable information widgets from various apps. (Click near battery/signal icon in status bar)

@@ -216,28 +216,16 @@ public sealed class MainWindow : Window
                 3,
                 ImGuiTableFlags.SizingStretchProp))
         {
-            ImGui.TableSetupColumn("overlay", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn(
                 "venue",
                 ImGuiTableColumnFlags.WidthFixed,
                 AirTablet.UI.TabletAppTheme.Px(230f));
+            ImGui.TableSetupColumn("overlay", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn(
                 "settings",
                 ImGuiTableColumnFlags.WidthFixed,
                 AirTablet.UI.TabletAppTheme.Px(104f));
             ImGui.TableNextRow();
-
-            ImGui.TableNextColumn();
-            var overlayEnabled = config.Overlay.Enabled;
-            if (ImGui.Checkbox("Enable overlay##gamba-top-enable-overlay", ref overlayEnabled))
-                config.Overlay.Enabled = overlayEnabled;
-            UiHelpers.Tooltip("Turns the Blackjack overlay window on or off.");
-
-            ImGui.SameLine(0, AirTablet.UI.TabletAppTheme.Px(18f));
-            var compactOverlay = config.Overlay.Compact;
-            if (ImGui.Checkbox("Compact overlay##gamba-top-compact-overlay", ref compactOverlay))
-                config.Overlay.Compact = compactOverlay;
-            UiHelpers.Tooltip("Uses the smaller Blackjack overlay layout for crowded screens.");
 
             ImGui.TableNextColumn();
             if (session.IsActive)
@@ -260,6 +248,18 @@ public sealed class MainWindow : Window
             UiHelpers.Tooltip(session.IsActive
                 ? "Venue switching is locked while a Blackjack session is active."
                 : "Select the active venue profile and its complete Blackjack rule set.");
+
+            ImGui.TableNextColumn();
+            var overlayEnabled = config.Overlay.Enabled;
+            if (ImGui.Checkbox("Enable overlay##gamba-top-enable-overlay", ref overlayEnabled))
+                config.Overlay.Enabled = overlayEnabled;
+            UiHelpers.Tooltip("Turns the Blackjack overlay window on or off.");
+
+            ImGui.SameLine(0, AirTablet.UI.TabletAppTheme.Px(18f));
+            var compactOverlay = config.Overlay.Compact;
+            if (ImGui.Checkbox("Compact overlay##gamba-top-compact-overlay", ref compactOverlay))
+                config.Overlay.Compact = compactOverlay;
+            UiHelpers.Tooltip("Uses the smaller Blackjack overlay layout for crowded screens.");
 
             ImGui.TableNextColumn();
             if (ImGui.Button(

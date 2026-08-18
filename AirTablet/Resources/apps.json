@@ -9,7 +9,7 @@
   {
     "id": "BarManager",
     "name": "BarManager",
-    "version": "0.1.51.0",
+    "version": "0.1.54.0",
     "tagline": "Sales, audit, and gamba drinks",
     "iconUrl": "Resources/Apps/BarManager/BMLogo.png"
   },
@@ -23,7 +23,7 @@
   {
     "id": "MacroDeck",
     "name": "MacroDeck",
-    "version": "0.1.5.0",
+    "version": "0.1.6.0",
     "tagline": "Stream Deck-style venue macros",
     "iconUrl": "Resources/Apps/MacroDeck/MDLogo.png"
   },

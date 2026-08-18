@@ -1,5 +1,11 @@
 namespace BarManager.Models;
 
+public enum GambaRunDirection
+{
+    CountUp,
+    CountDown,
+}
+
 [Serializable]
 public sealed class DrinkDefinition
 {
@@ -34,11 +40,27 @@ public sealed class GambaRule
     public List<int> ContainsAnyDigits { get; set; } = new();
     public bool Triples { get; set; }
     public bool AdjacentDoubles { get; set; }
+    public bool Runs { get; set; }
+    public bool? RunsCountUp { get; set; }
+    public bool? RunsCountDown { get; set; }
+    // Retained so rules saved before independent direction toggles preserve their selected direction.
+    public GambaRunDirection RunDirection { get; set; } = GambaRunDirection.CountUp;
     public bool ExactOnly { get; set; } = true;
     public string WinningRollExpression { get; set; } = string.Empty;
     public string LastTooltipRollExpression { get; set; } = string.Empty;
     public string WinningRollsTooltip { get; set; } = string.Empty;
     public string ExactOnlyTooltip { get; set; } = string.Empty;
+}
+
+[Serializable]
+public sealed class GambaRollRangeMultiplier
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public bool Enabled { get; set; } = true;
+    public int MinimumRoll { get; set; } = 1;
+    public int MaximumRoll { get; set; } = 499;
+    public float Multiplier { get; set; } = 2f;
+    public bool AppliesToJackpot { get; set; }
 }
 
 [Serializable]
@@ -73,6 +95,7 @@ public sealed class GambaSettings
     public string BartenderRollBonusAnnouncement { get; set; } = "{player}, {bonus} is active! Your next win is multiplied by x{multiplier} {duration}.";
     public bool BartenderRollBonusAppliesToJackpot { get; set; } = false;
     public int? BartenderRollBonusDurationTurns { get; set; } = 3;
+    public List<GambaRollRangeMultiplier> RollRangeMultipliers { get; set; } = new();
     public List<GambaRule> Rules { get; set; } = Defaults();
 
     public static List<GambaRule> Defaults() => new();
@@ -113,7 +136,7 @@ public sealed class VenueProfileExport
 public sealed class GambaSettingsExport
 {
     public string ExportedBy { get; set; } = "BarManager";
-    public int FormatVersion { get; set; } = 2;
+    public int FormatVersion { get; set; } = 3;
     public string VenueName { get; set; } = string.Empty;
     public DateTime ExportedAt { get; set; } = DateTime.Now;
     public GambaSettings Gamba { get; set; } = new();

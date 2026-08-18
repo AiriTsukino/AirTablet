@@ -52,7 +52,19 @@ internal sealed class MainWindow : Window, IDisposable
                 AirTablet.UI.TabletAppTheme.Px(104f));
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
-            ImGui.TextColored(BarManagerTheme.Gold, config.ActiveVenue.Name);
+            var venues = config.Venues.OrderBy(venue => venue.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+            var activeIndex = Math.Max(0, Array.FindIndex(venues, venue => venue.Id == config.ActiveVenueId));
+            ImGui.SetNextItemWidth(AirTablet.UI.TabletAppTheme.Px(220f));
+            if (gambaTab.HasActiveSession) ImGui.BeginDisabled();
+            if (ImGui.Combo("##bar-manager-active-profile", ref activeIndex, venues.Select(venue => venue.Name).ToArray(), venues.Length) && activeIndex < venues.Length)
+            {
+                config.ActiveVenueId = venues[activeIndex].Id;
+                persistence.SaveNow();
+            }
+            if (gambaTab.HasActiveSession) ImGui.EndDisabled();
+            UiHelpers.TooltipOnHover(gambaTab.HasActiveSession
+                ? "Venue profile switching is locked while a gamba session is active."
+                : "Select the active BarManager venue profile.");
             ImGui.TableNextColumn();
             if (ImGui.Button(
                     "Settings",

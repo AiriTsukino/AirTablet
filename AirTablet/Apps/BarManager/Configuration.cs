@@ -49,5 +49,20 @@ public sealed class Configuration : IPluginConfiguration
             if (CurrentAudit.DrinkSales.All(s => s.DrinkId != drink.Id))
                 CurrentAudit.DrinkSales.Add(new DrinkSale { DrinkId = drink.Id });
         }
+        foreach (var profile in Venues)
+        {
+            profile.Gamba ??= new GambaSettings();
+            profile.Gamba.Rules ??= new List<GambaRule>();
+            profile.Gamba.RollRangeMultipliers ??= new List<GambaRollRangeMultiplier>();
+            var gameMinimum = Math.Max(0, profile.Gamba.MinRoll);
+            var gameMaximum = Math.Max(gameMinimum, profile.Gamba.MaxRoll);
+            foreach (var range in profile.Gamba.RollRangeMultipliers)
+            {
+                if (range.Id == Guid.Empty) range.Id = Guid.NewGuid();
+                range.MinimumRoll = Math.Clamp(range.MinimumRoll, gameMinimum, gameMaximum);
+                range.MaximumRoll = Math.Clamp(range.MaximumRoll, range.MinimumRoll, gameMaximum);
+                range.Multiplier = Math.Clamp(range.Multiplier, 1f, 100f);
+            }
+        }
     }
 }
