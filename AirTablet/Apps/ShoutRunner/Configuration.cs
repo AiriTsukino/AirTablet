@@ -222,6 +222,7 @@ internal sealed class PersistedRunState
     public string ReceiptCode { get; set; } = string.Empty;
     public string ProfileName { get; set; } = string.Empty;
     public RunPhase Phase { get; set; }
+    public RunPhase PausedPhase { get; set; }
     public List<RouteStop> Route { get; set; } = [];
     public HashSet<int> SkippedStopIndexes { get; set; } = [];
     public int StopIndex { get; set; }

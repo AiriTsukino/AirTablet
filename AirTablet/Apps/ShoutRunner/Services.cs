@@ -305,6 +305,21 @@ internal sealed unsafe class TravelService
     public bool AutomaticDataCenterConnectionPending => dataCenterProceedSubmitted && !dataCenterArrivalAcknowledged;
     public bool IsCityZoneTeleportPending => cityZoneTeleportPending;
 
+    public unsafe bool IsCityTeleportBusy
+    {
+        get
+        {
+            try
+            {
+                var telepo = Telepo.Instance();
+                return (telepo is not null && telepo->ActiveTeleportRequest) ||
+                       DalamudServices.Condition[ConditionFlag.BetweenAreas] ||
+                       DalamudServices.Condition[ConditionFlag.BetweenAreas51];
+            }
+            catch { return false; }
+        }
+    }
+
     public void SetGeneralReactionDelaySeconds(int seconds) =>
         generalReactionDelaySeconds = Math.Clamp(seconds, 0, 10);
 
@@ -313,6 +328,20 @@ internal sealed unsafe class TravelService
         lock (debugLogLock)
             debugLog.Clear();
         Trace("Travel diagnostics cleared.");
+    }
+
+    public void RecordRunDiagnostic(string message) => Trace($"Run state: {message}");
+
+    public void PauseNavigation()
+    {
+        StopAetheryteApproach();
+        Trace("Run paused; stopped active Aetheryte approach while preserving the current travel context.");
+    }
+
+    public void ResetInGameNavigationForResume()
+    {
+        ClearNavigation();
+        Trace("Cleared stale in-game navigation state for route reconciliation after resume.");
     }
 
     public bool IsTravelBusy
@@ -467,7 +496,10 @@ internal sealed unsafe class TravelService
 
             if (current.DataCenter.Equals(target.DataCenter, StringComparison.OrdinalIgnoreCase))
             {
-                TryApproachCityAetheryte();
+                if (GetReadyAddon("WorldTravelSelect") is not null)
+                    Trace($"Detected an already-open World Visit menu while resuming travel to {requestedWorld}; continuing from destination selection.");
+                else
+                    TryApproachCityAetheryte();
                 return true;
             }
 
@@ -585,6 +617,8 @@ internal sealed unsafe class TravelService
                     }
                     if (TrySelectWorldVisitDestination())
                         return;
+                    if (GetReadyAddon("WorldTravelSelect") is not null)
+                        return;
                     if (TrySelectString("Visit Another World Server"))
                         return;
                     if (GetReadyAddon("SelectString") is not null)
@@ -689,7 +723,11 @@ internal sealed unsafe class TravelService
         try
         {
             var telepo = Telepo.Instance();
-            return telepo is not null && telepo->Teleport(id, 0);
+            var accepted = telepo is not null && telepo->Teleport(id, 0);
+            Trace(accepted
+                ? $"City teleport request accepted for {city} using Aetheryte {id}."
+                : $"City teleport request was not accepted for {city} using Aetheryte {id}.");
+            return accepted;
         }
         catch (Exception ex)
         {
@@ -761,33 +799,56 @@ internal sealed unsafe class TravelService
             return false;
 
         DalamudServices.TargetManager.Target = aetheryte;
+        var aetheryteObject = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)aetheryte.Address;
+        var targetSystem = TargetSystem.Instance();
+        if (aetheryteObject is null || targetSystem is null || !aetheryte.IsTargetable ||
+            !TryFaceObject(localPlayer.Address, localPlayer.Position, aetheryte.Position))
+            return false;
+        targetSystem->SetHardTarget(aetheryteObject, true);
         var centerDistance = Vector3.Distance(localPlayer.Position, aetheryte.Position);
         var interactionDistance = MathF.Max(
             0f,
             centerDistance - MathF.Max(0f, aetheryte.HitboxRadius) - MathF.Max(0f, localPlayer.HitboxRadius));
-        if (aetheryte.IsTargetable && interactionDistance <= 4.75f)
+        if (interactionDistance <= 4.75f)
         {
             StopAetheryteApproach();
-            unsafe
-            {
-                var targetSystem = TargetSystem.Instance();
-                if (targetSystem is null)
-                    return false;
-                targetSystem->InteractWithObject(
-                    (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)aetheryte.Address);
-            }
-            Trace($"Interacted directly with the object-table {currentCity.Name} Aetheryte at {interactionDistance:0.0} yalms from its hitbox ({centerDistance:0.0} center distance); waiting for its menu.");
+            // The object identity, targetability, and interaction distance were
+            // already validated above. The default native line-of-sight check can
+            // reject an otherwise valid Aetheryte merely because it is outside the
+            // camera view, producing "Cannot see target" despite a correct target.
+            targetSystem->InteractWithObject(aetheryteObject, false);
+            Trace($"Interacted directly with the validated object-table {currentCity.Name} Aetheryte at {interactionDistance:0.0} yalms from its hitbox ({centerDistance:0.0} center distance) without the camera line-of-sight gate; waiting for its menu.");
             nextUiActionUtc = DateTime.UtcNow.AddSeconds(1);
             return true;
         }
-        if (aetheryteApproachActive)
-            return true;
 
-        if (!SendShellCommand("/lockon") || !SendShellCommand("/automove"))
+        if (aetheryteApproachActive)
+        {
+            nextUiActionUtc = DateTime.UtcNow.AddMilliseconds(250);
+            return true;
+        }
+
+        // /lockon rejects targets outside the camera view even when Dalamud has
+        // assigned the correct object-table target. Face the known world-space
+        // position directly, then let automove advance while this method keeps
+        // correcting the heading until the Aetheryte is in interaction range.
+        if (!SendShellCommand("/automove"))
             return false;
         aetheryteApproachActive = true;
-        Trace($"Walking toward the {currentCity.Name} Aetheryte; current hitbox distance {interactionDistance:0.0} yalms ({centerDistance:0.0} center distance).");
-        nextUiActionUtc = DateTime.UtcNow.AddMilliseconds(750);
+        Trace($"Hard-targeted and faced the object-table {currentCity.Name} Aetheryte; walking from {interactionDistance:0.0} yalms outside its hitbox ({centerDistance:0.0} center distance) without camera-dependent lock-on.");
+        nextUiActionUtc = DateTime.UtcNow.AddMilliseconds(250);
+        return true;
+    }
+
+    private static unsafe bool TryFaceObject(nint localPlayerAddress, Vector3 playerPosition, Vector3 targetPosition)
+    {
+        if (localPlayerAddress == 0)
+            return false;
+        var delta = targetPosition - playerPosition;
+        if (delta.X * delta.X + delta.Z * delta.Z <= 0.0001f)
+            return true;
+        var playerObject = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)localPlayerAddress;
+        playerObject->SetRotation(MathF.Atan2(delta.X, delta.Z));
         return true;
     }
 
@@ -796,7 +857,6 @@ internal sealed unsafe class TravelService
         if (!aetheryteApproachActive)
             return;
         SendShellCommand("/automove");
-        SendShellCommand("/lockon");
         aetheryteApproachActive = false;
     }
 
@@ -1030,15 +1090,23 @@ internal sealed unsafe class TravelService
             !string.IsNullOrWhiteSpace(currentLoginWorld) &&
             !currentLoginWorld.Equals(runCharacterHomeWorld, StringComparison.OrdinalIgnoreCase))
         {
-            const int returnValueIndex = 15;
-            const int returnContextRow = 7;
-            if (!AddonStringValueMatches(addon, returnValueIndex, "Return to Home World"))
+            const string returnLabel = "Return to Home World";
+            var returnRowSource = "visible label";
+            if (!TryFindEnabledExactListRow(addon, returnLabel, out _, out var returnContextRow))
             {
-                TraceThrottled(
-                    "return-home-context-row",
-                    $"Character is visiting {currentLoginWorld}, but AtkValue[{returnValueIndex}] is not 'Return to Home World'. Addon strings: {DescribeAddonStrings(addon)}.",
-                    TimeSpan.FromSeconds(3));
-                return false;
+                if (AddonStringValueMatches(addon, 15, returnLabel))
+                {
+                    returnContextRow = 7;
+                    returnRowSource = "validated compatibility mapping";
+                }
+                else
+                {
+                    TraceThrottled(
+                        "return-home-context-row",
+                        $"Character is visiting {currentLoginWorld}, but the visible character context menu has no exact enabled '{returnLabel}' row. Addon strings: {DescribeAddonStrings(addon)}.",
+                        TimeSpan.FromSeconds(3));
+                    return false;
+                }
             }
             FireIntsAndClose(addon, 0, returnContextRow, 0);
             characterTravelMenuOpened = true;
@@ -1046,23 +1114,31 @@ internal sealed unsafe class TravelService
             returnHomeConfirmationSubmitted = false;
             returnHomeConfirmationSubmittedUtc = default;
             returnHomeProceedSubmitted = false;
-            Trace($"Selected Return to Home World for {runCharacterName}: {currentLoginWorld} -> {runCharacterHomeWorld}.");
+            Trace($"Selected {returnRowSource} row {returnContextRow}: {returnLabel} for {runCharacterName}: {currentLoginWorld} -> {runCharacterHomeWorld}.");
             nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
             return true;
         }
 
-        const int valueIndex = 17;
-        const int contextRow = 9;
-        if (!AddonStringValueMatches(addon, valueIndex, "Visit Another Data Center"))
+        const string dataCenterLabel = "Visit Another Data Center";
+        var contextRowSource = "visible label";
+        if (!TryFindEnabledExactListRow(addon, dataCenterLabel, out _, out var contextRow))
         {
-            TraceThrottled(
-                "character-context-row",
-                $"Character context menu is visible, but AtkValue[{valueIndex}] is not 'Visit Another Data Center'. Addon strings: {DescribeAddonStrings(addon)}.",
-                TimeSpan.FromSeconds(3));
-            return false;
+            if (AddonStringValueMatches(addon, 17, dataCenterLabel))
+            {
+                contextRow = 9;
+                contextRowSource = "validated compatibility mapping";
+            }
+            else
+            {
+                TraceThrottled(
+                    "character-context-row",
+                    $"Character context menu is visible, but it has no exact enabled '{dataCenterLabel}' row. Addon strings: {DescribeAddonStrings(addon)}.",
+                    TimeSpan.FromSeconds(3));
+                return false;
+            }
         }
         FireIntsAndClose(addon, 0, contextRow, 0);
-        Trace($"Selected verified character context AtkValue[{valueIndex}] using native row {contextRow}: Visit Another Data Center.");
+        Trace($"Selected exact {contextRowSource} character context row {contextRow}: {dataCenterLabel}.");
         characterTravelMenuOpened = true;
         nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
         return true;
@@ -1089,11 +1165,13 @@ internal sealed unsafe class TravelService
 
         if (!dataCenterSelectionChosen)
         {
-            const int selectedDataCenterValue = 152;
-            if (AddonStringValueMatches(addon, selectedDataCenterValue, requestedDataCenter))
+            var selectedDataCenterByRow = IsExactListRowSelected(addon, requestedDataCenter, out var selectedDataCenterRow);
+            if (selectedDataCenterByRow || AddonStringValueMatches(addon, 152, requestedDataCenter))
             {
                 dataCenterSelectionChosen = true;
-                Trace($"Validated selected data center from AtkValue[{selectedDataCenterValue}]: {requestedDataCenter}.");
+                Trace(selectedDataCenterByRow
+                    ? $"Validated selected data center from exact visible row {selectedDataCenterRow}: {requestedDataCenter}."
+                    : $"Validated selected data center through the compatibility state value: {requestedDataCenter}.");
                 nextUiActionUtc = DateTime.UtcNow.AddSeconds(1);
                 return true;
             }
@@ -1105,17 +1183,19 @@ internal sealed unsafe class TravelService
                     TimeSpan.FromSeconds(3));
                 return false;
             }
-            Trace($"Selected enabled data-center tree item {dataCenterItem}: {requestedDataCenter}; waiting for AtkValue[{selectedDataCenterValue}] to update.");
+            Trace($"Selected exact enabled data-center tree row {dataCenterItem}: {requestedDataCenter}; waiting for the list selection to update.");
             nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
             return true;
         }
         if (!worldSelectionChosen)
         {
-            const int selectedWorldValue = 10;
-            if (AddonStringValueMatches(addon, selectedWorldValue, requestedWorld))
+            var selectedWorldByRow = IsExactListRowSelected(addon, requestedWorld, out var selectedWorldRow);
+            if (selectedWorldByRow || AddonStringValueMatches(addon, 10, requestedWorld))
             {
                 worldSelectionChosen = true;
-                Trace($"Validated selected destination world from AtkValue[{selectedWorldValue}]: {requestedWorld}.");
+                Trace(selectedWorldByRow
+                    ? $"Validated selected destination world from exact visible row {selectedWorldRow}: {requestedWorld}."
+                    : $"Validated selected destination world through the compatibility state value: {requestedWorld}.");
                 nextUiActionUtc = DateTime.UtcNow.AddSeconds(1);
                 return true;
             }
@@ -1127,13 +1207,16 @@ internal sealed unsafe class TravelService
                     TimeSpan.FromSeconds(3));
                 return false;
             }
-            Trace($"Selected enabled world tree item {worldItem}: {requestedWorld}; waiting for AtkValue[{selectedWorldValue}] to update.");
+            Trace($"Selected exact enabled world row {worldItem}: {requestedWorld}; waiting for the list selection to update.");
             nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
             return true;
         }
 
-        if (!AddonStringValueMatches(addon, 152, requestedDataCenter) ||
-            !AddonStringValueMatches(addon, 10, requestedWorld))
+        var dataCenterSelectionValidated = IsExactListRowSelected(addon, requestedDataCenter, out _) ||
+                                           AddonStringValueMatches(addon, 152, requestedDataCenter);
+        var worldSelectionValidated = IsExactListRowSelected(addon, requestedWorld, out _) ||
+                                      AddonStringValueMatches(addon, 10, requestedWorld);
+        if (!dataCenterSelectionValidated || !worldSelectionValidated)
         {
             dataCenterSelectionChosen = false;
             worldSelectionChosen = false;
@@ -1168,57 +1251,64 @@ internal sealed unsafe class TravelService
         out int selectedItem)
     {
         selectedItem = -1;
-        if (addon is null || addon->AtkValues is null || addon->UldManager.NodeList is null)
+        if (addon is null)
             return false;
 
         var category = 0;
         var itemWithinCategory = 0;
-        var highlightedItem = 0;
+        var highlightedItem = -1;
+        AtkComponentList* matchedList = null;
+        if (TryFindEnabledExactListRow(addon, expectedText, out matchedList, out var matchedRow))
+            highlightedItem = matchedRow;
         if (dataCenterChoice)
         {
-            var flattenedItem = 0;
-            for (var region = 0; region < 4; region++)
-            {
-                flattenedItem++;
-                for (var item = 0; item < 4; item++)
-                {
-                    var valueIndex = 17 + region * 34 + item * 8;
-                    if (valueIndex < addon->AtkValuesCount &&
-                        MenuLabelMatches(addon->AtkValues[valueIndex].GetValueAsString(), expectedText))
-                    {
-                        category = region;
-                        itemWithinCategory = item + 1;
-                        highlightedItem = flattenedItem;
-                        goto Found;
-                    }
-                    flattenedItem++;
-                }
-            }
-            return false;
+            var matchingWorld = WorldCatalog.Worlds.FirstOrDefault(world =>
+                world.DataCenter.Equals(expectedText, StringComparison.OrdinalIgnoreCase));
+            if (matchingWorld is null)
+                return false;
+            category = (int)matchingWorld.Region;
+            var regionDataCenters = WorldCatalog.Worlds
+                .Where(world => world.Region == matchingWorld.Region)
+                .Select(world => world.DataCenter)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            itemWithinCategory = Array.FindIndex(regionDataCenters, dataCenter =>
+                dataCenter.Equals(expectedText, StringComparison.OrdinalIgnoreCase)) + 1;
         }
-
-        for (var item = 0; item < 8; item++)
+        else
         {
-            var valueIndex = 155 + item * 8;
-            if (valueIndex < addon->AtkValuesCount &&
-                MenuLabelMatches(addon->AtkValues[valueIndex].GetValueAsString(), expectedText))
-            {
-                itemWithinCategory = item + 1;
-                highlightedItem = item + 1;
-                goto Found;
-            }
+            var matchingWorld = WorldCatalog.FindWorld(expectedText);
+            if (matchingWorld is null)
+                return false;
+            var dataCenterWorlds = WorldCatalog.Worlds
+                .Where(world => world.DataCenter.Equals(matchingWorld.DataCenter, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            itemWithinCategory = Array.FindIndex(dataCenterWorlds, world =>
+                world.Name.Equals(expectedText, StringComparison.OrdinalIgnoreCase)) + 1;
         }
-        return false;
+        if (itemWithinCategory <= 0)
+            return false;
 
-    Found:
-        var targetNodeIndex = dataCenterChoice ? 8 : 7;
-        if (targetNodeIndex >= addon->UldManager.NodeListCount)
+        if (matchedList is null &&
+            !TryResolveLegacyDestinationChoice(addon, dataCenterChoice, expectedText, out category, out itemWithinCategory, out highlightedItem))
             return false;
-        var targetNode = addon->UldManager.NodeList[targetNodeIndex];
-        if (targetNode is null)
-            return false;
-        var component = ((AtkComponentNode*)targetNode)->Component;
-        if (component is null)
+
+        AtkComponentBase* component;
+        AtkResNode* targetNode;
+        if (matchedList is not null)
+        {
+            component = (AtkComponentBase*)matchedList;
+            targetNode = (AtkResNode*)component->OwnerNode;
+        }
+        else
+        {
+            var targetNodeIndex = dataCenterChoice ? 8 : 7;
+            if (addon->UldManager.NodeList is null || targetNodeIndex >= addon->UldManager.NodeListCount)
+                return false;
+            targetNode = addon->UldManager.NodeList[targetNodeIndex];
+            component = targetNode is null ? null : ((AtkComponentNode*)targetNode)->Component;
+        }
+        if (targetNode is null || component is null)
             return false;
 
         var choiceState = new DestinationChoiceState
@@ -1247,6 +1337,53 @@ internal sealed unsafe class TravelService
         ((AtkComponentList*)component)->SelectItem(highlightedItem, false);
         selectedItem = highlightedItem;
         return true;
+    }
+
+    private static unsafe bool TryResolveLegacyDestinationChoice(
+        AtkUnitBase* addon,
+        bool dataCenterChoice,
+        string expectedText,
+        out int category,
+        out int itemWithinCategory,
+        out int highlightedItem)
+    {
+        category = 0;
+        itemWithinCategory = 0;
+        highlightedItem = 0;
+        if (addon->AtkValues is null)
+            return false;
+        if (dataCenterChoice)
+        {
+            var flattenedItem = 0;
+            for (var region = 0; region < 4; region++)
+            {
+                flattenedItem++;
+                for (var item = 0; item < 4; item++)
+                {
+                    var valueIndex = 17 + region * 34 + item * 8;
+                    if (AddonStringValueMatches(addon, valueIndex, expectedText))
+                    {
+                        category = region;
+                        itemWithinCategory = item + 1;
+                        highlightedItem = flattenedItem;
+                        return true;
+                    }
+                    flattenedItem++;
+                }
+            }
+            return false;
+        }
+
+        for (var item = 0; item < 8; item++)
+        {
+            var valueIndex = 155 + item * 8;
+            if (!AddonStringValueMatches(addon, valueIndex, expectedText))
+                continue;
+            itemWithinCategory = item + 1;
+            highlightedItem = item + 1;
+            return true;
+        }
+        return false;
     }
 
     private unsafe bool TryConfirmDataCenterTravel()
@@ -1369,18 +1506,25 @@ internal sealed unsafe class TravelService
         var addon = GetReadyAddon("SelectString");
         if (addon is null)
             return false;
-        const int valueIndex = 9;
-        const int menuRow = 2;
-        if (!AddonStringValueMatches(addon, valueIndex, label))
+        var rowSource = "visible label";
+        if (!TryFindEnabledExactListRow(addon, label, out _, out var menuRow))
         {
-            TraceThrottled(
-                $"select-string-{label}",
-                $"SelectString is open, but AtkValue[{valueIndex}] is not '{label}'. Visible addon strings: {DescribeAddonStrings(addon)}.",
-                TimeSpan.FromSeconds(3));
-            return false;
+            if (AddonStringValueMatches(addon, 9, label))
+            {
+                menuRow = 2;
+                rowSource = "validated compatibility mapping";
+            }
+            else
+            {
+                TraceThrottled(
+                    $"select-string-{label}",
+                    $"SelectString is open, but it has no exact enabled visible '{label}' row. Addon strings: {DescribeAddonStrings(addon)}.",
+                    TimeSpan.FromSeconds(3));
+                return false;
+            }
         }
         FireIntsAndClose(addon, menuRow);
-        Trace($"Selected verified SelectString AtkValue[{valueIndex}] using menu row {menuRow}: {label}.");
+        Trace($"Selected exact {rowSource} SelectString row {menuRow}: {label}.");
         nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
         return true;
     }
@@ -1447,6 +1591,28 @@ internal sealed unsafe class TravelService
         return false;
     }
 
+    private static unsafe bool IsExactListRowSelected(
+        AtkUnitBase* addon,
+        string expectedLabel,
+        out int matchedRow)
+    {
+        if (!TryFindExactListRow(addon, expectedLabel, out var matchedList, out matchedRow))
+            return false;
+        return matchedList->SelectedItemIndex == matchedRow;
+    }
+
+    private static unsafe bool TryFindEnabledExactListRow(
+        AtkUnitBase* addon,
+        string expectedLabel,
+        out AtkComponentList* matchedList,
+        out int matchedRow)
+    {
+        if (!TryFindExactListRow(addon, expectedLabel, out matchedList, out matchedRow))
+            return false;
+        return matchedRow >= 0 && matchedRow < matchedList->ListLength &&
+               !matchedList->GetItemDisabledState(matchedRow);
+    }
+
     private static unsafe bool TryFindExactListRow(
         AtkResNode* node,
         string expectedLabel,
@@ -1468,6 +1634,16 @@ internal sealed unsafe class TravelService
                 if (componentNode->Component->GetComponentType() is ComponentType.List or ComponentType.TreeList)
                 {
                     var list = (AtkComponentList*)componentNode->Component;
+                    var listLength = Math.Clamp(list->ListLength, 0, 256);
+                    for (var listRow = 0; listRow < listLength; listRow++)
+                    {
+                        if (!MenuLabelMatches(list->GetItemLabel(listRow).ToString(), expectedLabel))
+                            continue;
+                        matchedList = list;
+                        matchedRow = listRow;
+                        return true;
+                    }
+
                     var rendererCount = Math.Clamp(list->AllocatedItemRendererListLength, 0, 128);
                     for (var rendererIndex = 0; rendererIndex < rendererCount; rendererIndex++)
                     {
@@ -1649,19 +1825,33 @@ internal sealed unsafe class TravelService
         if (addon is null)
             return false;
 
-        var destination = WorldCatalog.FindWorld(requestedWorld);
-        if (destination is null)
-            return false;
-        var displayedWorlds = WorldCatalog.Worlds
-            .Where(world => world.DataCenter.Equals(destination.DataCenter, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        var destinationIndex = Array.FindIndex(displayedWorlds, world =>
-            world.Name.Equals(requestedWorld, StringComparison.OrdinalIgnoreCase));
-        if (destinationIndex < 0)
-            return false;
+        var rowSource = "visible label";
+        if (!TryFindEnabledExactListRow(addon, requestedWorld, out _, out var destinationRow))
+        {
+            var destination = WorldCatalog.FindWorld(requestedWorld);
+            var displayedWorlds = destination is null
+                ? Array.Empty<WorldDefinition>()
+                : WorldCatalog.Worlds
+                    .Where(world => world.DataCenter.Equals(destination.DataCenter, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            var destinationIndex = Array.FindIndex(displayedWorlds, world =>
+                world.Name.Equals(requestedWorld, StringComparison.OrdinalIgnoreCase));
+            var expectedCurrentWorldSummary = $"{CurrentWorld} [{requestedDataCenter}]";
+            if (destinationIndex < 0 ||
+                !AddonContainsTextStrict(addon, expectedCurrentWorldSummary))
+            {
+                TraceThrottled(
+                    "world-visit-destination-row",
+                    $"World Visit destination list is visible, but neither an exact enabled '{requestedWorld}' row nor the expected current-world summary '{expectedCurrentWorldSummary}' could be validated. Addon strings: {DescribeAddonStrings(addon)}.",
+                    TimeSpan.FromSeconds(3));
+                return false;
+            }
+            destinationRow = destinationIndex + 2;
+            rowSource = "validated compatibility mapping";
+        }
 
-        // The World Visit addon reserves its first two list entries for headings/status rows.
-        FireInts(addon, 0, destinationIndex + 2);
+        FireInts(addon, 0, destinationRow);
+        Trace($"Selected exact {rowSource} World Visit row {destinationRow}: {requestedWorld}.");
         nextUiActionUtc = DateTime.UtcNow.AddMilliseconds(750);
         return true;
     }
@@ -1856,6 +2046,8 @@ internal sealed class RunService : IDisposable
                 state.PostRunWorld = state.CharacterHomeWorld;
                 state.ReturnHomeAfterRun = false;
             }
+            if (state.Phase == RunPhase.Paused && state.PausedPhase == RunPhase.Idle)
+                state.PausedPhase = RunPhase.Preparing;
             foregroundRequested = true;
         }
     }
@@ -2033,9 +2225,14 @@ internal sealed class RunService : IDisposable
     {
         if (state is null || !IsRunning)
             return;
+        state.PausedPhase = state.Phase;
         state.Phase = RunPhase.Paused;
         state.PauseStartedUtc = DateTime.UtcNow;
         state.Status = "Run paused. Resume when you are ready to continue from this stop.";
+        travel.PauseNavigation();
+        travel.RecordRunDiagnostic(
+            $"Paused at route stop {state.StopIndex + 1}/{state.Route.Count} during {state.PausedPhase}; " +
+            $"message block {state.MessageIndex + 1}, target={CurrentStop?.CityName}@{CurrentStop?.World}.");
         Save();
     }
 
@@ -2048,9 +2245,81 @@ internal sealed class RunService : IDisposable
             state.TotalPausedSeconds += Math.Max(0d, (DateTime.UtcNow - state.PauseStartedUtc).TotalSeconds);
             state.PauseStartedUtc = default;
         }
-        state.Phase = RunPhase.Preparing;
+        var stop = CurrentStop;
+        if (stop is null)
+        {
+            state.PausedPhase = RunPhase.Idle;
+            state.Phase = RunPhase.Preparing;
+            state.NextActionUtc = DateTime.UtcNow;
+            state.Status = "Resuming route completion.";
+            travel.RecordRunDiagnostic("Resumed after the final route stop; reconciling completion.");
+            foregroundRequested = true;
+            Save();
+            return;
+        }
+
+        var pausedPhase = state.PausedPhase;
+        var localPlayerReady = DalamudServices.ClientState.IsLoggedIn &&
+                               DalamudServices.ObjectTable.LocalPlayer is not null;
+        if (!localPlayerReady)
+        {
+            if (pausedPhase is RunPhase.TravelingCity or RunPhase.WaitingForArrival &&
+                (travel.IsCityTeleportBusy || DalamudServices.ClientState.IsLoggedIn))
+            {
+                state.Phase = RunPhase.WaitingForArrival;
+                state.Status = $"Resumed while loading {stop.CityName} on {stop.World}.";
+            }
+            else if (pausedPhase == RunPhase.ReturningHome)
+            {
+                state.Phase = RunPhase.ReturningHome;
+                state.Status = $"Resumed while returning to {state.PostRunWorld}.";
+            }
+            else
+            {
+                state.Phase = RunPhase.TravelingDataCenter;
+                state.Status = $"Resumed outside the game world; reconciling login and data-center travel to {stop.World}.";
+            }
+        }
+        else
+        {
+            travel.ResetInGameNavigationForResume();
+            state.AwaitingInitialLogin = false;
+            state.AwaitingDestinationLogin = false;
+            state.AwaitingAutomaticDataCenterConnection = false;
+            ResetTravelAttempt();
+
+            var currentWorld = travel.CurrentWorld;
+            if (!currentWorld.Equals(stop.World, StringComparison.OrdinalIgnoreCase))
+            {
+                var currentDefinition = WorldCatalog.FindWorld(currentWorld);
+                var targetDefinition = WorldCatalog.FindWorld(stop.World);
+                state.Phase = currentDefinition is not null && targetDefinition is not null &&
+                              currentDefinition.DataCenter.Equals(targetDefinition.DataCenter, StringComparison.OrdinalIgnoreCase)
+                    ? RunPhase.TravelingWorld
+                    : RunPhase.TravelingDataCenter;
+                state.Status = $"Resumed on {currentWorld}; continuing travel to {stop.World}.";
+            }
+            else if (!travel.IsInCity(stop.City))
+            {
+                state.Phase = RunPhase.TravelingCity;
+                state.Status = $"Resumed on {stop.World}; continuing to {stop.CityName}.";
+            }
+            else
+            {
+                state.Phase = pausedPhase == RunPhase.SendingMessages
+                    ? RunPhase.SendingMessages
+                    : RunPhase.Preparing;
+                state.Status = state.MessageIndex > 0
+                    ? $"Resumed at {stop.CityName} on {stop.World}; continuing message block {state.MessageIndex + 1}."
+                    : $"Resumed at the current route stop: {stop.CityName} on {stop.World}.";
+            }
+        }
+
+        state.PausedPhase = RunPhase.Idle;
         state.NextActionUtc = DateTime.UtcNow;
-        state.Status = "Resuming run.";
+        travel.RecordRunDiagnostic(
+            $"Resumed route stop {state.StopIndex + 1}/{state.Route.Count}; reconciled {pausedPhase} to {state.Phase}. " +
+            $"Current={travel.CurrentTerritoryName}@{travel.CurrentWorld}; target={stop.CityName}@{stop.World}; message block={state.MessageIndex + 1}.");
         foregroundRequested = true;
         Save();
     }
@@ -2104,6 +2373,18 @@ internal sealed class RunService : IDisposable
         }
 
         var stop = state.Route[state.StopIndex];
+        if (DalamudServices.ObjectTable.LocalPlayer is null &&
+            state.Phase is RunPhase.TravelingCity or RunPhase.WaitingForArrival &&
+            (DalamudServices.ClientState.IsLoggedIn || travel.IsCityTeleportBusy))
+        {
+            if (!state.TravelBusyObserved)
+            {
+                state.TravelBusyObserved = true;
+                Save();
+            }
+            state.Status = $"Loading {stop.CityName} on {stop.World}.";
+            return;
+        }
         if (!DalamudServices.ClientState.IsLoggedIn || DalamudServices.ObjectTable.LocalPlayer is null)
         {
             var lobbyWorldName = travel.GetLobbyCharacterCurrentWorld(state.CharacterName, state.CharacterHomeWorld);
@@ -2315,7 +2596,35 @@ internal sealed class RunService : IDisposable
 
     private void HandleCityTravel(VenueProfile profile, RouteStop stop)
     {
-        state!.Phase = RunPhase.TravelingCity;
+        if (state!.Phase == RunPhase.WaitingForArrival && state.TravelRequestUtc != default)
+        {
+            if (travel.IsCityTeleportBusy)
+            {
+                state.TravelBusyObserved = true;
+                state.Status = $"Teleporting to {stop.CityName} on {stop.World}.";
+                return;
+            }
+
+            var elapsed = DateTime.UtcNow - state.TravelRequestUtc;
+            if (!state.TravelBusyObserved && elapsed < TimeSpan.FromSeconds(10))
+            {
+                state.Status = $"Waiting for the teleport to {stop.CityName} to begin.";
+                return;
+            }
+
+            var teleportHadStarted = state.TravelBusyObserved;
+            state.TravelRequestUtc = default;
+            state.TravelBusyObserved = false;
+            ScheduleRetry(
+                profile,
+                teleportHadStarted
+                    ? $"Teleport loading ended without reaching {stop.CityName}."
+                    : $"Teleport to {stop.CityName} was accepted but never began.");
+            Save();
+            return;
+        }
+
+        state.Phase = RunPhase.TravelingCity;
         if (DateTime.UtcNow < state.NextActionUtc)
         {
             state.Status = $"Teleporting to {stop.CityName} on {stop.World}.";
@@ -2332,7 +2641,9 @@ internal sealed class RunService : IDisposable
         {
             state.TeleportGilSpent += teleportCost;
             state.Phase = RunPhase.WaitingForArrival;
-            state.NextActionUtc = DateTime.UtcNow.AddMinutes(2);
+            state.TravelRequestUtc = DateTime.UtcNow;
+            state.TravelBusyObserved = travel.IsCityTeleportBusy;
+            state.NextActionUtc = DateTime.UtcNow;
             state.Status = $"Teleporting to {stop.CityName} on {stop.World}.";
         }
         else

@@ -7,6 +7,14 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-18] AirTabOS v1.0.29.1
+- Updated Supporter list ♥
+
+[2026-08-18] ShoutRunner v1.0.38.0
+- Changed travel menus to resolve and validate enabled options by their exact visible names instead of assuming fixed row or AtkValue positions.
+- Kept the previous validated mappings as compatibility fallbacks for clients whose menu renderer metadata is unavailable.
+- Fixed approaching an object-list Aetheryte outside the camera view by facing its world position directly instead of relying on the visibility-dependent lock-on command.
+
 [2026-08-18] BarManager v0.1.55.0
 - Added Roll range payout rule that counts a winning roll within specified ranges.
 

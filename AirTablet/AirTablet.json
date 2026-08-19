@@ -2,7 +2,7 @@
   "Author": "Airi Tsukino",
   "Name": "AirTablet",
   "InternalName": "AirTablet",
-  "AssemblyVersion": "1.0.27.1",
+  "AssemblyVersion": "1.0.29.1",
   "Punchline": "Airi's plugin suite in one modern tablet OS.",
   "Description": "Runs Airi's bundled venue apps in a cohesive tablet interface with responsive scaling, themes, wallpaper, status indicators, mini mode, app controls, configuration migration, and a bundled changelog.",
   "Tags": ["tablet", "plugin-suite", "apps", "changelog"],
