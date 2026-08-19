@@ -7,6 +7,10 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-18] ShoutRunner v1.0.39.0
+- Changed how Aetheryte menu selection works for changing worlds as without housing districts unlocked the route would stall.
+- Fixed post-run returns on the home data center to use World Visit instead of logging out through character selection.
+
 [2026-08-18] AirTabOS v1.0.29.1
 - Updated Supporter list ♥
 

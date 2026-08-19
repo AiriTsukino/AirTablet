@@ -1094,10 +1094,9 @@ internal sealed unsafe class TravelService
             var returnRowSource = "visible label";
             if (!TryFindEnabledExactListRow(addon, returnLabel, out _, out var returnContextRow))
             {
-                if (AddonStringValueMatches(addon, 15, returnLabel))
+                if (TryFindContextMenuRowFromAtkValues(addon, returnLabel, out returnContextRow))
                 {
-                    returnContextRow = 7;
-                    returnRowSource = "validated compatibility mapping";
+                    returnRowSource = "normalized displayed option";
                 }
                 else
                 {
@@ -1123,10 +1122,9 @@ internal sealed unsafe class TravelService
         var contextRowSource = "visible label";
         if (!TryFindEnabledExactListRow(addon, dataCenterLabel, out _, out var contextRow))
         {
-            if (AddonStringValueMatches(addon, 17, dataCenterLabel))
+            if (TryFindContextMenuRowFromAtkValues(addon, dataCenterLabel, out contextRow))
             {
-                contextRow = 9;
-                contextRowSource = "validated compatibility mapping";
+                contextRowSource = "normalized displayed option";
             }
             else
             {
@@ -1509,10 +1507,9 @@ internal sealed unsafe class TravelService
         var rowSource = "visible label";
         if (!TryFindEnabledExactListRow(addon, label, out _, out var menuRow))
         {
-            if (AddonStringValueMatches(addon, 9, label))
+            if (TryFindSelectStringRowFromAtkValues(addon, label, out menuRow))
             {
-                menuRow = 2;
-                rowSource = "validated compatibility mapping";
+                rowSource = "normalized displayed option";
             }
             else
             {
@@ -1527,6 +1524,64 @@ internal sealed unsafe class TravelService
         Trace($"Selected exact {rowSource} SelectString row {menuRow}: {label}.");
         nextUiActionUtc = DateTime.UtcNow.AddSeconds(2);
         return true;
+    }
+
+    private static unsafe bool TryFindSelectStringRowFromAtkValues(
+        AtkUnitBase* addon,
+        string expectedLabel,
+        out int menuRow)
+    {
+        menuRow = -1;
+        if (addon is null || addon->AtkValues is null)
+            return false;
+
+        // SelectString publishes its prompt before index 7 and its displayed
+        // options from index 7 onward. Count the actual non-empty option strings
+        // so optional entries may be inserted or removed without changing which
+        // callback row is selected.
+        var displayedRow = 0;
+        for (var valueIndex = 7; valueIndex < addon->AtkValuesCount; valueIndex++)
+        {
+            var value = addon->AtkValues[valueIndex];
+            if (value.Type is not (AtkValueType.String or AtkValueType.ManagedString or AtkValueType.ConstString or AtkValueType.WideString))
+                continue;
+            var text = value.GetValueAsString();
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+            if (MenuLabelMatches(text, expectedLabel))
+            {
+                menuRow = displayedRow;
+                return true;
+            }
+            displayedRow++;
+        }
+        return false;
+    }
+
+    private static unsafe bool TryFindContextMenuRowFromAtkValues(
+        AtkUnitBase* addon,
+        string expectedLabel,
+        out int menuRow)
+    {
+        menuRow = -1;
+        if (addon is null || addon->AtkValues is null)
+            return false;
+
+        // ContextMenu publishes one option label per value from index 8 onward;
+        // the callback row is its position relative to that first option. Resolve
+        // the current label index instead of assuming a particular menu layout.
+        const int firstOptionValueIndex = 8;
+        for (var valueIndex = firstOptionValueIndex; valueIndex < addon->AtkValuesCount; valueIndex++)
+        {
+            var value = addon->AtkValues[valueIndex];
+            if (value.Type is not (AtkValueType.String or AtkValueType.ManagedString or AtkValueType.ConstString or AtkValueType.WideString))
+                continue;
+            if (!MenuLabelMatches(value.GetValueAsString(), expectedLabel))
+                continue;
+            menuRow = valueIndex - firstOptionValueIndex;
+            return true;
+        }
+        return false;
     }
 
     private static unsafe bool AddonStringValueMatches(
@@ -1727,28 +1782,48 @@ internal sealed unsafe class TravelService
 
     private static bool MenuLabelMatches(string actual, string expected)
     {
-        actual ??= string.Empty;
-        expected ??= string.Empty;
+        actual = NormalizeMenuText(actual);
+        expected = NormalizeMenuText(expected);
+        if (actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (actual.Length == 0 || expected.Length == 0)
+            return false;
+
+        var matchIndex = actual.IndexOf(expected, StringComparison.OrdinalIgnoreCase);
+        while (matchIndex >= 0)
+        {
+            var beforeIsBoundary = matchIndex == 0 || !char.IsLetterOrDigit(actual[matchIndex - 1]);
+            var afterIndex = matchIndex + expected.Length;
+            var afterIsBoundary = afterIndex == actual.Length || !char.IsLetterOrDigit(actual[afterIndex]);
+            if (beforeIsBoundary && afterIsBoundary)
+                return true;
+            matchIndex = actual.IndexOf(expected, matchIndex + 1, StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
+
+    private static string NormalizeMenuText(string? value)
+    {
+        value ??= string.Empty;
 
         // FFXIV menu labels may begin with a SeString icon payload. When the
         // payload is exposed as plain text it includes control bytes and a small
         // marker such as F/E. Keep only the visible text after the final control
         // byte, then ignore the punctuation the game appends to menu labels.
         var finalControlIndex = -1;
-        for (var index = 0; index < actual.Length; index++)
+        for (var index = 0; index < value.Length; index++)
         {
-            if (char.IsControl(actual[index]))
+            if (char.IsControl(value[index]))
                 finalControlIndex = index;
         }
-        if (finalControlIndex >= 0 && finalControlIndex + 1 < actual.Length)
-            actual = actual[(finalControlIndex + 1)..];
+        if (finalControlIndex >= 0 && finalControlIndex + 1 < value.Length)
+            value = value[(finalControlIndex + 1)..];
 
-        static string Normalize(string value) => value
+        value = new string(value.Select(character => char.IsControl(character) ? ' ' : character).ToArray());
+        return string.Join(' ', value
             .Trim()
             .TrimEnd('.', '…')
-            .Trim();
-
-        return Normalize(actual).Equals(Normalize(expected), StringComparison.OrdinalIgnoreCase);
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
     private unsafe string DescribeLobbyAddons()
@@ -2788,7 +2863,7 @@ internal sealed class RunService : IDisposable
         if (requested)
         {
             state.Status = state.PostRunDestination == PostRunDestination.HomeWorld
-                ? $"Returning to home world {destination} through character selection."
+                ? $"Returning to home world {destination}."
                 : $"Returning to {destination}.";
             Save();
             return;
@@ -2799,44 +2874,49 @@ internal sealed class RunService : IDisposable
 
     private bool ContinuePostRunTravel(string destination)
     {
-        if (state!.PostRunDestination == PostRunDestination.HomeWorld)
-            return travel.RequestReturnHomeWorld(state.CharacterName, state.CharacterHomeWorld);
-
+        var activeState = state!;
         var destinationDefinition = WorldCatalog.FindWorld(destination);
         if (destinationDefinition is null)
             return false;
 
+        // Let the normal world request choose the correct transport while the
+        // character is logged in. It uses World Visit within the current data
+        // center and only enters the logout flow for a real data-center change.
         if (DalamudServices.ClientState.IsLoggedIn && DalamudServices.ObjectTable.LocalPlayer is not null)
         {
-            state.PostRunLoginPrepared = false;
-            return travel.RequestWorld(destination, state.CharacterName, state.CharacterHomeWorld);
+            activeState.PostRunLoginPrepared = false;
+            return travel.RequestWorld(destination, activeState.CharacterName, activeState.CharacterHomeWorld);
         }
 
-        var lobbyWorldName = travel.GetLobbyCharacterCurrentWorld(state.CharacterName, state.CharacterHomeWorld);
+        var lobbyWorldName = travel.GetLobbyCharacterCurrentWorld(activeState.CharacterName, activeState.CharacterHomeWorld);
         var lobbyWorld = WorldCatalog.FindWorld(lobbyWorldName);
-        var homeWorld = WorldCatalog.FindWorld(state.CharacterHomeWorld);
+        var homeWorld = WorldCatalog.FindWorld(activeState.CharacterHomeWorld);
 
         if (lobbyWorld is not null &&
             lobbyWorld.DataCenter.Equals(destinationDefinition.DataCenter, StringComparison.OrdinalIgnoreCase))
         {
-            if (!state.PostRunLoginPrepared)
+            if (!activeState.PostRunLoginPrepared)
             {
-                state.PostRunLoginPrepared = true;
+                // Recover from a stale return-home request that may already have
+                // logged out on the same data center. Log into the character's
+                // current world first, then use World Visit after loading in.
+                travel.Abort();
+                activeState.PostRunLoginPrepared = true;
                 Save();
             }
             travel.ContinueCharacterLogin(
-                state.CharacterName,
-                state.CharacterHomeWorld,
+                activeState.CharacterName,
+                activeState.CharacterHomeWorld,
                 lobbyWorld.Name,
                 allowTitleStart: false);
             return true;
         }
 
-        state.PostRunLoginPrepared = false;
+        activeState.PostRunLoginPrepared = false;
         if (homeWorld is not null &&
             destinationDefinition.DataCenter.Equals(homeWorld.DataCenter, StringComparison.OrdinalIgnoreCase))
         {
-            return travel.RequestReturnHomeWorld(state.CharacterName, state.CharacterHomeWorld);
+            return travel.RequestReturnHomeWorld(activeState.CharacterName, activeState.CharacterHomeWorld);
         }
 
         return ContinuePostRunDataCenterNavigation(destinationDefinition);
