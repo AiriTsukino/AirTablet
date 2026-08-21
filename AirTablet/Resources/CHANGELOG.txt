@@ -7,7 +7,7 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
-[2026-08-21] AirTabOS v1.0.37.1
+[2026-08-21] AirTabOS v1.0.38.1
 - Fix for control center widgets not saving between updates.
 
 [2026-08-21] AirTabOS v1.0.36.1
