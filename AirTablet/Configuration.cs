@@ -6,7 +6,7 @@ namespace AirTablet;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 16;
+    public int Version { get; set; } = 17;
     public bool SetupCompleted { get; set; }
     public bool TutorialCompleted { get; set; }
     public bool ShowStartupAnimation { get; set; } = true;

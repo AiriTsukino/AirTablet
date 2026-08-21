@@ -15,9 +15,10 @@ public sealed class Plugin : IDalamudPlugin
     private const string AppStateFileName = "app-state.json";
     private sealed class AppSelectionState
     {
-        public int Version { get; set; } = 2;
+        public int Version { get; set; } = 3;
         public bool Initialized { get; set; }
         public List<string> EnabledApps { get; set; } = [];
+        public List<string> ControlCenterWidgets { get; set; } = [];
     }
 
     private readonly Configuration config;
@@ -41,6 +42,7 @@ public sealed class Plugin : IDalamudPlugin
         if (hadExistingConfig && previousVersion < 10)
             MigrateAppSelection(config);
         NormalizeAppSelection(config);
+        NormalizeControlCenterWidgets(config);
         if (hadExistingConfig && previousVersion < 13)
         {
             // Existing users already made their app choices before the welcome
@@ -72,6 +74,12 @@ public sealed class Plugin : IDalamudPlugin
         {
             config.StartupTabletMode = "RememberLast";
             config.Version = 16;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
+        if (hadExistingConfig && previousVersion < 17)
+        {
+            config.ControlCenterWidgets ??= [];
+            config.Version = 17;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
         SaveAppSelectionState(config);
@@ -210,6 +218,7 @@ public sealed class Plugin : IDalamudPlugin
     private void SaveNow()
     {
         NormalizeAppSelection(config);
+        NormalizeControlCenterWidgets(config);
         DalamudServices.PluginInterface.SavePluginConfig(config);
         SaveAppSelectionState(config);
         savePending = false;
@@ -276,6 +285,8 @@ public sealed class Plugin : IDalamudPlugin
             {
                 target.AppSelectionInitialized = state.Initialized;
                 target.EnabledApps = state.EnabledApps ?? [];
+                if (state.Version >= 3)
+                    target.ControlCenterWidgets = state.ControlCenterWidgets ?? [];
             }
         }
         catch (Exception ex)
@@ -296,10 +307,14 @@ public sealed class Plugin : IDalamudPlugin
             {
                 Initialized = source.AppSelectionInitialized,
                 EnabledApps = source.EnabledApps.ToList(),
+                ControlCenterWidgets = source.ControlCenterWidgets.ToList(),
             };
+            var temporaryPath = path + ".tmp";
             File.WriteAllText(
-                path,
+                temporaryPath,
                 JsonConvert.SerializeObject(state, Formatting.Indented));
+            File.Copy(temporaryPath, path, true);
+            File.Delete(temporaryPath);
         }
         catch (Exception ex)
         {
@@ -324,6 +339,14 @@ public sealed class Plugin : IDalamudPlugin
         target.DisabledApps = unknownDisabled
             .Concat(AppHostService.BundledAppIds.Where(id =>
                 !target.AppSelectionInitialized || !enabled.Contains(id)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static void NormalizeControlCenterWidgets(Configuration target)
+    {
+        target.ControlCenterWidgets = (target.ControlCenterWidgets ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
