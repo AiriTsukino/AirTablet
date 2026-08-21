@@ -1,46 +1,96 @@
 @id barmanager
 @title BarManager
-@summary Track drink sales, gamba rolls, sessions, buyouts, and venue reports.
+@summary Track drink sales, gamba rolls, jackpots, buyouts, sessions, and venue reports.
 @category Bundled Apps
 @order 20
 
 # Quick start
-- Create a venue and configure its drink menu in Settings.
-- Use Audit for normal drink orders and payment tracking.
-- Use the named gamba tab to run roll-based drink sessions.
-- Review completed work in Sessions and Report.
+- Create or select a venue profile in Settings > Venues.
+- Build the venue's enabled drink menu and mark the drink used for gamba sessions.
+- Set starting money, jackpot, buyout prices, and gamba rules before opening.
+- Use Audit for normal sales, tips, prizes, and buyouts.
+- Use the named gamba tab to run roll sessions, then review Sessions and Report.
+
+> warning: Venue profiles have separate menus and gamba settings, while the current audit is the active work record. Confirm both the selected venue and current jackpot before taking sales or rolls.
 
 # Audit
-Add items and quantities to the current order, select the customer, and record payment/status. Quantity buttons are shortcuts; the configured menu controls names and prices.
+The Audit tab is the working ledger for the current business date. It records the bartender, starting gil, venue prize gil, tips, prizes paid, ending gil, drink quantities, buyouts, and gamba sessions. Drink totals use the active venue's current menu prices.
+
+## Drink sales and buyouts
+- Enabled menu drinks appear as sale controls.
+- Gamba drinks can feed both sales totals and roll-session pricing.
+- A submitted full or hourly buyout records its buyer, type, hours or custom price, and total.
+- Buyout-covered drinks are kept separate from normal paid quantities in the saved audit.
 
 # Gamba sessions
-## Starting
-A customer name is required. Choose the number of rolls, use the current target if helpful, then start the session.
-## Roll tracking
-Party-chat rolls can be detected live. Manual/Paste Entry accepts a roll or pasted results when live detection is unavailable.
-## Ending
-End & Save is available only after rolls remaining reaches zero. Cancel Session discards the active session after confirmation.
-## Roll history
-The last normal or jackpot session remains visible until a new matching session begins, making it possible to review the previous results.
+## Starting and ending
+Enter the customer's character name and optional world, or use the current target. Drinks purchased are converted to rolls using Rolls per gamba drink. End & Save becomes available when no rolls remain. Auto-save can finish the final roll automatically, and jackpot wins can optionally end the session immediately. Cancel Session discards it after confirmation.
+
+## Live and manual rolls
+- Party-chat rolls are accepted only for the active customer and configured dice range.
+- Duplicate chat results are ignored.
+- Manual/Paste Entry is available only when Allow manual paste import is enabled.
+- History records the result, tier, base payout, bonus, final payout, jackpot win, free roll, and jackpot contribution.
+- A free-roll rule adds a roll instead of allowing the session to run out on that result.
+
+# How gamba rules work
+Enabled rules are checked from top to bottom. The first matching rule wins, so place specific or high-priority rules above broad patterns and ranges.
+
+## Rule results
+Each rule has a name, tier label, fixed payout, and optional Pays current jackpot and Grants free roll results. A jackpot rule uses the current audit jackpot instead of its fixed payout.
+
+## Matching options
+- Winning roll(s): accepts the individual values or value expression configured in the editor.
+- Exact only: requires the complete roll to equal the value. When disabled, digit/token matching can find it inside a longer roll.
+- Winning range: matches every roll from its minimum through maximum.
+- Triples: matches three identical adjacent digits, such as 777.
+- Adjacent doubles: matches a repeated adjacent digit pair.
+- Runs: matches three-digit count-up or count-down sequences in the selected direction.
+
+> tip: If a roll receives the wrong tier, look for an earlier broad rule that is matching first.
+
+# Multipliers and bonuses
+## Roll-range multipliers
+An enabled range applies when the result is between its minimum and maximum. The first matching range is used. It affects normal payouts; it affects a jackpot only when Applies to jackpot is enabled.
+
+## Loss-streak bonus
+The configured number of consecutive losses can activate a named multiplier. Duration may be a number of turns or unlimited. Jackpot payouts are excluded unless explicitly enabled.
+
+## Bartender-roll bonus
+BarManager can request a separate bartender roll after a customer roll. A result of exactly 1 activates its named multiplier for the configured duration. Its dice maximum, announcement, and jackpot behavior are configurable. It does not replace an already active loss-streak bonus.
+
+# Jackpot and announcements
+- Default jackpot base supplies the venue's starting value; Current jackpot edits the active audit.
+- A percentage of each roll price can be contributed to the jackpot.
+- Jackpot wins can auto-end the session and optionally show purchase guidance afterward.
+- Winner announcements have an enable switch, channel, and message.
+- Jackpot templates support `{player}`, `{payout}`, `{jackpot}`, and `{venue}`.
+- Remaining rolls can be announced in party chat at a configured interval.
+- Temporary-bonus announcements use the variables shown beside their settings.
 
 # Settings reference
 ## Venues
-Each venue keeps its own menu, gamba rules, money settings, and records.
+Create, rename, select, delete, export, or import complete venue profiles. Verify imported money values and menu before use.
 ## Drink Menu
-Configure sellable drinks, prices, and display order.
+Add, enable, rename, price, mark as gamba, or delete drinks. Only enabled drinks are used by active controls.
 ## Gamba Settings
-Configure the gamba drink name, dice expectation, roll rules, and result handling.
+Controls display name, rolls per drink, dice range, session completion, paste entry, party announcements, jackpot behavior, temporary bonuses, ordered rules, and range multipliers. Gamba settings can be exported or imported separately.
 ## Buyouts & Jackpot
-Controls buyout/jackpot values and money behavior used by supported sessions.
+Sets jackpot base, active jackpot, full buyout price, and hourly buyout price.
 ## Files
-Choose or review the folders used for saved data and exports.
+Shows or opens the storage locations used for data, reports, audit records, and gamba configuration.
+
+# Sessions and Report
+Sessions provides saved operational history, including gamba details. Report summarizes the current audit into venue-facing totals. Configuration JSON is for setup transfer; report/session output is for completed-night records.
 
 # Troubleshooting
-## Start Session is disabled
-Enter a customer name and verify the requested roll count is valid.
-## End & Save is disabled
-Resolve every remaining roll first. Use manual entry only for legitimate missing roll results.
 ## A roll was not detected
-Confirm the player rolled in the expected party channel with the configured dice range. Paste the visible result as a fallback.
-## Totals do not match the menu
-Check the active venue and its Drink Menu prices before editing session records.
+Confirm customer identity, party membership, party channel, dice range, and that the result was not already consumed. Use paste entry only for a legitimate missing result.
+## The wrong payout matched
+Check rule order, Exact only, ranges, patterns, range multipliers, and active temporary bonuses.
+## Jackpot did not grow or multiply
+Check roll-price contribution and percentage. Jackpot multiplication is opt-in separately for each range and temporary bonus.
+## End & Save is disabled
+Resolve every remaining roll, or enable an appropriate automatic ending option for future sessions.
+## Totals do not match
+Confirm active venue/audit, menu prices, buyout coverage, tips, prizes, starting/ending values, and current jackpot.

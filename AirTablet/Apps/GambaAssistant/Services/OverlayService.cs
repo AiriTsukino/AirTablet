@@ -21,11 +21,23 @@ public sealed class OverlayService
     private const float DetailedPanelWidth = 300f;
     private const float DetailedPanelHeight = 150f;
     private const float ActiveActionsVerticalPadding = 7f;
-    private const float ActiveActionsBottomSafetyPadding = 6f;
+    private const float ActiveActionsBottomSafetyPadding = 16f;
+    private const float CombinedOverlayBottomPadding = 18f;
     private Action? hitActiveHand;
     private Action? standActiveHand;
     private Action? doubleDownActiveHand;
     private Action? splitActiveHand;
+    private Action? openBetting;
+    private Action? startDealing;
+    private Action? closeBetting;
+    private Action? settleRound;
+    private Action<PlayerSessionState, long, string>? reserveBet;
+    private Action<PlayerSessionState>? reserveMaximumBet;
+    private Action<PlayerSessionState>? passBetting;
+    private Func<PlayerSessionState, long>? getMaximumBet;
+    private Func<bool>? canStartDealing;
+    private Func<string>? getStartDealingUnavailableReason;
+    private readonly Dictionary<string, long> overlayCustomBets = new(StringComparer.OrdinalIgnoreCase);
 
     public OverlayService(Configuration config, BlackjackSession session, LogService log)
     {
@@ -40,6 +52,30 @@ public sealed class OverlayService
         standActiveHand = stand;
         doubleDownActiveHand = doubleDown;
         splitActiveHand = split;
+    }
+
+    public void SetBlackjackTableCallbacks(
+        Action openBetting,
+        Action startDealing,
+        Action closeBetting,
+        Action settleRound,
+        Action<PlayerSessionState, long, string> reserveBet,
+        Action<PlayerSessionState> reserveMaximumBet,
+        Action<PlayerSessionState> passBetting,
+        Func<PlayerSessionState, long> getMaximumBet,
+        Func<bool> canStartDealing,
+        Func<string> getStartDealingUnavailableReason)
+    {
+        this.openBetting = openBetting;
+        this.startDealing = startDealing;
+        this.closeBetting = closeBetting;
+        this.settleRound = settleRound;
+        this.reserveBet = reserveBet;
+        this.reserveMaximumBet = reserveMaximumBet;
+        this.passBetting = passBetting;
+        this.getMaximumBet = getMaximumBet;
+        this.canStartDealing = canStartDealing;
+        this.getStartDealingUnavailableReason = getStartDealingUnavailableReason;
     }
 
     public void Draw()
@@ -84,7 +120,7 @@ public sealed class OverlayService
         var textScale = Math.Clamp(config.Overlay.TextScale, 0.65f, 2.0f);
         var panelColumns = Math.Clamp(config.Overlay.PlayerPanelColumns, 1, 8);
         var panelSize = GetCombinedOverlayPanelSize(textScale);
-        var hasActiveActions = HasActiveTurnActions();
+        var hasActiveActions = HasContextualActions();
         var rowCount = players.Count == 0 ? 0 : (int)Math.Ceiling(players.Count / (float)panelColumns);
         var style = ImGui.GetStyle();
         var gridWidth = players.Count == 0
@@ -99,7 +135,8 @@ public sealed class OverlayService
             + (hasActiveActions ? activeActionsHeight + style.ItemSpacing.Y : 0f)
             + Math.Max(1, rowCount) * panelSize.Y
             + Math.Max(0, rowCount - 1) * style.ItemSpacing.Y
-            + 20f;
+            + 20f
+            + CombinedOverlayBottomPadding;
 
         // OverlayService draws outside the main Dalamud WindowSystem windows, so apply the
         // same local GambaAssistant theme here as a scoped push/pop. This keeps the overlay
@@ -133,7 +170,7 @@ public sealed class OverlayService
             ImGui.TextDisabled($"{panelColumns} wide");
             ImGui.Separator();
 
-            DrawActiveTurnActionPanel(activeActionsHeight, useCompactActionGrid);
+            DrawContextualActionPanel(activeActionsHeight, useCompactActionGrid);
 
             if (players.Count == 0)
             {
@@ -175,11 +212,170 @@ public sealed class OverlayService
         return new Vector2(width * textScale, height * textScale);
     }
 
-    private bool HasActiveTurnActions()
-        => session.Round.Phase == BlackjackPhase.PlayerTurns
-           && session.ActivePlayer is { } player
-           && session.ActiveHand is not null
-           && player.Status != PlayerStatus.Dealer;
+    private bool HasContextualActions()
+        => session.Round.Phase switch
+        {
+            BlackjackPhase.Idle or BlackjackPhase.CashOutBetweenHands => openBetting is not null,
+            BlackjackPhase.BettingOpen => closeBetting is not null,
+            BlackjackPhase.PlayerTurns => session.ActivePlayer is { Status: not PlayerStatus.Dealer }
+                && session.ActiveHand is not null,
+            BlackjackPhase.Settlement => settleRound is not null,
+            _ => false,
+        };
+
+    private void DrawContextualActionPanel(float measuredHeight, bool useCompactGrid)
+    {
+        switch (session.Round.Phase)
+        {
+            case BlackjackPhase.Idle:
+            case BlackjackPhase.CashOutBetweenHands:
+                DrawRoundFlowActionPanel(measuredHeight, useCompactGrid, "Ready for the next hand", [("Open Betting", openBetting, "Open betting and begin the guided party-order betting queue.")]);
+                break;
+            case BlackjackPhase.BettingOpen:
+                var bettingPlayer = GetNextBettingPlayer();
+                if (bettingPlayer is not null)
+                    DrawBettingActionPanel(bettingPlayer, measuredHeight, useCompactGrid);
+                else
+                {
+                    var startReady = canStartDealing?.Invoke() == true;
+                    var startExplanation = startReady
+                        ? "Close betting and begin the initial deal for confirmed players."
+                        : getStartDealingUnavailableReason?.Invoke() ?? "Start Dealing is not available yet.";
+                    DrawRoundFlowActionPanel(measuredHeight, useCompactGrid, "Betting queue complete", [
+                        ("Start Dealing", startReady ? startDealing : null, startExplanation),
+                        ("Close Betting", closeBetting, "Close betting without dealing and return pending bets.")]);
+                }
+                break;
+            case BlackjackPhase.PlayerTurns:
+                DrawActiveTurnActionPanel(measuredHeight, useCompactGrid);
+                break;
+            case BlackjackPhase.Settlement:
+                DrawRoundFlowActionPanel(measuredHeight, useCompactGrid, "Round ready for settlement", [("Settle Round", settleRound, "Settle every active hand against the dealer.")]);
+                break;
+        }
+    }
+
+    private PlayerSessionState? GetNextBettingPlayer()
+        => session.SessionPlayers
+            .Where(p => p.Status is not (PlayerStatus.Dealer or PlayerStatus.LeftDisconnected or PlayerStatus.CashedOut or PlayerStatus.SpectatorStaff))
+            .OrderBy(p => p.PartySlot)
+            .FirstOrDefault(p => !p.BetConfirmed && !p.PassedCurrentBetting);
+
+    private void DrawBettingActionPanel(PlayerSessionState player, float measuredHeight, bool useCompactGrid)
+    {
+        BeginActionPanel(measuredHeight, "##ga_overlay_betting_actions");
+        ImGui.TextColored(GambaTheme.Gold, $"Betting: {player.DisplayName}");
+        var playerMaximum = getMaximumBet?.Invoke(player) ?? session.Rules.MaximumBet;
+        ImGui.TextUnformatted($"Bank {player.Bank.Available:N0} | Limits {session.Rules.MinimumBet:N0}-{playerMaximum:N0}");
+
+        var ready = reserveBet is not null && reserveMaximumBet is not null && passBetting is not null;
+        var minEnabled = ready && player.Bank.Available >= session.Rules.MinimumBet;
+        var lastEnabled = ready && player.Bank.LastBet >= session.Rules.MinimumBet && player.Bank.Available >= player.Bank.LastBet;
+        var recentEnabled = ready && player.Bank.LastTradeAmount >= session.Rules.MinimumBet && player.Bank.Available >= player.Bank.LastTradeAmount;
+        var id = player.Identity.ToString();
+        overlayCustomBets.TryGetValue(id, out var customBet);
+
+        if (useCompactGrid && ImGui.BeginTable("##ga_overlay_bet_grid", 2, ImGuiTableFlags.SizingStretchSame | ImGuiTableFlags.NoSavedSettings))
+        {
+            DrawBetGridButton("Min Bet", minEnabled, "Player needs enough available bank for the table minimum.", () => reserveBet?.Invoke(player, session.Rules.MinimumBet, "Overlay min bet"));
+            DrawBetGridButton("Max Bet", ready && player.Bank.Available >= session.Rules.MinimumBet, "Player needs enough available bank for the table minimum.", () => reserveMaximumBet?.Invoke(player));
+            DrawBetGridButton("Last Bet", lastEnabled, "No valid last bet is available, or the player lacks enough bank.", () => reserveBet?.Invoke(player, player.Bank.LastBet, "Overlay last bet"));
+            DrawBetGridButton("Recent Trade", recentEnabled, "No valid recent trade is available, or the player lacks enough bank.", () => reserveBet?.Invoke(player, player.Bank.LastTradeAmount, "Overlay recent trade bet"));
+            DrawBetGridButton("Sit Out / Pass", ready, "Blackjack table actions are not ready yet.", () => passBetting?.Invoke(player));
+            ImGui.EndTable();
+        }
+        else
+        {
+            DrawInlineBetButton("Min Bet", false, minEnabled, "Player needs enough available bank for the table minimum.", () => reserveBet?.Invoke(player, session.Rules.MinimumBet, "Overlay min bet"));
+            DrawInlineBetButton("Max Bet", true, ready && player.Bank.Available >= session.Rules.MinimumBet, "Player needs enough available bank for the table minimum.", () => reserveMaximumBet?.Invoke(player));
+            DrawInlineBetButton("Last Bet", true, lastEnabled, "No valid last bet is available, or the player lacks enough bank.", () => reserveBet?.Invoke(player, player.Bank.LastBet, "Overlay last bet"));
+            DrawInlineBetButton("Recent Trade", true, recentEnabled, "No valid recent trade is available, or the player lacks enough bank.", () => reserveBet?.Invoke(player, player.Bank.LastTradeAmount, "Overlay recent trade bet"));
+            DrawInlineBetButton("Sit Out / Pass", true, ready, "Blackjack table actions are not ready yet.", () => passBetting?.Invoke(player));
+        }
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Custom bet");
+        ImGui.SetNextItemWidth(MathF.Max(80f, ImGui.GetContentRegionAvail().X - 70f));
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, WithAlpha(GambaTheme.Purple, 0.30f));
+        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, WithAlpha(GambaTheme.PurpleHovered, 0.48f));
+        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, WithAlpha(GambaTheme.PurpleActive, 0.62f));
+        ImGui.PushStyleColor(ImGuiCol.Border, GambaTheme.Border);
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 1f);
+        if (UiHelpers.InputGil($"##ga_overlay_custom_bet_{SafeId(id)}", ref customBet))
+            overlayCustomBets[id] = Math.Max(0, customBet);
+        ImGui.PopStyleVar();
+        ImGui.PopStyleColor(4);
+        ImGui.SameLine();
+        var customEnabled = ready
+            && customBet >= session.Rules.MinimumBet
+            && player.Bank.ActiveBet + customBet <= playerMaximum
+            && customBet <= player.Bank.Available;
+        if (OverlayActionButton("Bet", customEnabled, "Enter a valid custom bet within the table limits and available bank.", "Reserve this custom bet and advance to the next player."))
+            reserveBet?.Invoke(player, customBet, "Overlay custom bet");
+
+        ImGui.Dummy(new Vector2(0f, 4f));
+
+        EndActionPanel();
+    }
+
+    private static void DrawBetGridButton(string label, bool enabled, string disabledReason, Action action)
+    {
+        ImGui.TableNextColumn();
+        if (OverlayActionButton(label, enabled, disabledReason, "Apply this choice and advance to the next player.", new Vector2(-1f, 0f)))
+            action();
+    }
+
+    private static void DrawInlineBetButton(string label, bool continueLine, bool enabled, string disabledReason, Action action)
+    {
+        if (continueLine)
+            DrawSameLineIfFits(label);
+        if (OverlayActionButton(label, enabled, disabledReason, "Apply this choice and advance to the next player."))
+            action();
+    }
+
+    private static void DrawRoundFlowActionPanel(float measuredHeight, bool useCompactGrid, string heading, IReadOnlyList<(string Label, Action? Callback, string Tooltip)> actions)
+    {
+        BeginActionPanel(measuredHeight, "##ga_overlay_round_flow_actions");
+        ImGui.TextColored(GambaTheme.Gold, heading);
+        ImGui.TextDisabled("Round Flow");
+        if (useCompactGrid && ImGui.BeginTable("##ga_overlay_round_flow_grid", 2, ImGuiTableFlags.SizingStretchSame | ImGuiTableFlags.NoSavedSettings))
+        {
+            foreach (var action in actions)
+            {
+                ImGui.TableNextColumn();
+                if (OverlayActionButton(action.Label, action.Callback is not null, action.Tooltip, action.Tooltip, new Vector2(-1f, 0f)))
+                    action.Callback?.Invoke();
+            }
+            ImGui.EndTable();
+        }
+        else
+        {
+            for (var i = 0; i < actions.Count; i++)
+            {
+                if (i > 0) DrawSameLineIfFits(actions[i].Label);
+                if (OverlayActionButton(actions[i].Label, actions[i].Callback is not null, actions[i].Tooltip, actions[i].Tooltip))
+                    actions[i].Callback?.Invoke();
+            }
+        }
+        EndActionPanel();
+    }
+
+    private static void BeginActionPanel(float measuredHeight, string id)
+    {
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, GambaTheme.PanelBg);
+        ImGui.PushStyleColor(ImGuiCol.Border, GambaTheme.Border);
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 7f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(9f, 7f));
+        ImGui.BeginChild(id, new Vector2(0f, measuredHeight), true, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+    }
+
+    private static void EndActionPanel()
+    {
+        ImGui.EndChild();
+        ImGui.PopStyleVar(2);
+        ImGui.PopStyleColor(2);
+        ImGui.Spacing();
+    }
 
     private void DrawActiveTurnActionPanel(float measuredHeight, bool useCompactGrid)
     {
@@ -282,7 +478,27 @@ public sealed class OverlayService
         var style = ImGui.GetStyle();
         var textLineHeight = ImGui.GetTextLineHeight() * textScale;
         var buttonHeight = textLineHeight + style.FramePadding.Y * 2f;
-        var rows = useCompactGrid ? 2 : MeasureActionRows(textScale, contentWidth, style);
+        int rows;
+        if (session.Round.Phase == BlackjackPhase.BettingOpen && GetNextBettingPlayer() is not null)
+        {
+            var presetRows = useCompactGrid
+                ? 3
+                : MeasureActionRows(
+                    textScale,
+                    contentWidth,
+                    style,
+                    ["Min Bet", "Max Bet", "Last Bet", "Recent Trade", "Sit Out / Pass"]);
+
+            // The custom bet is not another preset button. It has its own label,
+            // input/button row, spacing, and bottom margin in every overlay width.
+            rows = presetRows + 3;
+        }
+        else
+        {
+            rows = useCompactGrid
+                ? session.Round.Phase == BlackjackPhase.PlayerTurns ? 2 : 1
+                : MeasureActionRows(textScale, contentWidth, style);
+        }
 
         return ActiveActionsVerticalPadding * 2f
             + ActiveActionsBottomSafetyPadding
@@ -292,11 +508,15 @@ public sealed class OverlayService
             + style.ItemSpacing.Y * Math.Max(0, rows - 1);
     }
 
-    private int MeasureActionRows(float textScale, float contentWidth, ImGuiStylePtr style)
+    private int MeasureActionRows(
+        float textScale,
+        float contentWidth,
+        ImGuiStylePtr style,
+        IReadOnlyList<string>? labels = null)
     {
         var rows = 1;
         var usedWidth = 0f;
-        foreach (var label in GetActiveActionLabels())
+        foreach (var label in labels ?? GetActiveActionLabels())
         {
             var width = ImGui.CalcTextSize(VisibleLabel(label)).X * textScale
                 + style.FramePadding.X * 2f;
@@ -316,6 +536,12 @@ public sealed class OverlayService
 
     private IReadOnlyList<string> GetActiveActionLabels()
     {
+        if (session.Round.Phase == BlackjackPhase.BettingOpen)
+            return ["Min Bet", "Max Bet", "Last Bet", "Recent Trade", "Sit Out / Pass", "Bet"];
+        if (session.Round.Phase is BlackjackPhase.Idle or BlackjackPhase.CashOutBetweenHands)
+            return ["Open Betting"];
+        if (session.Round.Phase == BlackjackPhase.Settlement)
+            return ["Settle Round"];
         if (session.ActivePlayer is not { } player || session.ActiveHand is not { } hand)
             return ["Hit", "Stand", "Double Down", "Split"];
 

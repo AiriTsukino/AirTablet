@@ -23,6 +23,11 @@ Adding the same Name and World again increases that contestant's totals. Undo re
 # Randomizer
 Each ticket is one chance in the weighted draw. A contestant with 20 of 100 tickets has 20 chances out of 100. The winner display shows the selected player, their tickets, jackpot, split, and payout.
 
+# History and profiles
+Winner History is saved per profile and records the winner, ticket counts, participant total, jackpot, split, payout, and draw time. Delete History removes saved winners for the active profile but does not clear current contestants.
+
+Profiles can be created blank or by copying current settings. Export Current Profile transfers its setup and saved raffle data as JSON; Import Profile creates a separate profile rather than overwriting an existing one.
+
 # Settings reference
 ## Profiles
 Separates raffle configuration, contestants, branding, and winner history by venue.
@@ -31,7 +36,7 @@ Controls ticket price, base jackpot, winner percentage, and BOGO jackpot behavio
 ## Branding
 Selects the logos used in the randomizer and winner presentation.
 ## Announcement
-Controls whether and where winner text is sent and lets you edit the message template.
+Controls whether and where winner text is sent and lets you edit and preview the message template using the variables shown in Settings.
 ## Sound
 Controls randomizer tick sound and volume.
 
@@ -44,3 +49,5 @@ Verify active profile, ticket price, base jackpot, BOGO jackpot setting, and win
 Complete the centered confirmation. Tablet confirmations intentionally prevent interaction behind them.
 ## Logos are missing
 Open Branding and verify the local image paths still exist on this computer.
+## Winner history and contestants do not match
+They are separate records. Clear All affects the current contestant list; Delete History affects completed winner records for the active profile.

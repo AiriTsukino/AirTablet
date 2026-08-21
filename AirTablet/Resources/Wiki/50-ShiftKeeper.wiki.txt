@@ -22,7 +22,22 @@ Payable work time can be rounded using 15, 30, 45, 60, or custom-minute interval
 Hourly pay uses payable time and rate. Other configured formats use their displayed shift/pay rules.
 
 # Attendance
-Attendance mode controls when a roster member is considered visible/present for venue tracking. Manual controls remain available when automatic detection is not appropriate.
+Attendance modes are Venue Tracking, Manual Timer, and No Timer. Venue Tracking counts detected presence; Manual Timer exposes Clock In/Out; No Timer can be marked Complete/Undo for shift-based work. Staff can be assigned to multiple shifts and scheduled or excluded for the current night.
+
+Tracking days are selected per venue. Overnight shifts keep the selected start day through their after-midnight portion. Only count time inside the assigned shift can prevent presence outside configured hours from increasing payable time.
+
+# Pay and trade payments
+- Hourly pay uses payable time and the member's hourly rate.
+- Per shift uses the configured rate and can count progress up from zero when enabled.
+- Payable work time and calculated pay have separate rounding controls.
+- Apply outgoing gil trades to staff pay can detect payments and update the selected current-night record.
+- Paid status, paid amount, whether payment was automatic, and the latest trade amount/time are stored in the night record.
+
+# Crash recovery and night history
+When enabled, crash/reload recovery restores eligible timer time within the configured grace behavior. Reset Night archives the current night into venue history, then starts clean timers and paid states. Review the displayed last-recovery summary before making manual corrections.
+
+# Venue profiles
+Profiles separate venue name/currency, tracking days, shifts, permanent roster, active night, and history. Export saves the complete venue as JSON. Import creates a separate venue with new internal IDs and does not overwrite an existing one.
 
 # Staff tells
 The tell popup sends a message to the selected staff member. Pressing Enter behaves like Send Tell and closes the popup after sending.
@@ -31,8 +46,10 @@ The tell popup sends a message to the selected staff member. Pressing Enter beha
 ## A staff member is not detected
 Check their full character name, home world, attendance mode, current venue, and whether they are visible under the selected detection rule.
 ## Pay differs from raw worked time
-Review payable-time rounding direction and interval, then check the staff member's pay format and rate.
+Review assigned shifts, scheduled-only tracking, payable-time rounding, calculated-pay rounding, pay format, and rate.
 ## An action column becomes wider
 This is expected when a stopped timer exposes Resume and status controls. Other columns size to content and remaining space goes to Staff Name.
 ## Tell cannot be sent
 Confirm the character name and world are valid and that chat is currently available.
+## A trade payment was not applied
+Confirm outgoing trade detection is enabled, the staff identity matches the active venue roster, and the payment belongs to the current night. Mark or adjust payment manually only after checking the trade status.

@@ -25,6 +25,8 @@ Enter one FFXIV command per line in the macro script. There is no separate chann
 
 Supported chat commands include /say, /shout, /yell, and /echo. Supported in-game emotes such as /wave, /dance, or /bow can be placed directly on their own lines. Add an explicit wait with /wait 1, /wait.1, or /wait1, or append an inline wait such as <wait.1> to a supported command.
 
+The editor validates each line before Save. Red helper text wraps inside the editor and identifies the line and expected FFXIV command form; correct every reported line before relying on the key at a live venue.
+
 Example:
 ```
 /echo Testing this key
@@ -55,6 +57,8 @@ Add a MacroDeck Macro pad from Control Center's Add widget screen. Each pad uses
 # Troubleshooting
 ## A macro does nothing
 Open Edit Deck and confirm that the script contains supported slash commands. Start with a line such as `/echo Testing this key` while testing the script.
+## Save reports an invalid line
+Every non-empty command line must begin with a supported FFXIV slash command. Plain text such as `Hello` is not sent automatically; use `/echo Hello` for a private test or an appropriate chat command.
 ## An image does not appear
 Confirm the image still exists at the saved path and uses PNG, JPG, JPEG, or WebP format.
 ## A Control Center key is empty

@@ -381,7 +381,11 @@ internal sealed class Plugin : IDisposable
             ImGui.TextWrapped("Use /wait 1 or <wait.1> between commands. FFXIV validates command arguments and availability.");
             ImGui.PopStyleColor();
             if (!string.IsNullOrWhiteSpace(editorValidation))
-                ImGui.TextColored(new Vector4(1f, 0.45f, 0.45f, 1f), editorValidation);
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.45f, 0.45f, 1f));
+                ImGui.TextWrapped(editorValidation);
+                ImGui.PopStyleColor();
+            }
         }
         if (ImGui.Button("Save", TabletAppTheme.Px(new Vector2(100, 0))))
         {

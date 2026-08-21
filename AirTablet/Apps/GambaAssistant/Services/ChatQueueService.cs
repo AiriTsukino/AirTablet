@@ -12,6 +12,7 @@ public sealed class ChatQueueService : IDisposable
     private DateTimeOffset nextSend = DateTimeOffset.MinValue;
     private DateTimeOffset nextActionCommandDelayLog = DateTimeOffset.MinValue;
     private Func<bool>? shouldDelayActionCommands;
+    private long nextSequence;
     public bool Paused { get; private set; }
     public int Count => queue.Count;
     public string Status => Paused ? $"Paused ({Count} queued)" : Count == 0 ? "Idle" : $"Queued: {Count}";
@@ -26,11 +27,11 @@ public sealed class ChatQueueService : IDisposable
         DalamudServices.Framework.Update += OnFrameworkUpdate;
     }
 
-    public void EnqueueParty(string message) => queue.Enqueue(new ChatQueueItem($"/p {message}", false, EffectiveDelaySeconds, true));
+    public void EnqueueParty(string message) => Enqueue($"/p {message}", false, EffectiveDelaySeconds, true);
     public void EnqueueBlackjackToChannel(string channel, string message)
     {
         var normalizedChannel = NormalizeChatChannel(channel);
-        queue.Enqueue(new ChatQueueItem($"{normalizedChannel} {message}", false, EffectiveDelaySeconds, true));
+        Enqueue($"{normalizedChannel} {message}", false, EffectiveDelaySeconds, true);
         log.Add(LogCategory.ChatQueue, $"Blackjack broadcast queued ({normalizedChannel}): {message}");
     }
 
@@ -43,10 +44,10 @@ public sealed class ChatQueueService : IDisposable
         }
 
         var channel = NormalizeChatChannel(config.DeathRoll.ChatChannel);
-        queue.Enqueue(new ChatQueueItem($"{channel} {message}", false, DeathRollDelaySeconds, true));
+        Enqueue($"{channel} {message}", false, DeathRollDelaySeconds, true);
     }
     public void EnqueueCommand(string command, bool diceCommand = false) => EnqueueCommand(command, diceCommand, EffectiveDelaySeconds);
-    public void EnqueueCommand(string command, bool diceCommand, float delaySeconds) => queue.Enqueue(new ChatQueueItem(command, diceCommand, Math.Max(0.2f, delaySeconds), true));
+    public void EnqueueCommand(string command, bool diceCommand, float delaySeconds) => Enqueue(command, diceCommand, Math.Max(0.2f, delaySeconds), true);
     public void SetActionCommandDelayPredicate(Func<bool>? predicate) => shouldDelayActionCommands = predicate;
     public void EnqueueDeathRollCommand(string command, bool diceCommand = false)
     {
@@ -56,7 +57,7 @@ public sealed class ChatQueueService : IDisposable
             return;
         }
 
-        queue.Enqueue(new ChatQueueItem(command, diceCommand, DeathRollDelaySeconds, true));
+        Enqueue(command, diceCommand, DeathRollDelaySeconds, true);
     }
 
     private static string NormalizeChatChannel(string? channel) => channel?.Trim().ToLowerInvariant() switch
@@ -70,6 +71,33 @@ public sealed class ChatQueueService : IDisposable
     public void Pause() { Paused = true; log.Add(LogCategory.ChatQueue, "Chat/dice queue paused by dealer."); }
     public void Resume() { Paused = false; log.Add(LogCategory.ChatQueue, "Chat/dice queue resumed by dealer."); }
     public void PanicClear() { Paused = true; while(queue.TryDequeue(out _)){} log.Add(LogCategory.Warnings, "Panic stop: chat/dice queue cleared and paused."); }
+
+    public long CreateCheckpoint() => Interlocked.Read(ref nextSequence);
+
+    public void RemoveQueuedAfter(long checkpoint, string reason)
+    {
+        var retained = new List<ChatQueueItem>();
+        var removed = 0;
+        while (queue.TryDequeue(out var item))
+        {
+            if (item.Sequence <= checkpoint)
+                retained.Add(item);
+            else
+                removed++;
+        }
+
+        foreach (var item in retained)
+            queue.Enqueue(item);
+
+        if (removed > 0)
+            log.Add(LogCategory.ChatQueue, $"Removed {removed} queued command(s) after {reason}.");
+    }
+
+    private void Enqueue(string command, bool diceCommand, float delaySeconds, bool delayDuringTrade)
+    {
+        var sequence = Interlocked.Increment(ref nextSequence);
+        queue.Enqueue(new ChatQueueItem(command, diceCommand, delaySeconds, delayDuringTrade, sequence));
+    }
 
     private void OnFrameworkUpdate(IFramework framework)
     {
@@ -114,4 +142,4 @@ public sealed class ChatQueueService : IDisposable
     public void Dispose() => DalamudServices.Framework.Update -= OnFrameworkUpdate;
 }
 
-public sealed record ChatQueueItem(string Command, bool IsDiceCommand, float DelaySeconds, bool DelayDuringTrade = false);
+public sealed record ChatQueueItem(string Command, bool IsDiceCommand, float DelaySeconds, bool DelayDuringTrade, long Sequence);

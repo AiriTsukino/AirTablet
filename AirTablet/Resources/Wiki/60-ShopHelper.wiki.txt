@@ -20,6 +20,15 @@ The number field represents stack count. Stack size is configurable and defaults
 # Automatic opening
 When Open ShopHelper automatically when a shop opens is enabled, AirTablet brings ShopHelper forward and loads the detected shop even if the tablet is minimized or currently displaying another app.
 
+# Purchase settings
+- Default plain number supplies the initial exact quantity.
+- Default stacks supplies the initial stack count.
+- Stack size controls how many items each requested stack represents.
+- Show confirmation before buying adds ShopHelper's item/quantity/cost review.
+- Auto-confirm Yes/No purchase prompts can accept the game's standard confirmation while a queued ShopHelper purchase is active.
+
+During a multi-step purchase, Cancel queue stops remaining queued quantity operations; it cannot undo items already bought.
+
 # Safety and compatibility
 ShopHelper reads the active supported shop and uses the game's shop controls. Always review the item, quantity, currency, and total before confirming a large purchase.
 
@@ -35,3 +44,5 @@ Verify ShopHelper is enabled in AirTabOS Settings > Apps and automatic opening i
 Check whether Stacks is enabled and review the configured stack size.
 ## Purchase controls are unavailable
 Make sure an item is selected, quantity is positive, required currency is available, and no other game confirmation is blocking the shop.
+## The game confirmation closes automatically
+Disable Auto-confirm Yes/No purchase prompts if you want to approve every game prompt yourself. ShopHelper's own confirmation setting is separate.

@@ -256,6 +256,7 @@ public sealed class BlackjackSession : IGameSession
         target.Hands = source.Hands ?? [];
         target.RoundHistory = source.RoundHistory ?? [];
         target.BetConfirmed = source.BetConfirmed;
+        target.PassedCurrentBetting = source.PassedCurrentBetting;
     }
 
     private static bool IsSamePlayer(PlayerIdentity a, PlayerIdentity b)

@@ -1,11 +1,12 @@
 using System.Text.RegularExpressions;
 using Dalamud.Game.Chat;
+using Dalamud.Game.Text.SeStringHandling;
 
 namespace GambaAssistant.Services;
 
 /// <summary>
-/// Watches live chat/log text for dealer dice results and conservative trade notifications.
-/// This intentionally stays text-based so it fails safe when game/Dalamud internals change.
+/// Watches live chat/log text for dealer dice results and conservative trade notifications,
+/// plus error toasts that the game does not copy into chat.
 /// </summary>
 public sealed class ChatMonitorService : IDisposable
 {
@@ -42,7 +43,8 @@ public sealed class ChatMonitorService : IDisposable
     private static readonly Regex TradeWindowWithRegex = new($@"\b(?:now\s+trading\s+with|trading\s+with|trade\s+window\s+with|trade\s+with)\s+{CharacterNameCapture}{OptionalWorldName}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex AwaitingTradeRegex = new($@"\bawaiting\s+trade\s+confirmation\s+from\s+{CharacterNameCapture}{OptionalWorldName}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex TradeCompleteRegex = new(@"\btrade\s+complete\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex TradeEndedWithoutCompletionRegex = new(@"\b(?:trade\s+(?:cancelled|canceled|declined|failed)|unable\s+to\s+complete\s+trade)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex TradeEndedWithoutCompletionRegex = new(@"\b(?:trade\s+(?:cancelled|canceled|declined|failed)|unable\s+to\s+complete\s+(?:the\s+)?trade|could\s+not\s+complete\s+(?:the\s+)?trade|(?:the\s+)?other\s+player\s+is\s+busy)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex TradeUnavailableToastRegex = new(@"\bis\s+unable\s+to\s+trade\s+at\s+this\s+time\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public ChatMonitorService(DiceService dice, TradeMonitorService trades, LogService log)
     {
@@ -50,6 +52,17 @@ public sealed class ChatMonitorService : IDisposable
         this.trades = trades;
         this.log = log;
         DalamudServices.ChatGui.ChatMessage += OnChatMessage;
+        DalamudServices.ToastGui.ErrorToast += OnErrorToast;
+    }
+
+    private void OnErrorToast(ref SeString message, ref bool isHandled)
+    {
+        var text = message.TextValue.Trim();
+        if (!TradeUnavailableToastRegex.IsMatch(text))
+            return;
+
+        log.Add(LogCategory.Trades, $"Trade unavailable error detected: {text} Queued commands may resume.");
+        ClearTradeConversationState();
     }
 
     private void OnChatMessage(IHandleableChatMessage message)
@@ -651,6 +664,7 @@ public sealed class ChatMonitorService : IDisposable
     public void Dispose()
     {
         DalamudServices.ChatGui.ChatMessage -= OnChatMessage;
+        DalamudServices.ToastGui.ErrorToast -= OnErrorToast;
     }
 
     private enum TradeTransferDirection

@@ -16,14 +16,14 @@
   {
     "id": "GambaAssistant",
     "name": "GambaAssistant",
-    "version": "0.1.25.0",
+    "version": "0.1.31.0",
     "tagline": "Blackjack and DRT dealer tools",
     "iconUrl": "Resources/Apps/GambaAssistant/GALogo.png"
   },
   {
     "id": "MacroDeck",
     "name": "MacroDeck",
-    "version": "0.1.6.0",
+    "version": "0.1.7.0",
     "tagline": "Stream Deck-style venue macros",
     "iconUrl": "Resources/Apps/MacroDeck/MDLogo.png"
   },

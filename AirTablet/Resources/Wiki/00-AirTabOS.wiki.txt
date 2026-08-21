@@ -1,6 +1,6 @@
 @id airtabos
 @title AirTabOS
-@summary Wiki will improve over time!
+@summary Learn the tablet shell, Control Center, app management, appearance, migration, and recovery.
 @category AirTablet
 @order 0
 
@@ -59,7 +59,7 @@ Opens Airi's Ko-fi support page.
 - Theme colour: changes AirTabOS and compatible app/overlay accent colours.
 - Wallpaper: choose a local image, clear back to the default, and set opacity. A 16:9 image fits best.
 ## Apps
-Enable, disable, or retry bundled apps. Disabled apps remain visible on Home with a red X.
+Enable, disable, or retry bundled apps. Disabled apps remain visible on Home with a red X, and their app-specific automation does not run. Enabling an app starts it without requiring a plugin reinstall.
 ## What's New
 Shows bundled release notes grouped by date and version. Opening this page marks the current AirTabOS version as read.
 ## Status Bar
@@ -72,16 +72,16 @@ Shows the installed AirTabOS version and Ko-fi supporter list.
 # Moving and recovery
 - Unlock the tablet before dragging the full tablet.
 - Full and mini tablet positions are saved independently unless mini anchoring is enabled.
-- Use /airtabletrecovery if the tablet is lost off-screen or a monitor layout changes. It restores the full tablet to the active game screen.
+- Use /airtabletrecovery if the tablet is lost off-screen or a monitor layout changes. It restores the full or mini tablet to the active game screen.
 
 # Troubleshooting
 ## Tablet does not open at character select
-This is intended. AirTablet waits until your character is loaded into the game.
+This is intended by default. AirTablet waits until your character is loaded into the game unless you enable the show AirTablet before character login option in the settings.
 ## An app has a red X
 The app is disabled. Open Settings > Apps and enable it.
 ## An enabled app reports that it did not start
 Use Retry in Settings > Apps, then check the Dalamud log if it fails again.
 ## Tablet is on a disconnected monitor
 Run /airtabletrecovery after logging into your character.
-## Wiki edits do not appear
-Edit the .wiki.txt files in Resources/Wiki, save them, then press Reload wiki. A plugin rebuild/update may replace bundled files, so keep your edited source copy.
+## A Control Center widget has no live value
+Open the full app and select any venue, profile, session, or route it requires. Disabled apps and incomplete setups cannot provide live widget data.

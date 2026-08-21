@@ -39,7 +39,7 @@ public sealed class MainWindow : Window
         this.session = session;
         this.profiles = profiles;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = AirTablet.UI.TabletAppTheme.Px(new Vector2(900, 620)), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
-        table = new TableTab(config, session, profiles, party, playerService, ledgerService, dice, chat, overlays, undo, log);
+        table = new TableTab(config, session, profiles, party, playerService, ledgerService, tradeMonitor, dice, chat, overlays, undo, log);
         players = new PlayersTab(session, playerService, ledgerService);
         ledger = new DealerLedgerTab(ledgerService);
         rules = new RulesTab(session, profiles);

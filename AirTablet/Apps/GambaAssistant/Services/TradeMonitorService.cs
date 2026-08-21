@@ -16,7 +16,8 @@ public sealed unsafe class TradeMonitorService
     private readonly HashSet<long> observedTradeGilAmounts = [];
     private readonly Dictionary<string, DateTime> recentAutomaticTrades = new(StringComparer.OrdinalIgnoreCase);
     private DateTime tradeWindowLikelyOpenUntilUtc = DateTime.MinValue;
-    private DateTime trustedTradeSequenceActiveUntilUtc = DateTime.MinValue;
+    private bool trustedTradeSequenceActive;
+    private bool tradeAddonSeenDuringSequence;
     private DateTime nextTradeWindowPollAtUtc = DateTime.MinValue;
     private DateTime lastTradeWindowSeenAtUtc = DateTime.MinValue;
     private DateTime lastTradeAmountObservedAtUtc = DateTime.MinValue;
@@ -26,7 +27,7 @@ public sealed unsafe class TradeMonitorService
     public bool IsTradeWindowLikelyOpen
         => AutomaticDetectionEnabled
            && (DateTime.UtcNow < tradeWindowLikelyOpenUntilUtc
-               || DateTime.UtcNow < trustedTradeSequenceActiveUntilUtc
+               || trustedTradeSequenceActive
                || IsTradeAddonOpen());
     public string DetectionStatus => AutomaticDetectionEnabled
         ? "Automatic detection is on. Trusted FFXIV system trade messages adjust banks for current party members at any Blackjack phase; normal player chat is ignored."
@@ -45,8 +46,10 @@ public sealed unsafe class TradeMonitorService
 
     public void MarkTradeWindowActive(string? playerName = null)
     {
-        tradeWindowLikelyOpenUntilUtc = DateTime.UtcNow.AddSeconds(30);
-        trustedTradeSequenceActiveUntilUtc = DateTime.UtcNow.AddMinutes(2);
+        var now = DateTime.UtcNow;
+        tradeWindowLikelyOpenUntilUtc = now.AddSeconds(30);
+        trustedTradeSequenceActive = true;
+        tradeAddonSeenDuringSequence = IsTradeAddonOpen();
         if (!string.IsNullOrWhiteSpace(playerName))
             log.Add(LogCategory.Trades, $"Trade window activity detected for {playerName}.");
     }
@@ -54,7 +57,8 @@ public sealed unsafe class TradeMonitorService
     public void MarkTradeWindowClosed()
     {
         tradeWindowLikelyOpenUntilUtc = DateTime.MinValue;
-        trustedTradeSequenceActiveUntilUtc = DateTime.MinValue;
+        trustedTradeSequenceActive = false;
+        tradeAddonSeenDuringSequence = false;
         observedTradeGilAmounts.Clear();
         lastTradeAmountObservedAtUtc = DateTime.MinValue;
         lastObservedTradeAmountSignature = string.Empty;
@@ -76,11 +80,24 @@ public sealed unsafe class TradeMonitorService
 
         if (!TryReadTradeWindowAmounts(out var amounts, out var diagnosticText))
         {
+            if (trustedTradeSequenceActive)
+            {
+                var closedAfterOpening = tradeAddonSeenDuringSequence
+                    && now - lastTradeWindowSeenAtUtc > TimeSpan.FromSeconds(2);
+                if (closedAfterOpening)
+                {
+                    log.Add(LogCategory.Trades, "Trade window closed without a completion message; queued commands may resume.");
+                    MarkTradeWindowClosed();
+                    return;
+                }
+            }
+
             if (now - lastTradeWindowSeenAtUtc > TimeSpan.FromSeconds(2))
                 observedTradeGilAmounts.Clear();
             return;
         }
 
+        tradeAddonSeenDuringSequence = true;
         lastTradeWindowSeenAtUtc = now;
         tradeWindowLikelyOpenUntilUtc = now.AddSeconds(3);
 

@@ -1,56 +1,87 @@
 @id gambaassistant
 @title GambaAssistant
-@summary Run Blackjack and Death Roll Tournament tables with party-aware dealer tools.
+@summary Run party-aware Blackjack tables and Death Roll Tournaments with guided dealer controls.
 @category Bundled Apps
 @order 30
 
 # Quick start: Blackjack
-- Select a venue profile and review Rules before starting a night.
-- Form the game party, sync the party if it doesnt match your current party list.
-- Open betting and accept trades from players to raise their banks, reserve each player's bet, then close betting and deal.
-- Use the active-hand controls to Hit, Stand, Double Down, or Split.
-- Complete the dealer turn, settle the round, and cash players out between hands.
+- Select a venue profile and review Rules before starting the night.
+- Form the party and use Sync Party Now if the table list is stale.
+- Open betting. Record trades or manual deposits, then reserve a bet or pass each player in party order.
+- Start Dealing after at least one player has a confirmed bet and no dice request is pending.
+- Use Hit, Stand, Double Down, and Split for the active hand.
+- Let the dealer resolve, settle the round, and cash players out between hands.
 
-> warning: Keep players in the current party. Party identity is used for dice, trade detection, bank changes, and VIP bet limits.
+> warning: Keep players in the current party. Party identity is used for dice, trade detection, banks, guided betting, and VIP limits.
 
-# Venue profiles
-Each profile saves Blackjack rules, chat templates, overlay preferences, pacing, and its Blackjack VIP list. Profile switching and critical rule changes are locked during an active session.
+# Table controls and round flow
+- Open Betting starts the next betting phase.
+- Start Dealing closes betting and starts the same initial-deal workflow from the table or overlay.
+- Close Betting returns pending wagers without dealing.
+- Settle Round resolves active hands and moves to between-hands cash-out.
+- Undo Last restores supported dealer actions and removes their queued follow-ups where applicable.
+- Panic Stop clears queued chat/dice work and pauses automation for safe recovery.
+- Reset Night clears current-night banks, hands, ledger, logs, and history after confirmation.
 
-# Betting limits and VIPs
-## Standard limits
-Minimum bet and Maximum bet apply to every non-VIP player.
-## VIP maximum
-VIP maximum bet is a separate higher limit saved on the venue profile. Add VIPs manually by Name and Home World or from the current target.
-## How matching works
-The higher limit is used only when the saved VIP matches a player in the current party. Max Bet uses that player's effective limit; custom, last, and recent-trade bets are also validated against it.
-## Repeated bets
-Multiple bet button presses add to the active hand. The total active bet cannot exceed the player's standard or VIP maximum.
+Broadcast Current Turn repeats the active hand/dealer state. Rebroadcast Banks sends compact bank totals. Broadcast Rules sends the selected profile's current Blackjack limits and key rules to party chat under the heading Profile name Blackjack.
 
-# Bank and trade detection
-- Incoming gil from a current party member adds to that player's bank.
-- Gil handed to a current party member subtracts from their bank.
-- Only trusted FFXIV system trade messages can trigger automatic adjustments; normal chat cannot.
-- Chat and dice commands pause while a verified trade sequence is active.
-- A bank reaching zero after cash-out is treated as cashed out; reaching zero through play means the player has no betting money remaining.
+# Betting, banks, and VIPs
+Minimum and maximum bet apply to non-VIPs. A profile can store a higher VIP maximum plus Name/Home World entries; it applies only to a matching current party member.
+
+Min Bet, Max Bet, Last Bet, Recent Trade, and Custom Bet reserve available bank gil. Repeated bets add to the active wager but cannot exceed the player's effective maximum. Sit Out / Pass advances guided betting without a wager.
+
+# Trade detection and safety
+- Verified incoming gil from a party member adds to their bank; verified outgoing gil subtracts from it.
+- Only game-authored system trade messages are trusted. Typed lookalike chat is ignored.
+- Gil direction comes from the verified receive/hand-over result, not who opened the trade.
+- Chat and dice commands pause during a detected trade and resume after Trade complete or a recognized failure/cancel.
+- The red unable-to-trade game toast is detected even though it is absent from chat. It clears the waiting state and is written to Trades.
+- A pending player association remains available for a slow response, then becomes stale after two minutes without a gil result.
+- Manual Buy-in / Bank Deposit and Manual Cash-Out remain available when automatic detection cannot be used.
+
+> tip: Check Trades and Warnings before adjusting a bank manually so the same transfer is not applied twice.
 
 # Blackjack rules
-- Initial deal mode controls round-robin versus full player hands first.
-- Dealer soft-17, tie/push, split, resplit, double-after-split, and split-natural options change hand resolution.
-- Return multipliers control standard wins, Double Down wins, and Natural Blackjack.
-- Chat templates control party announcements and support documented variables shown in settings.
+Cards come from real party-scoped dice results: 1=A, 11=J, 12=Q, 13=K. There are no suits and the deckless model permits duplicate ranks. Initial dealing can use full player hands first or round-robin order.
+
+Profiles control soft 17, ties/pushes, split matching, maximum hands, resplitting, split aces, Double Down conditions, Double Down after split, and whether split 21 is natural. Standard, Double Down, and Natural Blackjack values are total-return multipliers. Rules shows the exact active values.
+
+Broadcast Rules reports active-profile limits, applicable VIP maximum, soft-17/tie behavior, returns, Double Down rule, and split availability.
 
 # Overlay
-The overlay follows the active tablet theme. Compact and column settings change its footprint. Active-player action buttons mirror the table controls; disabled actions remain unavailable under the same rules.
+The overlay follows the tablet theme and supports compact mode plus one or more player-panel columns. Buttons wrap within the configured panel width.
+
+## Context-sensitive controls
+- Between hands: Open Betting.
+- Guided betting: one eligible player at a time receives Min, Max, Last, Recent Trade, Sit Out / Pass, and a visible Custom bet field with Bet.
+- Queue complete: Start Dealing and Close Betting.
+- Active player turn: the same valid Hit, Stand, Double Down, and Split actions as Table.
+- Settlement: Settle Round.
+
+Irrelevant controls stay hidden. Disabled actions use the same validation and explanations as the Table tab.
+
+## Overlay settings
+Configure enable/compact state, panel columns, text scale, render distance, opaque/background style, table-member filtering, drawn overhead mode, and per-player height offsets.
+
+# Profiles, settings, and saved state
+Profiles store Blackjack rules, VIPs, and assigned chat templates. They can be created, renamed, exported, imported as a new profile, or removed when safe. Critical profile/rule changes lock during an active session.
+
+General settings cover chat delay, undo depth, automatic trade tracking, optional Astrologian visual actions, Blackjack/DRT autosave, and export location. Chat Templates lists supported variables. Autosave protects active table/bracket state across reloads or crashes.
 
 # Death Roll Tournament
-Create entrants manually, from target, from party, or through the configured join flow. Configure channel, roll requirements, maximum entrants, then run the bracket. Party DRT can require /dice rolls; other modes use their configured visible roll source.
+Add entrants from party, target, yourself, manual entry, or timed `!join`. Configure maximum players, channel/delay, opening-zero behavior, next-turn announcements, and real `/dice` requirements for party mode. Monitor the bracket inline or in its separate window; copy the DRT logs when troubleshooting.
+
+# Logs and exports
+Players shows banks/status; Dealer Ledger tracks expected dealer gil; Trades shows transfers; History/Export preserves rounds; Log Terminal combines dice, queue, trade, warning, undo, and round-flow diagnostics.
 
 # Troubleshooting
-## A trade is detected but no bank changes
-Verify the player is in the current party and their displayed Name/World matches the tracked table player. Review the Trades and Warnings logs.
-## A bet above standard max is rejected for a VIP
-Confirm the correct venue profile is active, the VIP entry includes the correct character/world, the player is currently in party, and VIP maximum is higher than standard maximum.
-## Commands pause during trade
-This is intended. Automation resumes after the verified Trade complete system message.
+## Start Dealing does not progress
+Confirm betting is open, a bet is confirmed, automation is not paused, and no dice is pending. Check each requested roll in Log Terminal; do not repeatedly press Start Dealing.
+## A failed trade leaves commands paused
+Look for the unable-to-trade toast or system cancel/failure in Trades. If neither was observable, use Panic Stop and verify the bank.
+## A completed trade changed no bank
+Check automatic tracking, party membership, identity, and the trusted gil plus Trade complete sequence before using a manual adjustment.
+## A VIP bet is rejected
+Confirm profile, exact Name/Home World, current party membership, and a VIP maximum above standard.
 ## Dice do not progress a hand
-Confirm the configured dice command/channel and that the visible roll belongs to the expected current party player or dealer action.
+Confirm command/range, expected roller, genuine game dice payload, and pending action. Copied logs include raw parser context.

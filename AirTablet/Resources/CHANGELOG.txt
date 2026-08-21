@@ -7,6 +7,18 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-21] AirTabOS v1.0.36.1
+- General Wiki updates & improvements.
+
+[2026-08-21] GambaAssistant v0.1.31.0
+- Added all blackjack round flow buttons to overlay in phase order so blackjack is fully controllable from overlay only in a more clutter free way than tablet table tab.
+- Added party order betting to overlay as well to compliment the above change.
+- Fixed a failed trade lock up bug with free trial players/busy players or players who are unable to trade for some reason.
+- Added broadcast rules button to the broadcasts section of table tab to layout the table rules for party members.
+
+[2026-08-21] MacroDeck v0.1.7.0
+- Fixed macro red helper text not wrapping in key creation window.
+
 [2026-08-18] ShoutRunner v1.0.39.0
 - Changed how Aetheryte menu selection works for changing worlds as without housing districts unlocked the route would stall.
 - Fixed post-run returns on the home data center to use World Visit instead of logging out through character selection.

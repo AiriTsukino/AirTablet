@@ -26,6 +26,8 @@ Messages are sent from top to bottom. Use each block's up and down arrow buttons
 - Echo sends only to your own chat and is recommended for testing.
 - Each message is limited to 400 characters.
 
+Message delay controls the pause between blocks sent at a stop. General reaction time is separate and applies to travel/interface actions.
+
 # Route configuration
 ## City states
 Limsa Lominsa, Gridania, and Ul'dah are separate stops. Selecting three cities and ten worlds creates thirty route stops. A stop is complete only in the main Aetheryte zone: Limsa Lominsa Lower Decks, New Gridania, or Ul'dah - Steps of Nald. ShoutRunner teleports from connected secondary zones before sending.
@@ -48,9 +50,9 @@ Register frequently used destinations as Favoured Destinations for a 50% telepor
 
 Accounts with a One-Time Password (OTP/2FA) can also register one Security Token Free Destination. Teleports to that destination cost no gil. Interact with an Aetheryte and use its registration options to configure favoured and free destinations before a long run.
 ## Post-run destination 
-- Starting World : Return to world the shout run started in after run is completed
-- Home World : Return to home world of character that did the shout run after the run is completed
-- Chosen World : Return to chosen world after the run is completed
+- Starting World: return to the world where the run began.
+- Home World: return to the character's home world.
+- Chosen World: travel to the selected world after the route.
 
 # Pausing, stopping, and recovery
 - Pause preserves the route and records total paused time for the final report.
@@ -71,3 +73,5 @@ Open Travel diagnostics, copy the log, and check which game window or travel sta
 Open Route while the character or their saved home world is available. New profile defaults are chosen from that home region; Materia is intentionally left off.
 ## A message fails
 Check that the block is not empty, remains within 400 characters, and uses one of the supported channels. Use /echo while isolating text or pacing problems.
+## A run resumes after a reload
+This is expected when a compatible active route was saved. Review its current phase and stop before resuming; choose Stop and confirm if the old run should be discarded.

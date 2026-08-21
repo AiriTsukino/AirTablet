@@ -15,6 +15,7 @@ public sealed class TableTab
     private readonly PartyService party;
     private readonly PlayerSessionService players;
     private readonly DealerLedgerService dealerLedger;
+    private readonly TradeMonitorService tradeMonitor;
     private readonly DiceService dice;
     private readonly ChatQueueService chat;
     private readonly UndoService undo;
@@ -28,7 +29,7 @@ public sealed class TableTab
     private string? lastAstrologianBeneficTurnKey;
     private double nextAstrologianBattleModeRefreshTime;
 
-    public TableTab(Configuration config, BlackjackSession session, ProfileService profiles, PartyService party, PlayerSessionService players, DealerLedgerService dealerLedger, DiceService dice, ChatQueueService chat, OverlayService overlays, UndoService undo, LogService log)
+    public TableTab(Configuration config, BlackjackSession session, ProfileService profiles, PartyService party, PlayerSessionService players, DealerLedgerService dealerLedger, TradeMonitorService tradeMonitor, DiceService dice, ChatQueueService chat, OverlayService overlays, UndoService undo, LogService log)
     {
         this.config = config;
         this.session = session;
@@ -36,11 +37,13 @@ public sealed class TableTab
         this.party = party;
         this.players = players;
         this.dealerLedger = dealerLedger;
+        this.tradeMonitor = tradeMonitor;
         this.dice = dice;
         this.chat = chat;
         this.undo = undo;
         this.log = log;
         overlays.SetBlackjackActionCallbacks(HitActiveHand, StandActiveHand, DoubleDownActiveHand, SplitActiveHand);
+        overlays.SetBlackjackTableCallbacks(OpenBetting, StartDealing, CloseBetting, SettleRound, ReserveBetWithUndo, ReserveMaximumBetWithUndo, PassBettingWithUndo, GetMaximumBetForPlayer, CanStartDealing, GetStartDealingUnavailableReason);
     }
 
     public void Draw()
@@ -115,20 +118,10 @@ public sealed class TableTab
 
             DrawControlGroupHeader("Round Flow");
             if (DisabledButtonWithTooltip("Open Betting", session.Round.Phase is BlackjackPhase.Idle or BlackjackPhase.CashOutBetweenHands, "Betting can only open between hands.", "Open the betting window for the next Blackjack round."))
-            {
-                dealerTurnStarted = false;
-                allBustRoundOverAnnounced = false;
-                session.Round.Phase = BlackjackPhase.BettingOpen;
-                var vipLimit = Math.Max(session.Rules.MaximumBet, profiles.ActiveProfile.VipMaximumBet);
-                var vipSuffix = profiles.ActiveProfile.BlackjackVips.Count > 0 && vipLimit > session.Rules.MaximumBet
-                    ? $" VIP max: {vipLimit:N0} gil."
-                    : string.Empty;
-                chat.EnqueueParty($"Betting is open for next round. Table limits: {session.Rules.MinimumBet:N0}-{session.Rules.MaximumBet:N0} gil.{vipSuffix}");
-                log.Add(LogCategory.RoundFlow, $"Betting opened for internal Round {session.Round.RoundNumber}.");
-            }
+                OpenBetting();
 
             DrawSameLineIfFits("Start Dealing");
-            if (DisabledButtonWithTooltip("Start Dealing", session.Round.Phase == BlackjackPhase.BettingOpen && session.SessionPlayers.Any(p => p.BetConfirmed), "Confirm at least one valid bet first.", "Close betting and start rolling the initial Blackjack deal."))
+            if (DisabledButtonWithTooltip("Start Dealing", CanStartDealing(), GetStartDealingUnavailableReason(), "Close betting and start rolling the initial Blackjack deal."))
                 StartDealing();
 
             DrawSameLineIfFits("Close Betting");
@@ -146,6 +139,10 @@ public sealed class TableTab
             DrawSameLineIfFits("Rebroadcast Banks");
             if (ButtonWithTooltip("Rebroadcast Banks", "Broadcast all current player banks in compact grouped messages."))
                 RebroadcastCurrentBanks();
+
+            DrawSameLineIfFits("Broadcast Rules");
+            if (ButtonWithTooltip("Broadcast Rules", "Broadcast the currently configured Blackjack table rules to party chat in concise grouped messages."))
+                BroadcastCurrentRules();
 
             DrawControlGroupHeader("Recovery");
             var hasUndo = undo.Actions.Count > 0;
@@ -537,6 +534,21 @@ public sealed class TableTab
     private bool IsNaturalByRules(BlackjackHand hand)
         => hand.IsNaturalBlackjack || (session.Rules.SplitTwentyOneCountsAsNatural && hand.IsSplitHand && hand.IsTwoCardTwentyOne);
 
+    private void OpenBetting()
+    {
+        dealerTurnStarted = false;
+        allBustRoundOverAnnounced = false;
+        foreach (var player in session.SessionPlayers)
+            player.PassedCurrentBetting = false;
+        session.Round.Phase = BlackjackPhase.BettingOpen;
+        var vipLimit = Math.Max(session.Rules.MaximumBet, profiles.ActiveProfile.VipMaximumBet);
+        var vipSuffix = profiles.ActiveProfile.BlackjackVips.Count > 0 && vipLimit > session.Rules.MaximumBet
+            ? $" VIP max: {vipLimit:N0} gil."
+            : string.Empty;
+        chat.EnqueueParty($"Betting is open for next round. Table limits: {session.Rules.MinimumBet:N0}-{session.Rules.MaximumBet:N0} gil.{vipSuffix}");
+        log.Add(LogCategory.RoundFlow, $"Betting opened for internal Round {session.Round.RoundNumber}.");
+    }
+
     private void ReserveBetWithUndo(PlayerSessionState p, long amount, string label)
     {
         var beforeAvailable = p.Bank.Available;
@@ -555,6 +567,7 @@ public sealed class TableTab
         }
 
         AnnounceBetPlaced(p);
+        p.PassedCurrentBetting = false;
 
         undo.Push($"{label} for {p.DisplayName}", () =>
         {
@@ -565,6 +578,26 @@ public sealed class TableTab
             p.Hands.Clear();
             p.Hands.AddRange(beforeHands.Select(TableTab.CloneHand));
         });
+    }
+
+    private void ReserveMaximumBetWithUndo(PlayerSessionState player)
+    {
+        var maximum = GetMaximumBetForPlayer(player);
+        var increment = Math.Min(Math.Max(0, maximum - player.Bank.ActiveBet), player.Bank.Available);
+        ReserveBetWithUndo(player, increment, "Overlay max bet");
+    }
+
+    private long GetMaximumBetForPlayer(PlayerSessionState player)
+        => profiles.GetMaximumBetForPlayer(player.Identity, player.Status != PlayerStatus.LeftDisconnected);
+
+    private void PassBettingWithUndo(PlayerSessionState player)
+    {
+        var before = CaptureSnapshot();
+        player.PassedCurrentBetting = true;
+        player.BetConfirmed = false;
+        player.Status = PlayerStatus.SittingOut;
+        log.Add(LogCategory.RoundFlow, $"{player.DisplayName} is sitting out this hand; overlay betting advanced to the next player.");
+        undo.Push($"Sit out {player.DisplayName}", () => RestoreSnapshot(before));
     }
 
     private void UnbetWithUndo(PlayerSessionState p)
@@ -601,7 +634,14 @@ public sealed class TableTab
 
     private void StartDealing()
     {
+        if (!CanStartDealing())
+        {
+            log.Add(LogCategory.Warnings, GetStartDealingUnavailableReason());
+            return;
+        }
+
         var before = CaptureSnapshot();
+        var queueCheckpoint = chat.CreateCheckpoint();
         dealerTurnStarted = false;
         allBustRoundOverAnnounced = false;
         lastAstrologianBeneficTurnKey = null;
@@ -639,7 +679,7 @@ public sealed class TableTab
 
             RequestDealerCard("Dealer visible card", CountInitialDealCardResolved, continueDealerTurn: false);
             log.Add(LogCategory.RoundFlow, "Started full-hand initial deal using visible /dice results.");
-            undo.Push("Start dealing", () => RestoreSnapshot(before));
+            undo.Push("Start dealing", () => UndoStartDealing(before, queueCheckpoint));
             return;
         }
 
@@ -657,7 +697,35 @@ public sealed class TableTab
             RequestCard(p, p.Hands[0], "Initial card 2", CountInitialDealCardResolved);
 
         log.Add(LogCategory.RoundFlow, "Started round-robin initial deal using visible /dice results.");
-        undo.Push("Start dealing", () => RestoreSnapshot(before));
+        undo.Push("Start dealing", () => UndoStartDealing(before, queueCheckpoint));
+    }
+
+    private bool CanStartDealing()
+        => session.Round.Phase == BlackjackPhase.BettingOpen
+           && session.SessionPlayers.Any(p => p.BetConfirmed)
+           && !chat.Paused
+           && !tradeMonitor.IsTradeWindowLikelyOpen
+           && dice.QueuedCount == 0;
+
+    private string GetStartDealingUnavailableReason()
+    {
+        if (session.Round.Phase != BlackjackPhase.BettingOpen)
+            return "Start Dealing is only available while betting is open.";
+        if (!session.SessionPlayers.Any(p => p.BetConfirmed))
+            return "Confirm at least one valid bet first.";
+        if (chat.Paused)
+            return "Resume chat/dice automation before starting the deal.";
+        if (tradeMonitor.IsTradeWindowLikelyOpen)
+            return "Finish or cancel the active trade before starting the deal.";
+        if (dice.QueuedCount > 0)
+            return "Resolve or clear the pending dice roll before starting a new deal.";
+        return "Start Dealing is not available yet.";
+    }
+
+    private void UndoStartDealing(TableSnapshot snapshot, long queueCheckpoint)
+    {
+        chat.RemoveQueuedAfter(queueCheckpoint, "undoing Start Dealing");
+        RestoreSnapshot(snapshot);
     }
 
     private void CloseBetting()
@@ -744,7 +812,7 @@ public sealed class TableTab
 
     private void QueueAstrologianBattleModeRefreshIfNeeded()
     {
-        if (!config.General.AstrologianKeepBattleModeOnEnabled || chat.Paused)
+        if (!config.General.AstrologianKeepBattleModeOnEnabled || chat.Paused || tradeMonitor.IsTradeWindowLikelyOpen)
             return;
 
         if (session.Round.Phase is BlackjackPhase.Idle or BlackjackPhase.CashOutBetweenHands)
@@ -1007,6 +1075,24 @@ public sealed class TableTab
             chat.EnqueueParty("Current banks: " + string.Join(" | ", entries.Skip(i).Take(maxPerMessage)));
 
         log.Add(LogCategory.ChatQueue, $"Rebroadcast current player banks for {entries.Count} tracked player(s).");
+    }
+
+    private void BroadcastCurrentRules()
+    {
+        var rules = session.Rules;
+        var profile = profiles.ActiveProfile;
+        var vipLimit = Math.Max(rules.MaximumBet, profile.VipMaximumBet);
+        var doubleRule = rules.DoubleOnlyOnNineTenEleven ? "9, 10, or 11 only" : "any first two cards";
+        var splitRule = !rules.SplittingEnabled
+            ? "disabled"
+            : rules.SplitByValue ? "matching value" : "matching rank";
+        var soft17 = rules.DealerStandsOnSoft17 ? "stands" : "hits";
+
+        chat.EnqueueParty($"Blackjack rules — {profile.Name} Blackjack. Bets: {rules.MinimumBet:N0}-{rules.MaximumBet:N0} gil" +
+                          (profile.BlackjackVips.Count > 0 && vipLimit > rules.MaximumBet ? $" (VIP max {vipLimit:N0})" : string.Empty) + ".");
+        chat.EnqueueParty($"Dealer {soft17} on soft 17. Ties {(rules.PushOnTie ? "push" : "do not push")}. Standard win returns {rules.StandardWinTotalMultiplier:0.##}x; Natural Blackjack returns {rules.NaturalBlackjackTotalMultiplier:0.##}x total.");
+        chat.EnqueueParty($"Double Down: {doubleRule}; {(rules.DoubleAfterSplit ? "allowed" : "not allowed")} after split. Splitting: {splitRule}, up to {rules.MaxSplitHands} hands; split aces {(rules.SplitAcesOneCardOnly ? "receive one card each" : "play normally")}.");
+        log.Add(LogCategory.ChatQueue, $"Broadcast current Blackjack rules for venue profile {profile.Name}.");
     }
 
     private void AnnounceActivePlayerTurn(bool triggerTurnImmersion = true)
@@ -1321,6 +1407,7 @@ public sealed class TableTab
         foreach (var p in session.SessionPlayers)
         {
             p.BetConfirmed = false;
+            p.PassedCurrentBetting = false;
             p.Hands.Clear();
         }
     }
@@ -1404,6 +1491,7 @@ public sealed class TableTab
         public bool HasUnpaidBalance { get; init; }
         public long UnpaidBalance { get; init; }
         public bool BetConfirmed { get; init; }
+        public bool PassedCurrentBetting { get; init; }
         public List<BlackjackHand> Hands { get; init; } = [];
 
         public static PlayerSnapshot From(PlayerSessionState player)
@@ -1419,6 +1507,7 @@ public sealed class TableTab
                 HasUnpaidBalance = player.Bank.HasUnpaidBalance,
                 UnpaidBalance = player.Bank.UnpaidBalance,
                 BetConfirmed = player.BetConfirmed,
+                PassedCurrentBetting = player.PassedCurrentBetting,
                 Hands = player.Hands.Select(TableTab.CloneHand).ToList()
             };
 
@@ -1434,6 +1523,7 @@ public sealed class TableTab
             player.Bank.HasUnpaidBalance = HasUnpaidBalance;
             player.Bank.UnpaidBalance = UnpaidBalance;
             player.BetConfirmed = BetConfirmed;
+            player.PassedCurrentBetting = PassedCurrentBetting;
             player.Hands.Clear();
             player.Hands.AddRange(Hands.Select(TableTab.CloneHand));
         }

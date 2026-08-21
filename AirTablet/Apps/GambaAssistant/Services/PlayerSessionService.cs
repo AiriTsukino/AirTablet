@@ -68,6 +68,7 @@ public sealed class PlayerSessionService
             }
 
             player.BetConfirmed = false;
+            player.PassedCurrentBetting = false;
             player.Hands.Clear();
             if (player.Status == PlayerStatus.Playing)
                 player.Status = player.Bank.TotalTracked > 0 ? PlayerStatus.SittingOut : PlayerStatus.CashedOut;

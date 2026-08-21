@@ -13,6 +13,7 @@ public sealed class PlayerSessionState
     public List<BlackjackHand> Hands { get; set; } = [];
     public List<RoundHistoryEntry> RoundHistory { get; set; } = [];
     public bool BetConfirmed { get; set; }
+    public bool PassedCurrentBetting { get; set; }
     public string DisplayName => Identity.Display;
     public bool IsActiveForHand => Status == PlayerStatus.Playing && BetConfirmed && Hands.Count > 0;
 }
