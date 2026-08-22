@@ -776,7 +776,7 @@ internal sealed class MainView
 
             ImGui.Separator();
             var postRunDestination = (int)Profile.PostRunDestination;
-            var postRunLabels = new[] { "Starting World", "Home World", "Chosen World" };
+            var postRunLabels = new[] { "Starting World", "Home World", "Chosen World", "Don't Travel" };
             ImGui.SetNextItemWidth(TabletAppTheme.Px(240f));
             if (ImGui.Combo("After the run", ref postRunDestination, postRunLabels, postRunLabels.Length))
             {

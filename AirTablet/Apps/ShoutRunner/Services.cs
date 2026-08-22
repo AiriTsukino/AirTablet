@@ -2262,6 +2262,7 @@ internal sealed class RunService : IDisposable
         {
             PostRunDestination.HomeWorld => characterHomeWorld,
             PostRunDestination.ChosenWorld when allowedPostRunWorlds.Contains(profile.ChosenPostRunWorld) => profile.ChosenPostRunWorld,
+            PostRunDestination.DontTravel => string.Empty,
             _ => currentWorldName,
         };
         var requiresInitialLogin =

@@ -74,6 +74,7 @@ internal enum PostRunDestination
     StartingWorld,
     HomeWorld,
     ChosenWorld,
+    DontTravel,
 }
 
 internal sealed class MessageBlock

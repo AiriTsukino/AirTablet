@@ -7,6 +7,9 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-22] ShoutRunner v1.0.40.0
+- Added a "Don't Travel" option for after the run options incase users dont want to return to a specific world after a run.
+
 [2026-08-21] AirTabOS v1.0.44.1
 - Added Macro title search for control center macro pads
 - Updated MacroDeck wiki.
