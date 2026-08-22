@@ -4,12 +4,20 @@ using System.Text.RegularExpressions;
 using AirTablet.Services;
 using AirTablet.UI;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin;
 
 namespace MacroDeck;
 
 internal sealed class Plugin : IDisposable
 {
+    private readonly record struct FolderActionOverlay(
+        List<DeckEntry> Entries,
+        DeckEntry Folder,
+        Vector2 KeyMin,
+        Vector2 KeySize,
+        bool DragMode);
+
     private const int DeckSize = 32;
     private const int MaximumControlCenterPads = 18;
     private static readonly Regex InlineWaitRegex = new(@"<wait\.(?<seconds>\d+(?:\.\d+)?)>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -19,16 +27,25 @@ internal sealed class Plugin : IDisposable
     private readonly DialogService dialogs = new();
     private readonly ChatCommandService chat = new();
     private readonly TextureCache textures = new();
+    private readonly MacroIconCatalog macroIcons;
+    private readonly PopoutDeckOverlay popout;
     private readonly SemaphoreSlim executionGate = new(1, 1);
     private readonly List<Guid> folderPath = [];
     private bool editMode;
     private bool editorOpen;
     private bool profilesOpen;
+    private bool settingsOpen;
+    private bool iconPickerOpen;
     private bool deleteConfirmationPending;
     private DeckEntry? editingEntry;
     private int editingSlot;
     private string editTitle = string.Empty;
     private string editImage = string.Empty;
+    private int editGameIconId;
+    private int iconPickerPage;
+    private int iconCategoryIndex;
+    private string iconSearch = string.Empty;
+    private bool forceIconCategorySelection;
     private string editScript = string.Empty;
     private string editorValidation = string.Empty;
     private DeckEntryKind editKind;
@@ -38,32 +55,75 @@ internal sealed class Plugin : IDisposable
     private string hoveredDeckKeyId = string.Empty;
     private double deckKeyHoverStartedAt;
     private int deckKeyHoverFrame;
+    private Guid? draggedDeckEntryId;
+    private Guid? dragFolderTargetId;
+    private Guid? folderActionMenuId;
+    private string? pendingNotification;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
         config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         persistence = new PersistenceService(config, pluginInterface);
+        macroIcons = new MacroIconCatalog();
+        popout = new PopoutDeckOverlay(config, persistence, macroIcons, textures, ExecuteMacroAsync);
+        config.Version = Math.Max(config.Version, 3);
+        config.PopoutScale = Math.Clamp(config.PopoutScale, 0.65f, 1.50f);
+        persistence.SaveNow();
     }
 
     public void Draw()
     {
+        if (settingsOpen)
+        {
+            DrawSettingsScreen();
+            return;
+        }
+
         var venue = persistence.ActiveVenue;
         var overlayMin = ImGui.GetCursorScreenPos();
         var overlaySize = ImGui.GetContentRegionAvail();
         DrawToolbar(venue);
         ImGui.Separator();
-        DrawDeck(CurrentEntries(venue));
+        ImGui.SetCursorPosY(MathF.Max(
+            0f,
+            ImGui.GetCursorPosY() - TabletAppTheme.Px(4f)));
+        DrawDeck(venue, CurrentEntries(venue));
         if (editorOpen || profilesOpen)
             DrawContainedOverlay(venue, overlayMin, overlaySize);
     }
 
-    public void Tick() { }
+    public void Tick() => popout.Draw();
 
-    public bool CanNavigateBack() => false;
+    public bool CanNavigateBack() => editorOpen || profilesOpen || settingsOpen;
 
     public bool NavigateBack()
     {
+        if (folderActionMenuId is not null)
+        {
+            folderActionMenuId = null;
+            return true;
+        }
+        if (iconPickerOpen)
+        {
+            iconPickerOpen = false;
+            return true;
+        }
+        if (editorOpen || profilesOpen || settingsOpen)
+        {
+            editorOpen = false;
+            profilesOpen = false;
+            settingsOpen = false;
+            deleteConfirmationPending = false;
+            return true;
+        }
         return false;
+    }
+
+    public string? ConsumeNotification()
+    {
+        var notification = pendingNotification;
+        pendingNotification = null;
+        return notification;
     }
 
     public IReadOnlyList<ControlCenterWidget> GetControlCenterWidgets() =>
@@ -131,7 +191,17 @@ internal sealed class Plugin : IDisposable
 
     private void DrawToolbar(VenueProfile venue)
     {
-        ImGui.SetNextItemWidth(TabletAppTheme.Px(210f));
+        if (!ImGui.BeginTable("##macrodeck-toolbar", 5, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings))
+            return;
+        ImGui.TableSetupColumn("Profile", ImGuiTableColumnFlags.WidthFixed, TabletAppTheme.Px(180f));
+        ImGui.TableSetupColumn("Popout", ImGuiTableColumnFlags.WidthFixed, TabletAppTheme.Px(76f));
+        ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, TabletAppTheme.Px(210f));
+        ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Settings", ImGuiTableColumnFlags.WidthFixed, TabletAppTheme.Px(82f));
+        ImGui.TableNextRow();
+
+        ImGui.TableNextColumn();
+        ImGui.SetNextItemWidth(-1f);
         if (ImGui.BeginCombo("##macrodeck-venue", venue.Name))
         {
             foreach (var candidate in persistence.Venues)
@@ -140,41 +210,106 @@ internal sealed class Plugin : IDisposable
                 {
                     config.ActiveVenueId = candidate.Id;
                     folderPath.Clear();
+                    popout.ResetFolder();
+                    folderActionMenuId = null;
                     persistence.SaveNow();
                 }
             }
             ImGui.EndCombo();
         }
-        ImGui.SameLine();
-        if (ImGui.Button("Profiles", TabletAppTheme.Px(new Vector2(94, 0))))
+
+        ImGui.TableNextColumn();
+        var popoutEnabled = config.PopoutEnabled;
+        if (ImGui.Checkbox("Popout", ref popoutEnabled))
+        {
+            config.PopoutEnabled = popoutEnabled;
+            persistence.SaveNow();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.BeginTooltip();
+            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + TabletAppTheme.Px(260f));
+            ImGui.TextWrapped("Show or hide the detachable MacroDeck quick-access deck.");
+            ImGui.PopTextWrapPos();
+            ImGui.EndTooltip();
+        }
+
+        ImGui.TableNextColumn();
+        if (ImGui.Button("Profiles", TabletAppTheme.Px(new Vector2(88, 0))))
         {
             profileName = venue.Name;
             profilesOpen = true;
+            editorOpen = false;
         }
         ImGui.SameLine();
-        if (ImGui.Button(editMode ? "Finish Editing" : "Edit Deck", TabletAppTheme.Px(new Vector2(118, 0)))) editMode = !editMode;
-        ImGui.SameLine();
+        if (ImGui.Button(editMode ? "Finish Editing" : "Edit Deck", TabletAppTheme.Px(new Vector2(112, 0))))
+        {
+            editMode = !editMode;
+            folderActionMenuId = null;
+            dragFolderTargetId = null;
+        }
+
+        ImGui.TableNextColumn();
         ImGui.TextColored(TabletAppTheme.MutedText, editMode ? "Click a key to configure it" : status);
+
+        ImGui.TableNextColumn();
+        if (ImGui.Button("Settings", new Vector2(-1f, 0f)))
+        {
+            settingsOpen = true;
+            profilesOpen = false;
+            editorOpen = false;
+        }
+        ImGui.EndTable();
     }
 
-    private void DrawDeck(List<DeckEntry> entries)
+    private void DrawDeck(VenueProfile venue, List<DeckEntry> entries)
     {
+        if (ImGui.GetDragDropPayload().IsNull)
+        {
+            draggedDeckEntryId = null;
+            dragFolderTargetId = null;
+        }
         const int columns = 8;
         var gap = TabletAppTheme.Px(7f);
         var available = ImGui.GetContentRegionAvail();
         var width = MathF.Max(TabletAppTheme.Px(64f), (available.X - gap * (columns - 1)) / columns);
-        var height = MathF.Max(TabletAppTheme.Px(68f), (available.Y - gap * 3f - TabletAppTheme.Px(8f)) / 4f);
+        var verticalGap = ImGui.GetStyle().ItemSpacing.Y;
+        var bottomSafety = TabletAppTheme.Px(18f);
+        var height = MathF.Max(
+            TabletAppTheme.Px(68f),
+            (available.Y - verticalGap * 3f - bottomSafety) / 4f);
+        var actionOverlays = new List<FolderActionOverlay>(2);
         for (var slot = 0; slot < DeckSize; slot++)
         {
             if (slot % columns != 0) ImGui.SameLine(0, gap);
             if (slot == 0 && folderPath.Count > 0)
-                DrawNavigationKey(new Vector2(width, height));
+                DrawNavigationKey(venue, entries, new Vector2(width, height));
             else
-                DrawDeckButton(entries, entries.FirstOrDefault(candidate => candidate.Slot == slot), slot, new Vector2(width, height));
+                DrawDeckButton(
+                    entries,
+                    entries.FirstOrDefault(candidate => candidate.Slot == slot),
+                    slot,
+                    new Vector2(width, height),
+                    actionOverlays);
         }
+
+        // Submit overlay interactions only after the complete deck grid has been laid out.
+        // Absolute-positioned items submitted between keys alter ImGui's SameLine state and
+        // make later keys appear resized or displaced even when their rectangles do not overlap.
+        var deckEndCursor = ImGui.GetCursorScreenPos();
+        foreach (var overlay in actionOverlays)
+        {
+            DrawFolderActionChoices(
+                overlay.Entries,
+                overlay.Folder,
+                overlay.KeyMin,
+                overlay.KeySize,
+                overlay.DragMode);
+        }
+        ImGui.SetCursorScreenPos(deckEndCursor);
     }
 
-    private void DrawNavigationKey(Vector2 size)
+    private void DrawNavigationKey(VenueProfile venue, List<DeckEntry> currentEntries, Vector2 size)
     {
         var min = ImGui.GetCursorScreenPos();
         var max = min + size;
@@ -200,20 +335,76 @@ internal sealed class Plugin : IDisposable
         var labelSize = ImGui.CalcTextSize(label);
         draw.AddText(new Vector2(center.X - labelSize.X * 0.5f, max.Y - TabletAppTheme.Px(19f)), ImGui.GetColorU32(TabletAppTheme.Text), label);
         ImGui.InvisibleButton("##macrodeck-protected-navigation-key", size);
+        var baseHovered = ImGui.IsItemHovered();
+        var moveOutPreview = false;
+        var parentEntries = GetParentEntries(venue);
+        var parentSlot = parentEntries is null
+            ? null
+            : FindFirstAvailableSlot(parentEntries, folderPath.Count > 1 ? 1 : 0);
+        if (editMode && ImGui.BeginDragDropTarget())
+        {
+            var payload = ImGui.AcceptDragDropPayload("MACRODECK_KEY", ImGuiDragDropFlags.AcceptBeforeDelivery);
+            moveOutPreview = !payload.IsNull;
+            if (!payload.IsNull && payload.IsDelivery() && draggedDeckEntryId is { } draggedId)
+            {
+                var source = currentEntries.FirstOrDefault(candidate => candidate.Id == draggedId);
+                if (source is not null && parentEntries is not null && parentSlot.HasValue)
+                {
+                    currentEntries.Remove(source);
+                    source.Slot = parentSlot.Value;
+                    parentEntries.Add(source);
+                    status = $"Moved {source.Title} out one folder";
+                    draggedDeckEntryId = null;
+                    dragFolderTargetId = null;
+                    folderActionMenuId = null;
+                    persistence.SaveNow();
+                }
+                else if (source is not null && !parentSlot.HasValue)
+                {
+                    status = "The parent page is full";
+                    CancelFullDestinationDrop("The destination page is full and has no space for another key.");
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+        if (moveOutPreview)
+        {
+            var actionLabel = parentSlot.HasValue ? "Move Out" : "Parent Full";
+            var actionSize = ImGui.CalcTextSize(actionLabel) + TabletAppTheme.Px(new Vector2(24f, 12f));
+            var actionMin = min + (size - actionSize) * 0.5f;
+            draw.AddRectFilled(actionMin, actionMin + actionSize, ImGui.GetColorU32(parentSlot.HasValue
+                ? new Vector4(accent.X * 0.75f, accent.Y * 0.75f, accent.Z * 0.75f, 0.98f)
+                : new Vector4(0.20f, 0.18f, 0.20f, 0.98f)), TabletAppTheme.Px(7f));
+            draw.AddRect(actionMin, actionMin + actionSize, ImGui.GetColorU32(parentSlot.HasValue ? TabletAppTheme.AccentHover : TabletAppTheme.MutedText), TabletAppTheme.Px(7f), ImDrawFlags.None, TabletAppTheme.Px(1.2f));
+            draw.AddText(actionMin + (actionSize - ImGui.CalcTextSize(actionLabel)) * 0.5f, ImGui.GetColorU32(TabletAppTheme.Text), actionLabel);
+        }
         if (ImGui.IsItemClicked())
         {
+            folderActionMenuId = null;
+            dragFolderTargetId = null;
             if (folderPath.Count == 1) folderPath.Clear();
             else if (folderPath.Count > 1) folderPath.RemoveAt(folderPath.Count - 1);
         }
-        if (ImGui.IsItemHovered())
+        if (baseHovered)
         {
             ImGui.BeginTooltip();
-            ImGui.TextUnformatted(folderPath.Count == 1 ? "Return to deck home. This protected key cannot be edited." : "Return to the previous folder. This protected key cannot be edited.");
+            ImGui.TextUnformatted(moveOutPreview
+                ? parentSlot.HasValue
+                    ? "Drop to move this key out one folder level. The protected navigation key remains in place."
+                    : "The parent page has no available configurable slots."
+                : folderPath.Count == 1
+                    ? "Return to deck home. In Edit Deck mode, drag a key here to move it out to the root deck."
+                    : "Return to the previous folder. In Edit Deck mode, drag a key here to move it out one level.");
             ImGui.EndTooltip();
         }
     }
 
-    private void DrawDeckButton(List<DeckEntry> entries, DeckEntry? entry, int slot, Vector2 size)
+    private void DrawDeckButton(
+        List<DeckEntry> entries,
+        DeckEntry? entry,
+        int slot,
+        Vector2 size,
+        List<FolderActionOverlay> actionOverlays)
     {
         var min = ImGui.GetCursorScreenPos();
         var max = min + size;
@@ -223,50 +414,372 @@ internal sealed class Plugin : IDisposable
         var fill = entry is null ? new Vector4(0.10f, 0.105f, 0.14f, hovered ? 0.90f : 0.62f) : new Vector4(0.16f + accent.X * 0.12f, 0.16f + accent.Y * 0.12f, 0.20f + accent.Z * 0.12f, 0.98f);
         draw.AddRectFilled(min, max, ImGui.GetColorU32(fill), TabletAppTheme.Px(10f));
         draw.AddRect(min, max, ImGui.GetColorU32(hovered ? TabletAppTheme.AccentHover : new Vector4(accent.X, accent.Y, accent.Z, entry is null ? 0.20f : 0.65f)), TabletAppTheme.Px(10f), ImDrawFlags.None, TabletAppTheme.Px(1.4f));
-        if (entry is not null && !string.IsNullOrWhiteSpace(entry.ImagePath))
+        if (entry is not null && entry.Kind == DeckEntryKind.Macro)
         {
-            var texture = textures.GetResourceIcon($"macrodeck-{entry.Id}", entry.ImagePath);
+            var texture = ResolveKeyArtwork(entry, true);
             if (texture is not null)
             {
                 var imageBoxMin = min + TabletAppTheme.Px(new Vector2(4, 4));
                 var imageBoxMax = max - TabletAppTheme.Px(new Vector2(4, 22));
-                var imageBoxSize = Vector2.Max(Vector2.One, imageBoxMax - imageBoxMin);
-                var sourceSize = new Vector2(Math.Max(1, texture.Width), Math.Max(1, texture.Height));
-                var scale = MathF.Min(imageBoxSize.X / sourceSize.X, imageBoxSize.Y / sourceSize.Y);
-                var imageSize = sourceSize * scale;
-                var imageMin = imageBoxMin + (imageBoxSize - imageSize) * 0.5f;
-                draw.AddImage(texture.Handle, imageMin, imageMin + imageSize);
+                DrawFittedImage(draw, texture, imageBoxMin, imageBoxMax);
             }
         }
         if (entry?.Kind == DeckEntryKind.Folder)
-        {
-            var folderMin = min + TabletAppTheme.Px(new Vector2(9, 10));
-            draw.AddRectFilled(folderMin, folderMin + TabletAppTheme.Px(new Vector2(24, 16)), ImGui.GetColorU32(TabletAppTheme.AccentHover), TabletAppTheme.Px(3f));
-            draw.AddRectFilled(folderMin + TabletAppTheme.Px(new Vector2(2, -4)), folderMin + TabletAppTheme.Px(new Vector2(13, 2)), ImGui.GetColorU32(TabletAppTheme.AccentHover), TabletAppTheme.Px(2f));
-        }
+            DrawFolderKey(draw, entry, min, size);
         var label = entry?.Title ?? (editMode ? "+" : string.Empty);
         DrawDeckKeyTitle(draw, label, min, size, hovered, entry?.Id.ToString() ?? $"empty-{slot}", ImGui.GetColorU32(entry is null ? TabletAppTheme.MutedText : TabletAppTheme.Text));
+        var folderChoicesWereVisible = entry?.Kind == DeckEntryKind.Folder &&
+                                       (dragFolderTargetId == entry.Id || folderActionMenuId == entry.Id);
+        // Keep the normal deck item in the layout while the folder choices are visible.
+        // Replacing it with extra layout items changes the row bounds and can create a
+        // scrollbar. The choices are drawn later as overlapping controls inside this item.
         ImGui.InvisibleButton($"##macrodeck-slot-{slot}", size);
+        if (folderChoicesWereVisible)
+            ImGui.SetItemAllowOverlap();
         var clicked = ImGui.IsItemClicked();
         var rightClicked = ImGui.IsItemClicked(ImGuiMouseButton.Right);
-        if (entry is null && clicked && editMode) OpenEditor(null, slot);
-        else if (entry is not null && (rightClicked || clicked && editMode)) OpenEditor(entry, slot);
-        else if (entry?.Kind == DeckEntryKind.Folder && clicked) folderPath.Add(entry.Id);
-        else if (entry is not null && clicked) _ = ExecuteMacroAsync(entry);
-        if (ImGui.IsItemHovered())
+        var baseItemHovered = ImGui.IsItemHovered();
+        // A release is a key click only when this same key owned the original press.
+        // This prevents the Enter folder action from carrying its still-held mouse
+        // input into the newly displayed folder and opening the key underneath it.
+        var editClickReleased = editMode &&
+                                !folderChoicesWereVisible &&
+                                baseItemHovered &&
+                                ImGui.IsItemDeactivated();
+        var dragDropHandled = editMode && !folderChoicesWereVisible && HandleDeckKeyDragDrop(entries, entry, slot);
+        if (entry is null && editClickReleased && !dragDropHandled)
+        {
+            folderActionMenuId = null;
+            OpenEditor(null, slot);
+        }
+        else if (entry?.Kind == DeckEntryKind.Folder && editMode && !dragDropHandled)
+        {
+            if (rightClicked)
+            {
+                folderActionMenuId = null;
+                OpenEditor(entry, slot);
+            }
+            else if (editClickReleased)
+            {
+                folderActionMenuId = entry.Id;
+            }
+        }
+        else if (entry is not null && (rightClicked || editClickReleased && !dragDropHandled))
+        {
+            folderActionMenuId = null;
+            OpenEditor(entry, slot);
+        }
+        else if (!editMode && entry?.Kind == DeckEntryKind.Folder && clicked) folderPath.Add(entry.Id);
+        else if (!editMode && entry is not null && clicked) _ = ExecuteMacroAsync(entry);
+        var folderChoicesVisible = entry?.Kind == DeckEntryKind.Folder &&
+                                   (dragFolderTargetId == entry.Id || folderActionMenuId == entry.Id);
+        if (baseItemHovered && !folderChoicesVisible)
         {
             ImGui.BeginTooltip();
-            ImGui.TextUnformatted(entry is null ? (editMode ? "Create a macro or folder" : "Empty key") : entry.Kind == DeckEntryKind.Folder ? "Open folder; right-click to edit" : editMode ? "Edit macro" : $"Run {entry.Title}; right-click to edit");
+            ImGui.TextUnformatted(editMode
+                ? entry is null
+                    ? "Click to create a key, or drop another key here to move it."
+                    : entry.Kind == DeckEntryKind.Folder
+                        ? "Click for Edit or Enter, right-click to edit directly, or drag to rearrange."
+                        : "Click to edit, or drag this key to rearrange the deck."
+                : entry is null
+                    ? "Empty key"
+                    : entry.Kind == DeckEntryKind.Folder
+                        ? "Open folder; right-click to edit"
+                        : $"Run {entry.Title}; right-click to edit");
+            ImGui.EndTooltip();
+        }
+        if (entry?.Kind == DeckEntryKind.Folder && folderChoicesVisible)
+        {
+            actionOverlays.Add(new FolderActionOverlay(
+                entries,
+                entry,
+                min,
+                size,
+                dragFolderTargetId == entry.Id));
+        }
+    }
+
+    private bool HandleDeckKeyDragDrop(List<DeckEntry> entries, DeckEntry? entry, int targetSlot)
+    {
+        var handled = false;
+        if (entry is not null && ImGui.BeginDragDropSource())
+        {
+            draggedDeckEntryId = entry.Id;
+            ImGui.SetDragDropPayload("MACRODECK_KEY", new byte[] { 1 }, ImGuiCond.Once);
+            ImGui.TextUnformatted($"Move {entry.Title}");
+            ImGui.EndDragDropSource();
+        }
+
+        if (!ImGui.BeginDragDropTarget())
+            return handled;
+        var flags = entry?.Kind == DeckEntryKind.Folder
+            ? ImGuiDragDropFlags.AcceptBeforeDelivery
+            : ImGuiDragDropFlags.None;
+        var payload = ImGui.AcceptDragDropPayload("MACRODECK_KEY", flags);
+        if (!payload.IsNull && entry?.Kind == DeckEntryKind.Folder)
+        {
+            if (draggedDeckEntryId != entry.Id)
+                dragFolderTargetId = entry.Id;
+            ImGui.EndDragDropTarget();
+            return false;
+        }
+        if (!payload.IsNull)
+            dragFolderTargetId = null;
+        if (!payload.IsNull && payload.IsDelivery() && draggedDeckEntryId is { } draggedId)
+        {
+            var source = entries.FirstOrDefault(candidate => candidate.Id == draggedId);
+            if (source is not null)
+            {
+                var sourceSlot = source.Slot;
+                if (sourceSlot != targetSlot)
+                {
+                    if (entry is null)
+                    {
+                        source.Slot = targetSlot;
+                        status = $"Moved {source.Title}";
+                    }
+                    else
+                    {
+                        entry.Slot = sourceSlot;
+                        source.Slot = targetSlot;
+                        status = $"Swapped {source.Title} and {entry.Title}";
+                    }
+                    persistence.SaveNow();
+                }
+                handled = true;
+            }
+            draggedDeckEntryId = null;
+        }
+        ImGui.EndDragDropTarget();
+        return handled;
+    }
+
+    private void DrawFolderActionChoices(
+        List<DeckEntry> entries,
+        DeckEntry folder,
+        Vector2 keyMin,
+        Vector2 keySize,
+        bool dragMode)
+    {
+        var savedCursor = ImGui.GetCursorScreenPos();
+        var margin = TabletAppTheme.Px(7f);
+        var gap = TabletAppTheme.Px(6f);
+        var availableHeight = MathF.Max(TabletAppTheme.Px(44f), keySize.Y - margin * 2f - gap);
+        var boxHeight = MathF.Min(TabletAppTheme.Px(30f), availableHeight * 0.5f);
+        var boxWidth = MathF.Min(
+            MathF.Max(TabletAppTheme.Px(70f), keySize.X * 0.72f),
+            keySize.X - margin * 2f);
+        var stackHeight = boxHeight * 2f + gap;
+        var firstMin = keyMin + new Vector2(
+            (keySize.X - boxWidth) * 0.5f,
+            (keySize.Y - stackHeight) * 0.5f);
+        var secondMin = firstMin + new Vector2(0f, boxHeight + gap);
+        var destinationSlot = FindFirstFolderSlot(folder);
+
+        DrawFolderActionChoice(
+            entries,
+            folder,
+            firstMin,
+            new Vector2(boxWidth, boxHeight),
+            dragMode ? "Swap" : "Edit",
+            dragMode,
+            true,
+            moveIntoFolder: false);
+        DrawFolderActionChoice(
+            entries,
+            folder,
+            secondMin,
+            new Vector2(boxWidth, boxHeight),
+            dragMode ? destinationSlot.HasValue ? "Move In" : "Full" : "Enter",
+            dragMode,
+            !dragMode || destinationSlot.HasValue,
+            moveIntoFolder: true);
+        ImGui.SetCursorScreenPos(savedCursor);
+    }
+
+    private void DrawFolderActionChoice(
+        List<DeckEntry> entries,
+        DeckEntry folder,
+        Vector2 min,
+        Vector2 size,
+        string label,
+        bool dragMode,
+        bool enabled,
+        bool moveIntoFolder)
+    {
+        ImGui.SetCursorScreenPos(min);
+        ImGui.InvisibleButton($"##macrodeck-folder-action-{folder.Id}-{label}", size);
+        var hovered = ImGui.IsItemHovered();
+        var clicked = enabled && ImGui.IsItemClicked();
+        var draw = ImGui.GetWindowDrawList();
+        var accent = TabletAppTheme.Accent;
+        var fill = enabled
+            ? hovered
+                ? new Vector4(accent.X * 0.82f, accent.Y * 0.82f, accent.Z * 0.82f, 0.98f)
+                : new Vector4(0.10f + accent.X * 0.25f, 0.10f + accent.Y * 0.25f, 0.13f + accent.Z * 0.25f, 0.96f)
+            : new Vector4(0.12f, 0.12f, 0.15f, 0.92f);
+        draw.AddRectFilled(min, min + size, ImGui.GetColorU32(fill), TabletAppTheme.Px(6f));
+        draw.AddRect(min, min + size, ImGui.GetColorU32(enabled ? TabletAppTheme.AccentHover : TabletAppTheme.MutedText), TabletAppTheme.Px(6f), ImDrawFlags.None, TabletAppTheme.Px(1.2f));
+        var textSize = ImGui.CalcTextSize(label);
+        draw.AddText(min + (size - textSize) * 0.5f, ImGui.GetColorU32(enabled ? TabletAppTheme.Text : TabletAppTheme.MutedText), label);
+
+        if (dragMode && ImGui.BeginDragDropTarget())
+        {
+            var payload = ImGui.AcceptDragDropPayload("MACRODECK_KEY", ImGuiDragDropFlags.None);
+            if (!payload.IsNull && payload.IsDelivery())
+            {
+                if (enabled)
+                    ApplyFolderDrop(entries, folder, moveIntoFolder);
+                else
+                    CancelFullDestinationDrop("This folder is full and has no space for another key.");
+            }
+            ImGui.EndDragDropTarget();
+        }
+        else if (!dragMode && clicked)
+        {
+            folderActionMenuId = null;
+            if (moveIntoFolder)
+                folderPath.Add(folder.Id);
+            else
+                OpenEditor(folder, folder.Slot);
+        }
+
+        if (hovered)
+        {
+            ImGui.BeginTooltip();
+            ImGui.TextUnformatted(!enabled
+                ? "This folder has no available configurable slots."
+                : dragMode
+                ? moveIntoFolder
+                    ? "Move the dragged key into the first available slot in this folder."
+                    : "Swap the dragged key with this folder on the current page."
+                : moveIntoFolder
+                    ? "Open this folder without leaving Edit Deck mode."
+                    : "Edit this folder's name and artwork.");
             ImGui.EndTooltip();
         }
     }
 
+    private void CancelFullDestinationDrop(string message)
+    {
+        pendingNotification = message;
+        draggedDeckEntryId = null;
+        dragFolderTargetId = null;
+        folderActionMenuId = null;
+    }
+
+    private void ApplyFolderDrop(List<DeckEntry> entries, DeckEntry folder, bool moveIntoFolder)
+    {
+        if (draggedDeckEntryId is not { } draggedId)
+            return;
+        var source = entries.FirstOrDefault(candidate => candidate.Id == draggedId);
+        if (source is null || source.Id == folder.Id)
+            return;
+
+        if (moveIntoFolder)
+        {
+            var destinationSlot = FindFirstFolderSlot(folder);
+            if (!destinationSlot.HasValue)
+                return;
+            entries.Remove(source);
+            source.Slot = destinationSlot.Value;
+            folder.Children.Add(source);
+            status = $"Moved {source.Title} into {folder.Title}";
+        }
+        else
+        {
+            var sourceSlot = source.Slot;
+            source.Slot = folder.Slot;
+            folder.Slot = sourceSlot;
+            status = $"Swapped {source.Title} and {folder.Title}";
+        }
+
+        draggedDeckEntryId = null;
+        dragFolderTargetId = null;
+        folderActionMenuId = null;
+        persistence.SaveNow();
+    }
+
+    private static int? FindFirstFolderSlot(DeckEntry folder)
+    {
+        folder.Children ??= [];
+        return FindFirstAvailableSlot(folder.Children, 1);
+    }
+
+    private static int? FindFirstAvailableSlot(IEnumerable<DeckEntry> entries, int firstSlot)
+    {
+        var usedSlots = entries.Select(entry => entry.Slot).ToHashSet();
+        return Enumerable.Range(firstSlot, 32 - firstSlot)
+            .Cast<int?>()
+            .FirstOrDefault(slot => !usedSlots.Contains(slot!.Value));
+    }
+
+    private IDalamudTextureWrap? ResolveKeyArtwork(DeckEntry entry, bool useDefaultIcon)
+    {
+        IDalamudTextureWrap? texture = null;
+        if (!string.IsNullOrWhiteSpace(entry.ImagePath))
+            texture = textures.GetResourceIcon($"macrodeck-{entry.Id}", entry.ImagePath);
+        var iconId = entry.GameIconId > 0
+            ? entry.GameIconId
+            : useDefaultIcon ? macroIcons.DefaultIconId : 0;
+        return texture ?? macroIcons.GetTexture(iconId);
+    }
+
+    private void DrawFolderKey(ImDrawListPtr draw, DeckEntry entry, Vector2 min, Vector2 size)
+    {
+        var artworkHeight = MathF.Max(TabletAppTheme.Px(42f), size.Y - TabletAppTheme.Px(22f));
+        var maximumFolderWidth = MathF.Max(TabletAppTheme.Px(28f), size.X - TabletAppTheme.Px(20f));
+        var minimumFolderWidth = MathF.Min(TabletAppTheme.Px(64f), maximumFolderWidth);
+        var folderWidth = Math.Clamp(artworkHeight * 1.15f, minimumFolderWidth, maximumFolderWidth);
+        var maximumFolderHeight = MathF.Max(TabletAppTheme.Px(22f), artworkHeight - TabletAppTheme.Px(8f));
+        var minimumFolderHeight = MathF.Min(TabletAppTheme.Px(46f), maximumFolderHeight);
+        var folderHeight = Math.Clamp(folderWidth * 0.70f, minimumFolderHeight, maximumFolderHeight);
+        var folderMin = new Vector2(
+            min.X + (size.X - folderWidth) * 0.5f,
+            min.Y + MathF.Max(TabletAppTheme.Px(4f), (artworkHeight - folderHeight) * 0.5f));
+        var tabHeight = folderHeight * 0.17f;
+        var bodyMin = folderMin + new Vector2(0f, tabHeight);
+        var bodyMax = folderMin + new Vector2(folderWidth, folderHeight);
+        var color = ImGui.GetColorU32(TabletAppTheme.AccentHover);
+        draw.AddRectFilled(bodyMin, bodyMax, color, TabletAppTheme.Px(8f));
+        draw.AddRectFilled(
+            folderMin + new Vector2(folderWidth * 0.09f, 0f),
+            folderMin + new Vector2(folderWidth * 0.52f, tabHeight * 1.45f),
+            color,
+            TabletAppTheme.Px(5f));
+
+        var texture = ResolveKeyArtwork(entry, false);
+        if (texture is null)
+            return;
+        var bodySize = bodyMax - bodyMin;
+        var badgePadding = new Vector2(bodySize.X * 0.18f, bodySize.Y * 0.14f);
+        var badgeMin = bodyMin + badgePadding;
+        var badgeMax = bodyMax - badgePadding;
+        var clipPadding = TabletAppTheme.Px(new Vector2(4f, 4f));
+        draw.PushClipRect(bodyMin + clipPadding, bodyMax - clipPadding, true);
+        DrawFittedImage(draw, texture, badgeMin, badgeMax);
+        draw.PopClipRect();
+    }
+
+    private static void DrawFittedImage(ImDrawListPtr draw, IDalamudTextureWrap texture, Vector2 min, Vector2 max)
+    {
+        var box = Vector2.Max(Vector2.One, max - min);
+        var source = new Vector2(Math.Max(1, texture.Width), Math.Max(1, texture.Height));
+        var scale = MathF.Min(box.X / source.X, box.Y / source.Y);
+        var imageSize = source * scale;
+        var imageMin = min + (box - imageSize) * 0.5f;
+        draw.AddImage(texture.Handle, imageMin, imageMin + imageSize);
+    }
+
     private void OpenEditor(DeckEntry? entry, int slot)
     {
+        folderActionMenuId = null;
         editingEntry = entry; editingSlot = slot; editKind = entry?.Kind ?? DeckEntryKind.Macro;
         editTitle = entry?.Title ?? "New Macro"; editImage = entry?.ImagePath ?? string.Empty;
+        editGameIconId = entry?.GameIconId > 0 ? entry.GameIconId : macroIcons.DefaultIconId;
         editScript = entry?.Script ?? string.Empty; editorValidation = string.Empty;
-        deleteConfirmationPending = false; editorOpen = true;
+        deleteConfirmationPending = false; iconPickerOpen = false; editorOpen = true; profilesOpen = false;
     }
 
     private void DrawDeckKeyTitle(ImDrawListPtr draw, string text, Vector2 min, Vector2 size, bool hovered, string hoverId, uint color)
@@ -325,7 +838,9 @@ internal sealed class Plugin : IDisposable
         {
             var requested = deleteConfirmationPending
                 ? TabletAppTheme.Px(new Vector2(440, 180))
-                : editorOpen
+                : iconPickerOpen
+                    ? TabletAppTheme.Px(new Vector2(1120, 660))
+                    : editorOpen
                     ? TabletAppTheme.Px(new Vector2(620, 500))
                     : TabletAppTheme.Px(new Vector2(510, 330));
             var panelSize = Vector2.Min(requested, overlaySize - TabletAppTheme.Px(new Vector2(32, 32)));
@@ -343,6 +858,8 @@ internal sealed class Plugin : IDisposable
             {
                 if (deleteConfirmationPending)
                     DrawDeleteConfirmation(venue);
+                else if (iconPickerOpen)
+                    DrawIconPicker();
                 else if (editorOpen)
                     DrawEditor(venue);
                 else
@@ -368,6 +885,7 @@ internal sealed class Plugin : IDisposable
         ImGui.InputText("##macrodeck-image-path", ref editImage, 520);
         ImGui.SameLine();
         if (ImGui.Button("Browse##macrodeck-image")) dialogs.PickImage(path => editImage = path);
+        DrawGameIconEditor();
         if (editKind == DeckEntryKind.Macro)
         {
             ImGui.TextColored(TabletAppTheme.MutedText, "Macro script — one command per line");
@@ -395,7 +913,7 @@ internal sealed class Plugin : IDisposable
                 var entries = CurrentEntries(venue);
                 var entry = editingEntry ?? new DeckEntry { Slot = editingSlot };
                 entry.Kind = editKind; entry.Title = DeckEntry.NormalizeTitle(editTitle, editKind == DeckEntryKind.Folder ? "Folder" : "Macro");
-                entry.ImagePath = editImage.Trim(); entry.Script = editScript.Trim(); entry.Message = string.Empty; entry.EmoteCommand = string.Empty;
+                entry.ImagePath = editImage.Trim(); entry.GameIconId = Math.Max(0, editGameIconId); entry.Script = editScript.Trim(); entry.Message = string.Empty; entry.EmoteCommand = string.Empty;
                 if (entry.Kind == DeckEntryKind.Macro) entry.Children.Clear();
                 if (editingEntry is null) entries.Add(entry);
                 persistence.SaveNow(); editorOpen = false;
@@ -404,7 +922,276 @@ internal sealed class Plugin : IDisposable
         ImGui.SameLine();
         if (editingEntry is not null && ImGui.Button("Delete", TabletAppTheme.Px(new Vector2(100, 0)))) deleteConfirmationPending = true;
         ImGui.SameLine();
-        if (ImGui.Button("Cancel", TabletAppTheme.Px(new Vector2(100, 0)))) editorOpen = false;
+        if (ImGui.Button("Cancel", TabletAppTheme.Px(new Vector2(100, 0)))) { editorOpen = false; iconPickerOpen = false; }
+    }
+
+    private void DrawGameIconEditor()
+    {
+        ImGui.TextUnformatted("Game icon");
+        ImGui.SameLine();
+        var previewSize = TabletAppTheme.Px(new Vector2(34f, 34f));
+        var previewMin = ImGui.GetCursorScreenPos();
+        var previewTexture = macroIcons.GetTexture(editGameIconId > 0 ? editGameIconId : macroIcons.DefaultIconId);
+        if (previewTexture is not null)
+            ImGui.Image(previewTexture.Handle, previewSize);
+        else
+            ImGui.Dummy(previewSize);
+        ImGui.SameLine();
+        if (ImGui.Button("Choose game icon", TabletAppTheme.Px(new Vector2(148f, 34f))))
+        {
+            iconPickerPage = 0;
+            iconSearch = string.Empty;
+            iconPickerOpen = true;
+        }
+        ImGui.SameLine();
+        ImGui.TextColored(TabletAppTheme.MutedText, $"Icon {Math.Max(0, editGameIconId)}");
+        if (!string.IsNullOrWhiteSpace(editImage))
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(TabletAppTheme.MutedText, "Custom image set; popout uses icon by default");
+        }
+        if (ImGui.IsMouseHoveringRect(previewMin, previewMin + previewSize))
+        {
+            ImGui.BeginTooltip();
+            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + TabletAppTheme.Px(260f));
+            ImGui.TextWrapped(editKind == DeckEntryKind.Folder
+                ? "This icon appears as a smaller badge inside the folder so folders are easy to identify without covering the folder shape."
+                : "This in-game icon is used whenever the key does not have a custom image. It is also used by default on the compact popout deck.");
+            ImGui.PopTextWrapPos();
+            ImGui.EndTooltip();
+        }
+    }
+
+    private void DrawIconPicker()
+    {
+        ImGui.TextUnformatted("Choose an in-game icon");
+        ImGui.SameLine();
+        if (ImGui.Button("Back", TabletAppTheme.Px(new Vector2(76f, 0f))))
+        {
+            iconPickerOpen = false;
+            return;
+        }
+        ImGui.SameLine();
+        var remainingHeaderWidth = ImGui.GetContentRegionAvail().X;
+        var searchWidth = MathF.Min(TabletAppTheme.Px(360f), MathF.Max(TabletAppTheme.Px(180f), remainingHeaderWidth));
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, remainingHeaderWidth - searchWidth));
+        ImGui.SetNextItemWidth(searchWidth);
+        if (ImGui.InputTextWithHint("##macrodeck-icon-search", "Search icons...", ref iconSearch, 100))
+        {
+            iconPickerPage = 0;
+            SelectBestIconSearchCategory();
+        }
+        ImGui.Separator();
+
+        var categories = macroIcons.Categories;
+        if (categories.Count == 0)
+        {
+            ImGui.TextWrapped("The FFXIV icon catalogs are unavailable. Custom image selection remains available.");
+            return;
+        }
+
+        iconCategoryIndex = Math.Clamp(iconCategoryIndex, 0, categories.Count - 1);
+        if (ImGui.BeginTabBar("##macrodeck-icon-categories", ImGuiTabBarFlags.FittingPolicyScroll))
+        {
+            for (var categoryIndex = 0; categoryIndex < categories.Count; categoryIndex++)
+            {
+                var category = categories[categoryIndex];
+                var tabFlags = forceIconCategorySelection && categoryIndex == iconCategoryIndex
+                    ? ImGuiTabItemFlags.SetSelected
+                    : ImGuiTabItemFlags.None;
+                if (!ImGui.BeginTabItem($"{category.Label}##macrodeck-icon-category-{category.Id}", tabFlags))
+                    continue;
+                if (!forceIconCategorySelection && iconCategoryIndex != categoryIndex)
+                {
+                    iconCategoryIndex = categoryIndex;
+                    iconPickerPage = 0;
+                }
+                ImGui.EndTabItem();
+            }
+            ImGui.EndTabBar();
+        }
+        forceIconCategorySelection = false;
+
+        var selectedCategory = categories[iconCategoryIndex];
+        var searchText = iconSearch.Trim();
+        var all = string.IsNullOrWhiteSpace(searchText)
+            ? selectedCategory.Icons.ToList()
+            : selectedCategory.Icons
+                .Select(icon => (Icon: icon, Score: GetIconSearchScore(icon.Name, searchText)))
+                .Where(result => result.Score.HasValue)
+                .OrderBy(result => result.Score!.Value)
+                .ThenBy(result => result.Icon.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(result => result.Icon)
+                .ToList();
+        if (all.Count == 0)
+        {
+            ImGui.Spacing();
+            ImGui.TextColored(TabletAppTheme.MutedText, $"No {selectedCategory.Label.ToLowerInvariant()} match '{searchText}'.");
+            return;
+        }
+        var gap = TabletAppTheme.Px(7f);
+        var desiredKeySize = TabletAppTheme.Px(56f);
+        var available = ImGui.GetContentRegionAvail();
+        var columns = Math.Clamp((int)((available.X + gap) / (desiredKeySize + gap)), 6, 16);
+        var keySize = MathF.Max(TabletAppTheme.Px(38f), MathF.Min(desiredKeySize, (available.X - gap * (columns - 1)) / columns));
+        var footerHeight = TabletAppTheme.Px(44f);
+        var rows = Math.Max(3, (int)((MathF.Max(keySize, available.Y - footerHeight) + gap) / (keySize + gap)));
+        var pageSize = Math.Max(1, columns * rows);
+        var pageCount = Math.Max(1, (int)Math.Ceiling(all.Count / (double)pageSize));
+        iconPickerPage = Math.Clamp(iconPickerPage, 0, pageCount - 1);
+        var choices = all.Skip(iconPickerPage * pageSize).Take(pageSize).ToList();
+        var size = new Vector2(keySize, keySize);
+        var draw = ImGui.GetWindowDrawList();
+        for (var index = 0; index < choices.Count; index++)
+        {
+            if (index % columns != 0)
+                ImGui.SameLine(0f, gap);
+            var choice = choices[index];
+            var iconId = choice.IconId;
+            var min = ImGui.GetCursorScreenPos();
+            var max = min + size;
+            var hovered = ImGui.IsMouseHoveringRect(min, max);
+            var selected = iconId == editGameIconId;
+            draw.AddRectFilled(min, max, ImGui.GetColorU32(new Vector4(0.09f, 0.095f, 0.125f, 1f)), TabletAppTheme.Px(8f));
+            draw.AddRect(min, max, ImGui.GetColorU32(selected ? TabletAppTheme.AccentHover : new Vector4(TabletAppTheme.Accent.X, TabletAppTheme.Accent.Y, TabletAppTheme.Accent.Z, hovered ? 0.88f : 0.35f)), TabletAppTheme.Px(8f), ImDrawFlags.None, TabletAppTheme.Px(selected ? 2f : 1f));
+            var texture = macroIcons.GetTexture(iconId);
+            if (texture is not null)
+                draw.AddImage(texture.Handle, min + TabletAppTheme.Px(new Vector2(4f, 4f)), max - TabletAppTheme.Px(new Vector2(4f, 4f)));
+            ImGui.InvisibleButton($"##macrodeck-icon-{iconId}", size);
+            if (ImGui.IsItemClicked())
+            {
+                editGameIconId = iconId;
+                iconPickerOpen = false;
+            }
+            if (!string.IsNullOrWhiteSpace(choice.Name) && ImGui.IsItemHovered())
+            {
+                ImGui.BeginTooltip();
+                ImGui.TextUnformatted(choice.Name);
+                ImGui.EndTooltip();
+            }
+        }
+
+        ImGui.SetCursorPosY(MathF.Max(ImGui.GetCursorPosY(), ImGui.GetWindowHeight() - footerHeight));
+        ImGui.Separator();
+        if (ImGui.Button("Previous", TabletAppTheme.Px(new Vector2(90f, 0f))) && iconPickerPage > 0)
+            iconPickerPage--;
+        ImGui.SameLine();
+        ImGui.TextUnformatted($"{selectedCategory.Label} — Page {iconPickerPage + 1} of {pageCount}");
+        ImGui.SameLine();
+        if (ImGui.Button("Next", TabletAppTheme.Px(new Vector2(90f, 0f))) && iconPickerPage < pageCount - 1)
+            iconPickerPage++;
+    }
+
+    private void SelectBestIconSearchCategory()
+    {
+        var query = iconSearch.Trim();
+        if (string.IsNullOrWhiteSpace(query))
+            return;
+
+        var best = macroIcons.Categories
+            .SelectMany((category, categoryIndex) => category.Icons.Select(icon => new
+            {
+                CategoryIndex = categoryIndex,
+                Score = GetIconSearchScore(icon.Name, query),
+                Name = icon.Name,
+            }))
+            .Where(candidate => candidate.Score.HasValue)
+            .OrderBy(candidate => candidate.Score!.Value)
+            .ThenBy(candidate => candidate.Name.Length)
+            .ThenBy(candidate => candidate.CategoryIndex)
+            .FirstOrDefault();
+        if (best is null)
+            return;
+
+        iconCategoryIndex = best.CategoryIndex;
+        iconPickerPage = 0;
+        forceIconCategorySelection = true;
+    }
+
+    private static int? GetIconSearchScore(string name, string query)
+    {
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(query))
+            return null;
+
+        var searchText = query.Trim();
+        var candidate = name.Trim();
+        if (candidate.Equals(searchText, StringComparison.OrdinalIgnoreCase))
+            return 0;
+        if (candidate.StartsWith(searchText, StringComparison.OrdinalIgnoreCase))
+            return 10 + Math.Min(20, candidate.Length - searchText.Length);
+
+        var containsIndex = candidate.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+        if (containsIndex >= 0)
+            return 70 + containsIndex;
+        return null;
+    }
+
+    private void DrawSettingsScreen()
+    {
+        ImGui.TextUnformatted("MacroDeck settings");
+        ImGui.Separator();
+        ImGui.TextColored(TabletAppTheme.AccentHover, "Popout deck");
+        ImGui.TextWrapped("Configure the detachable Stream Deck-style MacroDeck controller.");
+        ImGui.Spacing();
+
+        var enabled = config.PopoutEnabled;
+        if (ImGui.Checkbox("Show popout deck", ref enabled))
+        {
+            config.PopoutEnabled = enabled;
+            persistence.SaveNow();
+        }
+
+        var locked = config.PopoutPositionLocked;
+        if (ImGui.Checkbox("Lock popout position", ref locked))
+        {
+            config.PopoutPositionLocked = locked;
+            persistence.SaveNow();
+        }
+
+        var tooltips = config.PopoutTooltipsEnabled;
+        if (ImGui.Checkbox("Show key tooltips", ref tooltips))
+        {
+            config.PopoutTooltipsEnabled = tooltips;
+            persistence.SaveNow();
+        }
+
+        var useCustomImages = config.PopoutUseCustomImages;
+        if (ImGui.Checkbox("Use custom images on popout", ref useCustomImages))
+        {
+            config.PopoutUseCustomImages = useCustomImages;
+            persistence.SaveNow();
+        }
+        DrawSettingsTooltip("Off by default: the compact popout uses each key's selected in-game icon for a clear, consistent layout. Turn this on to use a key's custom image on the popout whenever one is set.");
+
+        var scale = Math.Clamp(config.PopoutScale, 0.65f, 1.50f);
+        ImGui.SetNextItemWidth(TabletAppTheme.Px(280f));
+        if (ImGui.SliderFloat("Popout size", ref scale, 0.65f, 1.50f, "%.2fx", ImGuiSliderFlags.AlwaysClamp))
+        {
+            config.PopoutScale = scale;
+            persistence.SaveNow();
+        }
+        DrawSettingsTooltip("Scales the device frame, header, spacing, icons, text, and all 32 keys together.");
+
+        ImGui.Spacing();
+        if (ImGui.Button("Reset popout position", TabletAppTheme.Px(new Vector2(190f, 0f))))
+        {
+            config.PopoutPositionInitialized = false;
+            config.PopoutPositionLocked = false;
+            config.PopoutPosition = new Vector2(120f, 120f);
+            persistence.SaveNow();
+        }
+        DrawSettingsTooltip("Unlock and return the popout to its default screen position.");
+    }
+
+    private static void DrawSettingsTooltip(string text)
+    {
+        if (!ImGui.IsItemHovered())
+            return;
+        ImGui.BeginTooltip();
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + TabletAppTheme.Px(320f));
+        ImGui.TextWrapped(text);
+        ImGui.PopTextWrapPos();
+        ImGui.EndTooltip();
     }
 
     private void DrawDeleteConfirmation(VenueProfile venue)
@@ -439,15 +1226,15 @@ internal sealed class Plugin : IDisposable
         ImGui.InputText("Active profile name", ref profileName, 80);
         if (ImGui.Button("Rename")) { venue.Name = string.IsNullOrWhiteSpace(profileName) ? venue.Name : profileName.Trim(); persistence.SaveNow(); }
         ImGui.InputText("New profile", ref newVenueName, 80);
-        if (ImGui.Button("Create Venue")) { persistence.AddVenue(newVenueName); folderPath.Clear(); profileName = persistence.ActiveVenue.Name; }
+        if (ImGui.Button("Create Venue")) { persistence.AddVenue(newVenueName); folderPath.Clear(); popout.ResetFolder(); profileName = persistence.ActiveVenue.Name; }
         ImGui.SameLine();
         if (persistence.Venues.Count <= 1) ImGui.BeginDisabled();
-        if (ImGui.Button("Delete Active")) { persistence.DeleteVenue(venue.Id); folderPath.Clear(); profileName = persistence.ActiveVenue.Name; }
+        if (ImGui.Button("Delete Active")) { persistence.DeleteVenue(venue.Id); folderPath.Clear(); popout.ResetFolder(); profileName = persistence.ActiveVenue.Name; }
         if (persistence.Venues.Count <= 1) ImGui.EndDisabled();
         ImGui.Separator();
         if (ImGui.Button("Export Active")) dialogs.SaveProfile(venue.Name, path => { try { persistence.ExportVenue(venue, path); status = "Profile exported"; } catch (Exception ex) { status = ex.Message; } });
         ImGui.SameLine();
-        if (ImGui.Button("Import Profile")) dialogs.ImportProfile(path => { try { persistence.ImportVenue(path); folderPath.Clear(); status = "Profile imported"; } catch (Exception ex) { status = ex.Message; } });
+        if (ImGui.Button("Import Profile")) dialogs.ImportProfile(path => { try { persistence.ImportVenue(path); folderPath.Clear(); popout.ResetFolder(); status = "Profile imported"; } catch (Exception ex) { status = ex.Message; } });
         ImGui.Separator();
         if (ImGui.Button("Close", TabletAppTheme.Px(new Vector2(100, 0)))) profilesOpen = false;
     }
@@ -562,6 +1349,21 @@ internal sealed class Plugin : IDisposable
         return entries;
     }
 
+    private List<DeckEntry>? GetParentEntries(VenueProfile venue)
+    {
+        if (folderPath.Count == 0)
+            return null;
+        var entries = venue.Buttons;
+        for (var index = 0; index < folderPath.Count - 1; index++)
+        {
+            var folder = entries.FirstOrDefault(entry => entry.Id == folderPath[index] && entry.Kind == DeckEntryKind.Folder);
+            if (folder is null)
+                return null;
+            entries = folder.Children;
+        }
+        return entries;
+    }
+
     private static IEnumerable<DeckEntry> FlattenMacros(IEnumerable<DeckEntry> entries)
     {
         foreach (var entry in entries)
@@ -573,6 +1375,9 @@ internal sealed class Plugin : IDisposable
 
     public void Dispose()
     {
-        persistence.SaveNow(); dialogs.Dispose(); textures.Dispose(); executionGate.Dispose();
+        persistence.SaveNow();
+        dialogs.Dispose();
+        textures.Dispose();
+        executionGate.Dispose();
     }
 }

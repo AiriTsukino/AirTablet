@@ -207,6 +207,22 @@ internal sealed class AppHostService : IDisposable
         }
     }
 
+    public string? ConsumeNotification(string id)
+    {
+        if (!running.TryGetValue(id, out var app))
+            return null;
+
+        try
+        {
+            return app.ConsumeNotification();
+        }
+        catch (Exception ex)
+        {
+            DalamudServices.Log.Warning(ex, "AirTablet app {App} could not provide its notification.", id);
+            return null;
+        }
+    }
+
     public IReadOnlyList<ControlCenterWidget> GetControlCenterWidgets()
     {
         var widgets = new List<ControlCenterWidget>();

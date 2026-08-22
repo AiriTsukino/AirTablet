@@ -5,27 +5,42 @@
 @order 35
 
 # Quick start
-- Enable MacroDeck in AirTabOS Settings > Apps. Existing AirTablet installations leave this new app disabled until you choose to enable it.
+- Enable MacroDeck in AirTabOS Settings > Apps.
 - Choose or create a venue profile from the selector at the top of MacroDeck.
 - Click Edit Deck, then click an empty key to create a macro or folder.
 - Click Finish Editing, then press a macro key to run it.
 - Right-click an existing key at any time to edit it.
 - Deleting a macro or folder requires confirmation; deleting a folder also deletes every key inside it.
-- Editors, profile management, and confirmations open as panels contained within the tablet screen.
+- Open Settings from the top-right button and use the tablet's back chevron to return to the deck.
 
 > warning: Say, shout, and yell commands are sent to game chat immediately. Use /echo while building and testing a deck because echo output is visible only to you.
 
 # Deck keys
 The root deck uses a fully configurable 8 by 4 layout with all 32 keys available. Inside a first-level folder, the first key is a protected Home key. Inside a folder nested below that, the first key is a protected Back key. Folder pages therefore have 31 configurable keys. Protected navigation keys cannot be edited or deleted.
 
-A configurable key can use a title, a PNG/JPG/WebP image, or both. Images are centered and fitted without stretching or changing their aspect ratio. Square 1:1 artwork makes the best use of a key. Empty keys remain inactive outside Edit Deck mode. Titles are limited to 128 characters and scroll while the key is hovered when they do not fit.
+A configurable macro key can use a title, an in-game icon, a custom PNG/JPG/WebP image, or a combination of these. Square 1:1 artwork makes the best use of a key. Empty keys remain inactive outside Edit Deck mode. Titles are limited to 128 characters and scroll while hovered when they do not fit.
+
+While Edit Deck is active, drag a key to another slot on the full-size deck to rearrange it. Dropping onto an occupied regular key swaps the two keys. Dropping onto an empty slot moves the dragged key there.
+
+Dragging a key over a folder displays vertically stacked Swap and Move In choices. Drag onto Swap to exchange the key and folder positions, or Move In to place the dragged key in the folder's first available slot. Clicking a folder during Edit Deck displays Edit and Enter choices, allowing you to open folders without leaving Edit Deck mode. Protected Home and Back keys cannot be edited, moved, replaced, or swapped. In Edit Deck mode, you can drag another key onto Home or Back to move that key to the first available slot one folder level up. If the destination folder or page is full, the move is cancelled and AirTablet displays a notification.
+
+# In-game icon browser
+Choose Game icon while editing a macro key to open the icon browser.
+
+Available categories include Macro Icons, Emotes, Actions, General Actions, Traits, Performance, Menu Icons, Crafting, Pet & Buddy, Mounts, and Minions. Select a category and use Previous or Next to browse its pages.
+
+Hover an icon to see its name when one is available. Generic entries in the Macro Icons category do not have names and therefore do not show a tooltip.
+
+Use Search icons to find named icons across every category. Typing a search automatically opens the category with the closest match and hides icons that do not match. Clear the search box to return to normal category browsing.
+
+The selected in-game icon is shown whenever the key does not have a custom image. The popout deck uses the selected in-game icon by default; this can be changed in MacroDeck Settings.
 
 ## Macro keys
 Enter one FFXIV command per line in the macro script. There is no separate channel or emote field: place chat, emote, and wait commands in the order they should run.
 
 Supported chat commands include /say, /shout, /yell, and /echo. Supported in-game emotes such as /wave, /dance, or /bow can be placed directly on their own lines. Add an explicit wait with /wait 1, /wait.1, or /wait1, or append an inline wait such as <wait.1> to a supported command.
 
-The editor validates each line before Save. Red helper text wraps inside the editor and identifies the line and expected FFXIV command form; correct every reported line before relying on the key at a live venue.
+The editor validates each line before Save and identifies any line that needs to be corrected.
 
 Example:
 ```
@@ -36,12 +51,27 @@ Example:
 ```
 
 ## Folder keys
-Choose Folder as the key type to create a category. Opening a folder displays another deck, and folders can contain additional folders. A first-level folder has a protected Home key that returns directly to the root deck. Deeper folders have a protected Back key that returns one folder level. The root deck has no navigation key, so its first key remains configurable.
+Choose Folder as the key type to create a category. Folder keys can use an in-game icon or custom image, shown as a smaller badge inside the folder shape. Opening a folder displays another deck, and folders can contain additional folders. A first-level folder has a protected Home key that returns directly to the root deck. Deeper folders have a protected Back key that returns one folder level. The root deck has no navigation key, so its first key remains configurable.
 
 # Venue profiles
-Venue profiles keep separate decks and separate Control Center quick-key assignments. The active profile is remembered across reloads and updates.
+Venue profiles keep separate decks and separate Control Center quick-key assignments. The selected profile remains active until you choose another one.
 
-Open Profiles to rename the active profile, create or delete profiles, export the active profile to JSON, or import a profile with the native Windows file picker. Button images also use the native Windows image picker. Import always creates a separate profile with new internal IDs and does not overwrite an existing venue.
+Open Profiles to rename the active profile, create or delete profiles, export the active profile to JSON, or import a profile. Import adds the venue as a separate profile without overwriting an existing one.
+
+# Popout deck
+Enable Popout from the MacroDeck top bar to show a detachable, Stream Deck-style 8 by 4 controller. It follows the active venue profile and supports the same folders, protected Home/Back navigation keys, and macro execution as the full deck. The popout is disabled by default.
+
+Use the MOVE/LOCK control on the device header or the Lock popout position setting to prevent accidental movement. Hover tooltips can be disabled when the macro names are not needed.
+
+Open MacroDeck Settings from the top-right Settings button. Use the tablet's back chevron to return to the main deck. Settings include:
+- Show popout deck
+- Lock popout position
+- Show key tooltips
+- Use custom images on popout
+- Popout size
+- Reset popout position
+
+Use custom images on popout is disabled by default. When disabled, the popout shows the selected in-game icon. Enable it to show a macro's custom image on the popout instead.
 
 # Control Center macro pad
 Add a MacroDeck Macro pad from Control Center's Add widget screen. Each pad uses the space of one normal widget but contains four quarter-size quick keys. You can add multiple independent pads.
@@ -60,6 +90,8 @@ Open Edit Deck and confirm that the script contains supported slash commands. St
 ## Save reports an invalid line
 Every non-empty command line must begin with a supported FFXIV slash command. Plain text such as `Hello` is not sent automatically; use `/echo Hello` for a private test or an appropriate chat command.
 ## An image does not appear
-Confirm the image still exists at the saved path and uses PNG, JPG, JPEG, or WebP format.
+Confirm the custom image still exists at the saved path and uses PNG, JPG, JPEG, or WebP format.
+## The popout shows a game icon instead of my custom image
+Open MacroDeck Settings and enable Use custom images on popout.
 ## A Control Center key is empty
 The assigned macro may have been deleted or the active venue profile may have changed. Right-click the key and assign a macro from the current profile.

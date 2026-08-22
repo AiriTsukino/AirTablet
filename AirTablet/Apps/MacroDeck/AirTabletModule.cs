@@ -12,5 +12,6 @@ internal sealed class AirTabletModule : AirTablet.Services.IAirTabletApp
     public IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() => runtime?.GetControlCenterWidgets() ?? [];
     public bool CanNavigateBack() => runtime?.CanNavigateBack() ?? false;
     public bool NavigateBack() => runtime?.NavigateBack() ?? false;
+    public string? ConsumeNotification() => runtime?.ConsumeNotification();
     public void Dispose() { runtime?.Dispose(); runtime = null; }
 }

@@ -150,6 +150,7 @@ internal sealed class PersistenceService
             if (entry.Id == Guid.Empty) entry.Id = Guid.NewGuid();
             entry.Title = DeckEntry.NormalizeTitle(entry.Title, entry.Kind == DeckEntryKind.Folder ? "Folder" : "Macro");
             entry.ImagePath ??= string.Empty;
+            entry.GameIconId = Math.Max(0, entry.GameIconId);
             entry.Message ??= string.Empty;
             entry.EmoteCommand ??= string.Empty;
             entry.Script ??= string.Empty;

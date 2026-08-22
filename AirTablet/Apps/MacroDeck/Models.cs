@@ -23,6 +23,7 @@ public sealed class DeckEntry
     public DeckEntryKind Kind { get; set; }
     public string Title { get; set; } = "New Macro";
     public string ImagePath { get; set; } = string.Empty;
+    public int GameIconId { get; set; }
     public string Script { get; set; } = string.Empty;
     // Legacy prototype fields are retained for one-time migration into Script.
     public MacroChatChannel Channel { get; set; } = MacroChatChannel.Echo;
@@ -53,7 +54,7 @@ public sealed class VenueProfile
 
 public sealed class VenueExportFile
 {
-    public int FormatVersion { get; set; } = 3;
+    public int FormatVersion { get; set; } = 4;
     public string ExportedBy { get; set; } = "MacroDeck";
     public DateTimeOffset ExportedUtc { get; set; } = DateTimeOffset.UtcNow;
     public VenueProfile Venue { get; set; } = VenueProfile.Create("Imported Venue");

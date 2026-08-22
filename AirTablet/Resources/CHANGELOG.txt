@@ -7,6 +7,15 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-21] AirTabOS v1.0.44.1
+- Added Macro title search for control center macro pads
+- Updated MacroDeck wiki.
+
+[2026-08-21] MacroDeck v0.1.13.0
+- Added popout scalable/lockable MacroDeck to access your macros in a more convenient way.
+- Added new organization in edit mode, You can now drag keys to new slots or swap keys and also move keys in and out of folders.
+- Added icon selector and search when editing keys and folders to have better visiual representations of macro buttons.
+
 [2026-08-21] AirTabOS v1.0.38.1
 - Fix for control center widgets not saving between updates.
 

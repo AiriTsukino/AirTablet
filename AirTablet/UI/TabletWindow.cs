@@ -7,7 +7,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.0.38.1";
+    private const string ReleaseVersion = "1.0.44.1";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -114,6 +114,7 @@ internal sealed class TabletWindow
     private string controlCenterMacroPickerWidgetId = string.Empty;
     private int controlCenterMacroPickerSlot = -1;
     private int controlCenterMacroPickerPage;
+    private string controlCenterMacroSearch = string.Empty;
     private string controlCenterMacroHoveredKeyId = string.Empty;
     private double controlCenterMacroHoverStartedAt;
     private int controlCenterMacroHoverFrame = -1;
@@ -1681,6 +1682,7 @@ internal sealed class TabletWindow
                 controlCenterMacroPickerWidgetId = widget.Id;
                 controlCenterMacroPickerSlot = index;
                 controlCenterMacroPickerPage = 0;
+                controlCenterMacroSearch = string.Empty;
             }
             else if (macro is not null && ImGui.IsItemClicked())
             {
@@ -1707,17 +1709,42 @@ internal sealed class TabletWindow
         {
             controlCenterMacroPickerWidgetId = string.Empty;
             controlCenterMacroPickerSlot = -1;
+            controlCenterMacroSearch = string.Empty;
         }
         DrawChevron(draw, backMin + S(new Vector2(20, 19)), false, ImGui.GetColorU32(palette.AccentHover), S(7f), S(2.8f));
         draw.AddText(panelMin + S(new Vector2(78, 25)), ImGui.GetColorU32(Vector4.One), $"Choose macro for quick key {controlCenterMacroPickerSlot + 1}");
         draw.AddText(panelMin + S(new Vector2(78, 49)), ImGui.GetColorU32(new Vector4(0.68f, 0.70f, 0.78f, 1f)), "Macros come from the active MacroDeck venue profile");
 
+        var searchWidth = S(270f);
+        ImGui.SetNextItemWidth(searchWidth);
+        ImGui.SetCursorScreenPos(new Vector2(
+            surfaceMax.X - searchWidth - S(18f),
+            surfaceMin.Y + S(14f)));
+        if (ImGui.InputTextWithHint(
+                "##control-center-macro-search",
+                "Search macro titles...",
+                ref controlCenterMacroSearch,
+                100))
+        {
+            controlCenterMacroPickerPage = 0;
+        }
+
         var pad = widget.ReadMacroPad?.Invoke() ?? new ControlCenterMacroPadSnapshot([null, null, null, null], []);
+        var searchText = controlCenterMacroSearch.Trim();
+        var availableMacros = string.IsNullOrWhiteSpace(searchText)
+            ? pad.Available.ToList()
+            : pad.Available
+                .Select(macro => (Macro: macro, Score: GetMacroTitleSearchScore(macro.Title, searchText)))
+                .Where(result => result.Score.HasValue)
+                .OrderBy(result => result.Score!.Value)
+                .ThenBy(result => result.Macro.Title, StringComparer.OrdinalIgnoreCase)
+                .Select(result => result.Macro)
+                .ToList();
         const int columns = 6;
         const int pageSize = 24;
-        var pageCount = Math.Max(1, (int)Math.Ceiling(pad.Available.Count / (double)pageSize));
+        var pageCount = Math.Max(1, (int)Math.Ceiling(availableMacros.Count / (double)pageSize));
         controlCenterMacroPickerPage = Math.Clamp(controlCenterMacroPickerPage, 0, pageCount - 1);
-        var choices = pad.Available.Skip(controlCenterMacroPickerPage * pageSize).Take(pageSize).ToList();
+        var choices = availableMacros.Skip(controlCenterMacroPickerPage * pageSize).Take(pageSize).ToList();
         var gap = S(8f);
         var width = (panelMax.X - panelMin.X - S(52f) - gap * (columns - 1)) / columns;
         var size = new Vector2(width, S(64f));
@@ -1745,33 +1772,70 @@ internal sealed class TabletWindow
                 widget.AssignMacro?.Invoke(controlCenterMacroPickerSlot, macro.Id);
                 controlCenterMacroPickerWidgetId = string.Empty;
                 controlCenterMacroPickerSlot = -1;
+                controlCenterMacroSearch = string.Empty;
             }
             DrawTooltip($"Assign {macro.Title} to this quick key.");
         }
         if (pad.Available.Count == 0)
             draw.AddText(panelMin + S(new Vector2(28, 94)), ImGui.GetColorU32(new Vector4(0.70f, 0.72f, 0.80f, 1f)), "Create a MacroDeck macro in the active venue profile first.");
+        else if (availableMacros.Count == 0)
+            draw.AddText(panelMin + S(new Vector2(28, 94)), ImGui.GetColorU32(new Vector4(0.70f, 0.72f, 0.80f, 1f)), $"No macro titles match '{searchText}'.");
 
+        var footerY = surfaceMax.Y - S(42f);
         if (pageCount > 1)
         {
-            var navY = panelMax.Y - S(46f);
-            ImGui.SetCursorScreenPos(new Vector2(panelMin.X + S(170f), navY));
-            if (ImGui.Button("<##macro-page-back", S(new Vector2(34, 28))) && controlCenterMacroPickerPage > 0) controlCenterMacroPickerPage--;
-            ImGui.SetCursorScreenPos(new Vector2(panelMin.X + S(212f), navY + S(5f)));
-            ImGui.TextUnformatted($"{controlCenterMacroPickerPage + 1} of {pageCount}");
-            ImGui.SetCursorScreenPos(new Vector2(panelMin.X + S(276f), navY));
-            if (ImGui.Button(">##macro-page-next", S(new Vector2(34, 28))) && controlCenterMacroPickerPage < pageCount - 1) controlCenterMacroPickerPage++;
+            var buttonSize = S(new Vector2(34f, 30f));
+            var pageText = $"{controlCenterMacroPickerPage + 1} of {pageCount}";
+            var pageTextSize = ImGui.CalcTextSize(pageText);
+            var pagerGap = S(12f);
+            var pagerWidth = buttonSize.X * 2f + pagerGap * 2f + pageTextSize.X;
+            var pagerX = (surfaceMin.X + surfaceMax.X - pagerWidth) * 0.5f;
+
+            ImGui.SetCursorScreenPos(new Vector2(pagerX, footerY));
+            if (ImGui.Button("<##macro-page-back", buttonSize) && controlCenterMacroPickerPage > 0)
+                controlCenterMacroPickerPage--;
+
+            var pageTextMin = new Vector2(
+                pagerX + buttonSize.X + pagerGap,
+                footerY + (buttonSize.Y - pageTextSize.Y) * 0.5f);
+            draw.AddText(pageTextMin, ImGui.GetColorU32(Vector4.One), pageText);
+
+            ImGui.SetCursorScreenPos(new Vector2(
+                pageTextMin.X + pageTextSize.X + pagerGap,
+                footerY));
+            if (ImGui.Button(">##macro-page-next", buttonSize) && controlCenterMacroPickerPage < pageCount - 1)
+                controlCenterMacroPickerPage++;
         }
         if (controlCenterMacroPickerSlot >= 0 && controlCenterMacroPickerSlot < pad.Slots.Count && pad.Slots[controlCenterMacroPickerSlot] is not null)
         {
-            var clearMin = new Vector2(surfaceMin.X + S(12f), surfaceMax.Y - S(42f));
+            var clearMin = new Vector2(surfaceMin.X + S(12f), footerY);
             ImGui.SetCursorScreenPos(clearMin);
             if (ImGui.Button("Clear quick key", S(new Vector2(120, 30))))
             {
                 widget.AssignMacro?.Invoke(controlCenterMacroPickerSlot, null);
                 controlCenterMacroPickerWidgetId = string.Empty;
                 controlCenterMacroPickerSlot = -1;
+                controlCenterMacroSearch = string.Empty;
             }
         }
+    }
+
+    private static int? GetMacroTitleSearchScore(string title, string query)
+    {
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(query))
+            return null;
+
+        var searchText = query.Trim();
+        var candidate = title.Trim();
+        if (candidate.Equals(searchText, StringComparison.OrdinalIgnoreCase))
+            return 0;
+        if (candidate.StartsWith(searchText, StringComparison.OrdinalIgnoreCase))
+            return 10 + Math.Min(20, candidate.Length - searchText.Length);
+
+        var containsIndex = candidate.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+        if (containsIndex >= 0)
+            return 75 + containsIndex;
+        return null;
     }
 
     private void DrawControlCenterAddCard(ImDrawListPtr draw, Vector2 min, Vector2 size, ThemePalette palette)
@@ -2509,6 +2573,10 @@ internal sealed class TabletWindow
                     ImGui.TextColored(new Vector4(0.95f, 0.56f, 0.48f, 1f), "This bundled app could not be drawn.");
                     ImGui.TextWrapped("Use the home gesture and check the Dalamud log for the app error.");
                 }
+
+                var appNotification = appHost.ConsumeNotification(activeModuleId);
+                if (!string.IsNullOrWhiteSpace(appNotification))
+                    ShowNotice(appNotification);
             }
             finally
             {
