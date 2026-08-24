@@ -7,7 +7,10 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
-[2026-08-22] ShoutRunner v1.0.41.0
+[2026-08-24] AirTabOS v1.0.47.1
+- Updated Supporter list ♥
+
+[2026-08-24] ShoutRunner v1.0.41.0
 - Fixed the true length of message blocks not respecting 400 characters if using UTF Glyph characters
 - Made message blocks wrap text for easier editing, posted messages are not effected by this.
 
