@@ -51,7 +51,7 @@
   {
     "id": "ShoutRunner",
     "name": "ShoutRunner",
-    "version": "1.0.40.0",
+    "version": "1.0.41.0",
     "tagline": "Automated venue shout routes",
     "iconUrl": "Resources/Apps/ShoutRunner/SRLogo.png"
   }

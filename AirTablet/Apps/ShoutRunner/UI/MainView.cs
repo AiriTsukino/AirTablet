@@ -595,7 +595,24 @@ internal sealed class MainView
         for (var index = 0; index < Profile.Messages.Count; index++)
         {
             var block = Profile.Messages[index];
-            if (BeginCard($"##sr-message-{block.Id}", new Vector2(0f, TabletAppTheme.Px(150f))))
+            var style = ImGui.GetStyle();
+            var wrapWidth = MathF.Max(
+                TabletAppTheme.Px(180f),
+                ImGui.GetContentRegionAvail().X -
+                style.WindowPadding.X * 2f -
+                style.FramePadding.X * 2f -
+                TabletAppTheme.Px(18f));
+            var editorText = WrapMessageForEditor(block.Text, wrapWidth);
+            var editorLines = Math.Max(1, editorText.Count(character => character == '\n') + 1);
+            var editorHeight = MathF.Max(
+                TabletAppTheme.Px(78f),
+                editorLines * ImGui.GetTextLineHeightWithSpacing() +
+                style.FramePadding.Y * 2f +
+                TabletAppTheme.Px(6f));
+            var cardHeight = MathF.Max(
+                TabletAppTheme.Px(150f),
+                editorHeight + TabletAppTheme.Px(72f));
+            if (BeginCard($"##sr-message-{block.Id}", new Vector2(0f, cardHeight)))
             {
                 if (index == 0) ImGui.BeginDisabled();
                 if (ImGui.Button($"↑##move-up-{block.Id}", TabletAppTheme.Px(new Vector2(34f, 24f))))
@@ -630,10 +647,14 @@ internal sealed class MainView
                     deleteMessageId = block.Id;
                     TabletAppTheme.OpenCenteredModal("Delete message block?");
                 }
-                var text = block.Text;
                 ImGui.SetNextItemWidth(-1f);
-                if (ImGui.InputTextMultiline($"##sr-message-text-{block.Id}", ref text, 400, new Vector2(-1f, TabletAppTheme.Px(78f))))
+                if (ImGui.InputTextMultiline(
+                        $"##sr-message-text-{block.Id}",
+                        ref editorText,
+                        4096,
+                        new Vector2(-1f, editorHeight)))
                 {
+                    var text = UnwrapMessageEditorText(editorText);
                     block.Text = text.Length > 400 ? text[..400] : text;
                     persistence.SaveProfile(Profile);
                 }
@@ -648,6 +669,40 @@ internal sealed class MainView
         }
         if (runner.IsRunning) ImGui.EndDisabled();
     }
+
+    private static string WrapMessageForEditor(string? value, float maximumWidth)
+    {
+        var text = UnwrapMessageEditorText(value);
+        if (text.Length == 0 || maximumWidth <= 1f)
+            return text;
+
+        var characters = text.ToCharArray();
+        var lineStart = 0;
+        var lastSpace = -1;
+        for (var index = 0; index < characters.Length; index++)
+        {
+            if (characters[index] == ' ')
+                lastSpace = index;
+            if (ImGui.CalcTextSize(new string(characters, lineStart, index - lineStart + 1)).X <= maximumWidth ||
+                lastSpace <= lineStart)
+            {
+                continue;
+            }
+
+            characters[lastSpace] = '\n';
+            lineStart = lastSpace + 1;
+            lastSpace = -1;
+            for (var scan = lineStart; scan <= index; scan++)
+            {
+                if (characters[scan] == ' ')
+                    lastSpace = scan;
+            }
+        }
+        return new string(characters);
+    }
+
+    private static string UnwrapMessageEditorText(string? value) =>
+        (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ');
 
     private void DrawRoute()
     {

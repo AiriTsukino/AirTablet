@@ -7,6 +7,10 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-22] ShoutRunner v1.0.41.0
+- Fixed the true length of message blocks not respecting 400 characters if using UTF Glyph characters
+- Made message blocks wrap text for easier editing, posted messages are not effected by this.
+
 [2026-08-22] ShoutRunner v1.0.40.0
 - Added a "Don't Travel" option for after the run options incase users dont want to return to a specific world after a run.
 
