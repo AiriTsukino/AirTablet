@@ -374,7 +374,15 @@ internal sealed unsafe class TravelService
     {
         get
         {
-            try { return DalamudServices.ObjectTable.LocalPlayer?.CurrentWorld.Value.Name.ToString().Trim() ?? string.Empty; }
+            try
+            {
+                var localPlayerWorld = DalamudServices.ObjectTable.LocalPlayer?.CurrentWorld.Value.Name.ToString().Trim();
+                if (!string.IsNullOrWhiteSpace(localPlayerWorld))
+                    return localPlayerWorld;
+                return DalamudServices.PlayerState.IsLoaded
+                    ? DalamudServices.PlayerState.CurrentWorld.Value.Name.ToString().Trim()
+                    : string.Empty;
+            }
             catch { return string.Empty; }
         }
     }
@@ -724,10 +732,18 @@ internal sealed unsafe class TravelService
         {
             var telepo = Telepo.Instance();
             var accepted = telepo is not null && telepo->Teleport(id, 0);
-            Trace(accepted
-                ? $"City teleport request accepted for {city} using Aetheryte {id}."
-                : $"City teleport request was not accepted for {city} using Aetheryte {id}.");
-            return accepted;
+            if (accepted)
+            {
+                Trace($"City teleport request accepted for {city} using Aetheryte {id}.");
+                return true;
+            }
+
+            var destination = WorldCatalog.Cities.First(item => item.Id == city).AetheryteNames[0];
+            var commandAccepted = SendShellCommand($"/teleport \"{destination}\"");
+            Trace(commandAccepted
+                ? $"Native city teleport was rejected for {city}; submitted the in-game teleport command for {destination}."
+                : $"City teleport request was not accepted for {city} using Aetheryte {id}, and the in-game teleport command was unavailable.");
+            return commandAccepted;
         }
         catch (Exception ex)
         {
@@ -2115,6 +2131,9 @@ internal sealed class RunService : IDisposable
             state.StartingWorld = string.IsNullOrWhiteSpace(state.StartingWorld)
                 ? persistence.LastCharacterCurrentWorld
                 : state.StartingWorld;
+            state.AutoModeRunLimit = Math.Clamp(state.AutoModeRunLimit, 1, 20);
+            state.AutoModeCompletedRuns = Math.Max(0, state.AutoModeCompletedRuns);
+            state.AutoModeDelayMinutes = Math.Clamp(state.AutoModeDelayMinutes, 20, 60);
             if (state.ReturnHomeAfterRun)
             {
                 state.PostRunDestination = PostRunDestination.HomeWorld;
@@ -2130,7 +2149,15 @@ internal sealed class RunService : IDisposable
     public RunPhase Phase => state?.Phase ?? RunPhase.Idle;
     public string Status => state?.Status ?? "Ready to start a new run.";
     public bool IsRunning => state is not null && state.Phase is not (RunPhase.Idle or RunPhase.Completed or RunPhase.Failed);
+    public bool CanStartNewRun => state is null || state.Phase is RunPhase.Idle or RunPhase.Completed or RunPhase.Failed or RunPhase.WaitingForRestart;
     public bool IsPaused => state?.Phase == RunPhase.Paused;
+    public bool IsWaitingForRestart => state?.Phase == RunPhase.WaitingForRestart;
+    public int AutoModeCompletedRuns => state?.AutoModeCompletedRuns ?? 0;
+    public int AutoModeRunLimit => state?.AutoModeRunLimit ?? 1;
+    public bool AutoModeInfinite => state?.AutoModeInfinite ?? false;
+    public TimeSpan TimeUntilNextRun => state?.Phase == RunPhase.WaitingForRestart
+        ? state.NextRunUtc - DateTime.UtcNow
+        : TimeSpan.Zero;
     public bool KeepTabletVisibleDuringTravel =>
         state is not null &&
         IsRunning &&
@@ -2169,6 +2196,7 @@ internal sealed class RunService : IDisposable
         RunPhase.WaitingForArrival => "Loading",
         RunPhase.SendingMessages => CurrentStop is { } stop ? $"Sending messages in {stop.CityName}" : "Sending messages",
         RunPhase.ReturningHome => state is null ? "Returning after run" : $"Returning to {state.PostRunWorld}",
+        RunPhase.WaitingForRestart => $"Next run in {FormatCountdown(TimeUntilNextRun)}",
         RunPhase.Paused => "Run paused",
         RunPhase.Completed => "Run complete",
         RunPhase.Failed => "Run stopped",
@@ -2189,6 +2217,11 @@ internal sealed class RunService : IDisposable
 
     public bool Start(VenueProfile profile, out string error)
     {
+        if (!CanStartNewRun)
+        {
+            error = "A ShoutRunner run is already active.";
+            return false;
+        }
         EnsureDefaultWorldSelection(profile, string.IsNullOrWhiteSpace(travel.HomeWorld)
             ? persistence.LastCharacterHomeWorld
             : travel.HomeWorld);
@@ -2254,6 +2287,11 @@ internal sealed class RunService : IDisposable
                 .ThenBy(city => Array.IndexOf(selectedCities, city))
                 .Select(city => new RouteStop(world.Name, world.DataCenter, city.Id)))
             .ToList();
+        if (route.Count == 0)
+        {
+            error = "The selected cities and worlds did not produce a usable route.";
+            return false;
+        }
         var firstRouteWorld = route.Count == 0 ? null : WorldCatalog.FindWorld(route[0].World);
         var allowedPostRunWorlds = WorldCatalog.VisibleWorlds(characterHomeWorld, profile.DeveloperMode)
             .Select(world => world.Name)
@@ -2269,6 +2307,7 @@ internal sealed class RunService : IDisposable
             !DalamudServices.ClientState.IsLoggedIn &&
             (current is null || firstRouteWorld is null ||
              current.DataCenter.Equals(firstRouteWorld.DataCenter, StringComparison.OrdinalIgnoreCase));
+        travel.Abort();
         state = new PersistedRunState
         {
             RunId = Guid.NewGuid().ToString("N"),
@@ -2290,8 +2329,15 @@ internal sealed class RunService : IDisposable
                     : $"Preparing data-center travel to {route[0].DataCenter} without logging into the current data center.",
             NextActionUtc = DateTime.UtcNow,
             AwaitingInitialLogin = requiresInitialLogin,
+            AutoModeEnabled = profile.AutoModeEnabled,
+            AutoModeInfinite = profile.AutoModeInfinite,
+            AutoModeRunLimit = profile.AutoModeRunCount,
+            AutoModeDelayMinutes = profile.AutoModeDelayMinutes,
         };
         foregroundRequested = true;
+        travel.RecordRunDiagnostic(
+            $"Started route from {travel.CurrentTerritoryName}@{currentWorldName}; first stop={route[0].CityName}@{route[0].World}; " +
+            $"logged in={DalamudServices.ClientState.IsLoggedIn}; automatic mode={profile.AutoModeEnabled}.");
         Save();
         error = string.Empty;
         return true;
@@ -2435,6 +2481,11 @@ internal sealed class RunService : IDisposable
                 profile = savedProfile;
         }
         travel.SetGeneralReactionDelaySeconds(profile.GeneralReactionDelaySeconds);
+        if (state.Phase == RunPhase.WaitingForRestart)
+        {
+            HandleAutomaticRestart(profile);
+            return;
+        }
         if (travel.HandleAetheryteTicketPopup(profile.TicketAction))
             return;
         if (state.Phase == RunPhase.ReturningHome)
@@ -2541,6 +2592,28 @@ internal sealed class RunService : IDisposable
 
         if (!currentWorld.Equals(stop.World, StringComparison.OrdinalIgnoreCase))
         {
+            var targetDefinition = WorldCatalog.FindWorld(stop.World);
+            var sameDataCenter = currentDefinition is not null &&
+                                 targetDefinition is not null &&
+                                 currentDefinition.DataCenter.Equals(targetDefinition.DataCenter, StringComparison.OrdinalIgnoreCase);
+            if (sameDataCenter)
+            {
+                var currentCity = travel.GetCurrentCity();
+                if (currentCity is null)
+                {
+                    var stagingStop = new RouteStop(currentWorld, currentDefinition!.DataCenter, stop.City);
+                    state.Status = $"Leaving the current interior through {stagingStop.CityName} before visiting {stop.World}.";
+                    HandleCityTravel(profile, stagingStop);
+                    return;
+                }
+                if (state.Phase is RunPhase.TravelingCity or RunPhase.WaitingForArrival)
+                {
+                    ResetTravelAttempt();
+                    state.Phase = RunPhase.Preparing;
+                    state.Status = $"Reached {currentCity.Name} on {currentWorld}. Preparing the World Visit to {stop.World}.";
+                    Save();
+                }
+            }
             HandleWorldTravel(profile, stop);
             return;
         }
@@ -2937,17 +3010,73 @@ internal sealed class RunService : IDisposable
 
     private void FinalizeCompletion()
     {
-        state!.Phase = RunPhase.Completed;
+        state!.AutoModeCompletedRuns++;
         state.CompletedUtc = DateTime.UtcNow;
         state.CharacterName = string.IsNullOrWhiteSpace(state.CharacterName) ? travel.CharacterName : state.CharacterName;
         state.CharacterHomeWorld = string.IsNullOrWhiteSpace(state.CharacterHomeWorld) ? travel.HomeWorld : state.CharacterHomeWorld;
         state.ReceiptCode = CreateReceiptCode(state);
         var skipped = state.SkippedStopIndexes.Count;
-        state.Status = skipped == 0
+        var completionStatus = skipped == 0
             ? $"Run complete. Sent the configured message sequence at all {state.Route.Count:N0} route stops."
             : $"Run complete with {state.Route.Count - skipped:N0} successful stop(s) and {skipped:N0} skipped stop(s).";
+        var shouldRepeat = state.AutoModeEnabled &&
+                           (state.AutoModeInfinite || state.AutoModeCompletedRuns < state.AutoModeRunLimit);
+        if (shouldRepeat)
+        {
+            state.Phase = RunPhase.WaitingForRestart;
+            state.NextRunUtc = DateTime.UtcNow.AddMinutes(Math.Clamp(state.AutoModeDelayMinutes, 20, 60));
+            state.Status = $"{completionStatus} Waiting {state.AutoModeDelayMinutes} minutes before the next run.";
+        }
+        else
+        {
+            state.Phase = RunPhase.Completed;
+            state.Status = completionStatus;
+        }
         foregroundRequested = true;
         Save();
+    }
+
+    private void HandleAutomaticRestart(VenueProfile profile)
+    {
+        if (state is null)
+            return;
+        if (DateTime.UtcNow < state.NextRunUtc)
+        {
+            state.Status = $"Automatic mode is waiting. The next run starts in {FormatCountdown(TimeUntilNextRun)}.";
+            return;
+        }
+
+        var completedRuns = state.AutoModeCompletedRuns;
+        var infinite = state.AutoModeInfinite;
+        var runLimit = state.AutoModeRunLimit;
+        var delayMinutes = state.AutoModeDelayMinutes;
+        if (!Start(profile, out var error))
+        {
+            state!.Phase = RunPhase.Failed;
+            state.Status = $"Automatic mode could not start the next run: {error}";
+            foregroundRequested = true;
+            Save();
+            return;
+        }
+
+        state!.AutoModeEnabled = true;
+        state.AutoModeInfinite = infinite;
+        state.AutoModeRunLimit = runLimit;
+        state.AutoModeCompletedRuns = completedRuns;
+        state.AutoModeDelayMinutes = delayMinutes;
+        state.Status = infinite
+            ? $"Starting automatic run {completedRuns + 1}."
+            : $"Starting automatic run {completedRuns + 1} of {runLimit}.";
+        Save();
+    }
+
+    private static string FormatCountdown(TimeSpan remaining)
+    {
+        if (remaining <= TimeSpan.Zero)
+            return "00:00";
+        return remaining.TotalHours >= 1d
+            ? $"{(int)remaining.TotalHours:00}:{remaining.Minutes:00}:{remaining.Seconds:00}"
+            : $"{remaining.Minutes:00}:{remaining.Seconds:00}";
     }
 
     private void EnsureDefaultWorldSelection(VenueProfile profile, string? homeWorld)

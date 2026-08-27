@@ -1,0 +1,60 @@
+@id partyrefresh
+@title PartyRefresh
+@summary Create reusable Party Finder presets and keep an active recruitment refreshed.
+@category Bundled Apps
+@order 37
+
+# Quick start
+- Select a venue profile from the top-left profile selector.
+- Choose a preset and review its Details, Party & Roles, and Conditions tabs.
+- Choose Post Preset to create a new Party Finder recruitment from that preset.
+- Once recruitment is active, choose Refresh Now to apply the selected preset to the listing and renew its remaining time.
+- Choose End Recruitment to remove an active listing after confirming the action.
+
+> warning: Review every preset before posting it. PartyRefresh operates the in-game Party Finder controls using the values saved in the selected preset.
+
+# Venue profiles and presets
+Venue profiles keep separate collections of Party Finder presets for different venues or events. Use Settings > Venue Profiles to add, copy, rename, delete, import, or export profiles.
+
+Each profile can contain multiple presets. Use Settings > Presets to add, copy, select, or delete them. Deleting a profile or preset requires confirmation.
+
+The initial Default Venue profile includes a Venue Party Finder preset with Average Item Level enabled and set to 999.
+
+# Recruitment details
+The Details tab controls the recruitment type, duty category, specific duty, objective, preset name, and Party Finder comment. The duty search narrows the available duties by name.
+
+Party Finder comments use the game's byte limit. The counter below the comment shows the current UTF-8 byte count.
+
+# Party and roles
+The Party & Roles tab configures the seven available recruitment slots after the current player's job. Slots can require a role, remain free, or be omitted.
+
+Additional options control role restrictions, class availability, duplicate jobs, World-only recruitment, and private-party passwords.
+
+# Conditions
+The Conditions tab controls completion requirements, average item level, Duty Finder settings, loot rules, and recruitment languages.
+
+# Refreshing recruitment
+Refresh Now is available while an existing Party Finder recruitment is active. It opens Recruitment Criteria, chooses Edit, applies the currently selected preset, and then renews the recruitment timer. Changes to the comment, duty, conditions, roles, and other preset fields are therefore included in the refresh.
+
+Automatic refresh can be enabled from the main screen or Settings > Refresh. The interval can be set from 1 to 55 minutes, and the main screen displays the time remaining before the next refresh. Automatic refresh waits when no recruitment is active.
+
+Posting a preset is available when there is no active recruitment. End the current recruitment before posting a new listing; use Refresh Now to update an existing listing from the selected preset.
+
+# Ending recruitment
+End Recruitment is available while a Party Finder recruitment is active. It asks for confirmation before using the in-game End Recruitment action and confirming the removal.
+
+# Control Center widgets
+PartyRefresh provides an Auto refresh toggle and a Party Finder status widget. The status widget shows whether a recruitment is active, the selected preset, current work in progress, and the next automatic refresh countdown when enabled.
+
+# Import and export
+Export Profile opens the operating system's save-file window and saves the complete active venue profile as JSON. Import Profile opens the operating system's file-selection window and adds the chosen profile without overwriting existing profiles.
+
+# Troubleshooting
+## Post Preset is unavailable
+End the active Party Finder recruitment first. Post Preset creates a new recruitment, while Refresh Now updates the active listing from the selected preset.
+
+## Refresh Now is unavailable
+Refresh Now requires an active Party Finder recruitment and remains disabled while another PartyRefresh action is running.
+
+## A preset cannot be posted
+Close other game windows that may block Party Finder, confirm the selected duty and conditions are currently available, and try again. PartyRefresh stops instead of submitting when it cannot safely match a selected duty.

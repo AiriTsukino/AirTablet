@@ -7,6 +7,16 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-08-27] AirTabOS v1.0.56.1
+- [NEW APP] PartyRefresh an app that will automatically refresh your party finder entry or start a party finder with a configured preset.
+- Updated Supporter list ♥
+- Added new widgets in control center for PartyRefresh.
+- Added wiki for PartyRefresh.
+
+[2026-08-27] ShoutRunner v1.0.42.0
+- Added automatic run timers where a shout run will reset and start again after a set delay in the settings
+- Fixed a potential issue of runs not starting if starting a run outside of a route world or in a non city state.
+
 [2026-08-24] AirTabOS v1.0.47.1
 - Updated Supporter list ♥
 

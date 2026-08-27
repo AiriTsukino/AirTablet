@@ -51,8 +51,15 @@
   {
     "id": "ShoutRunner",
     "name": "ShoutRunner",
-    "version": "1.0.41.0",
+    "version": "1.0.42.0",
     "tagline": "Automated venue shout routes",
     "iconUrl": "Resources/Apps/ShoutRunner/SRLogo.png"
+  },
+  {
+    "id": "PartyRefresh",
+    "name": "PartyRefresh",
+    "version": "1.0.9.0",
+    "tagline": "Party Finder presets and refreshing",
+    "iconUrl": "Resources/Apps/PartyRefresh/PRLogo.png"
   }
 ]

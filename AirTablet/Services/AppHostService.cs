@@ -22,6 +22,7 @@ internal sealed class AppHostService : IDisposable
         new("ShiftKeeper", typeof(ShiftKeeper.Configuration), () => new ShiftKeeper.AirTabletModule()),
         new("ShopHelper", typeof(ShopHelper.Configuration), () => new ShopHelper.AirTabletModule()),
         new("ShoutRunner", typeof(ShoutRunner.Configuration), () => new ShoutRunner.AirTabletModule(), false),
+        new("PartyRefresh", typeof(PartyRefresh.Configuration), () => new PartyRefresh.AirTabletModule(), false),
     ];
 
     public static IReadOnlyList<string> BundledAppIds { get; } =

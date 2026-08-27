@@ -42,6 +42,7 @@ public sealed class Configuration : IPluginConfiguration
         "ShiftKeeper",
         "ShopHelper",
         "ShoutRunner",
+        "PartyRefresh",
     ];
     public string PluginConfigSourceDirectory { get; set; } =
         DefaultPluginConfigSourceDirectory;

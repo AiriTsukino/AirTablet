@@ -9,7 +9,7 @@ namespace ShoutRunner;
 internal sealed class Plugin : IDisposable
 {
     private const string EarlyAccessModal = "ShoutRunner early access##ShoutRunner";
-    private const string ShoutRunnerVersion = "1.0.39.0";
+    private const string ShoutRunnerVersion = "1.0.42.0";
 
     private readonly Configuration config;
     private readonly PersistenceService persistence;

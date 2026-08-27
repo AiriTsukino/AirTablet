@@ -138,7 +138,7 @@ internal sealed class MainView
 
     private void DrawControls()
     {
-        var canStart = !runner.IsRunning && runner.Phase is not RunPhase.Completed;
+        var canStart = runner.CanStartNewRun;
         if (!canStart) ImGui.BeginDisabled();
         if (ImGui.Button("Start Run", TabletAppTheme.Px(new Vector2(120f, 32f))))
         {
@@ -150,7 +150,7 @@ internal sealed class MainView
         if (!canStart) ImGui.EndDisabled();
 
         ImGui.SameLine();
-        if (!runner.IsRunning) ImGui.BeginDisabled();
+        if (!runner.IsRunning || runner.IsWaitingForRestart) ImGui.BeginDisabled();
         if (runner.IsPaused)
         {
             if (ImGui.Button("Resume", TabletAppTheme.Px(new Vector2(100f, 32f))))
@@ -160,7 +160,7 @@ internal sealed class MainView
         {
             runner.Pause();
         }
-        if (!runner.IsRunning) ImGui.EndDisabled();
+        if (!runner.IsRunning || runner.IsWaitingForRestart) ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (!runner.IsRunning) ImGui.BeginDisabled();
@@ -178,6 +178,21 @@ internal sealed class MainView
         {
             ImGui.SameLine(0f, TabletAppTheme.Px(12f));
             ImGui.TextColored(new Vector4(0.96f, 0.48f, 0.42f, 1f), statusMessage);
+        }
+
+        if (runner.IsWaitingForRestart)
+        {
+            var remaining = runner.TimeUntilNextRun;
+            var countdown = remaining <= TimeSpan.Zero
+                ? "00:00"
+                : remaining.TotalHours >= 1d
+                    ? $"{(int)remaining.TotalHours:00}:{remaining.Minutes:00}:{remaining.Seconds:00}"
+                    : $"{remaining.Minutes:00}:{remaining.Seconds:00}";
+            ImGui.TextColored(TabletAppTheme.AccentHover, $"Next run starts in {countdown}");
+            ImGui.SameLine(0f, TabletAppTheme.Px(12f));
+            ImGui.TextWrapped(runner.AutoModeInfinite
+                ? $"{runner.AutoModeCompletedRuns:N0} run(s) completed · Infinite mode"
+                : $"{runner.AutoModeCompletedRuns:N0} of {runner.AutoModeRunLimit:N0} run(s) completed");
         }
     }
 
@@ -828,6 +843,38 @@ internal sealed class MainView
             if (alternatesChanged || ImGui.IsItemEdited() || ImGui.IsAnyItemActive())
                 persistence.SaveProfile(Profile);
             TextMutedWrapped("After the selected destination reaches its maximum attempts, try every other world on that Data Center once as a gateway. If none work, skip that Data Center and continue the run.");
+
+            ImGui.Separator();
+            SectionHeader("Automatic runs");
+            var autoMode = Profile.AutoModeEnabled;
+            if (ImGui.Checkbox("Automatically start another run", ref autoMode))
+            {
+                Profile.AutoModeEnabled = autoMode;
+                persistence.SaveProfile(Profile);
+            }
+            TextMutedWrapped("After a run finishes, ShoutRunner waits for the selected interval and starts the same venue profile again. Stop the active run at any time to cancel the sequence.");
+            if (!Profile.AutoModeEnabled) ImGui.BeginDisabled();
+            var autoDelay = Profile.AutoModeDelayMinutes;
+            if (ImGui.SliderInt("Time between runs", ref autoDelay, 20, 60, "%d min"))
+            {
+                Profile.AutoModeDelayMinutes = autoDelay;
+                persistence.SaveProfile(Profile);
+            }
+            var infiniteRuns = Profile.AutoModeInfinite;
+            if (ImGui.Checkbox("Run indefinitely", ref infiniteRuns))
+            {
+                Profile.AutoModeInfinite = infiniteRuns;
+                persistence.SaveProfile(Profile);
+            }
+            if (Profile.AutoModeInfinite) ImGui.BeginDisabled();
+            var runCount = Profile.AutoModeRunCount;
+            if (ImGui.SliderInt("Total number of runs", ref runCount, 1, 20, "%d"))
+            {
+                Profile.AutoModeRunCount = runCount;
+                persistence.SaveProfile(Profile);
+            }
+            if (Profile.AutoModeInfinite) ImGui.EndDisabled();
+            if (!Profile.AutoModeEnabled) ImGui.EndDisabled();
 
             ImGui.Separator();
             var postRunDestination = (int)Profile.PostRunDestination;

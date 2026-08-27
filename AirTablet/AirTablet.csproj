@@ -8,7 +8,7 @@
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
     <AssemblyName>AirTablet</AssemblyName>
     <RootNamespace>AirTablet</RootNamespace>
-    <Version>1.0.47.1</Version>
+    <Version>1.0.56.1</Version>
     <Description>A modern tablet OS for Airi's bundled venue apps.</Description>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
@@ -35,6 +35,7 @@
     <Content Include="Apps\ShoutRunner\Resources\LimsaLominsa.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShoutRunner\LimsaLominsa.png" />
     <Content Include="Apps\ShoutRunner\Resources\Gridania.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShoutRunner\Gridania.png" />
     <Content Include="Apps\ShoutRunner\Resources\Uldah.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShoutRunner\Uldah.png" />
+    <Content Include="Apps\PartyRefresh\Resources\PRLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\PartyRefresh\PRLogo.png" />
     <Content Include="Resources\Dock\Discord.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Dock\Discord.png" />
     <Content Include="Resources\Dock\KoFi.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Dock\KoFi.png" />
     <Content Include="Resources\Settings\Appearance.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\Appearance.png" />

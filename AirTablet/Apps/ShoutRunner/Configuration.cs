@@ -61,6 +61,7 @@ internal enum RunPhase
     Paused,
     Completed,
     Failed,
+    WaitingForRestart,
 }
 
 internal enum AetheryteTicketAction
@@ -110,6 +111,10 @@ internal sealed class VenueProfile
     public int RetryDelayIncreaseSeconds { get; set; } = 3;
     public int MaximumTravelAttempts { get; set; } = 3;
     public bool TryAlternateDataCenterWorlds { get; set; } = true;
+    public bool AutoModeEnabled { get; set; }
+    public int AutoModeDelayMinutes { get; set; } = 30;
+    public int AutoModeRunCount { get; set; } = 2;
+    public bool AutoModeInfinite { get; set; }
 
     public void Normalize()
     {
@@ -132,6 +137,8 @@ internal sealed class VenueProfile
         InitialRetryDelaySeconds = Math.Clamp(InitialRetryDelaySeconds, 1, 120);
         RetryDelayIncreaseSeconds = Math.Clamp(RetryDelayIncreaseSeconds, 0, 120);
         MaximumTravelAttempts = Math.Clamp(MaximumTravelAttempts, 1, 20);
+        AutoModeDelayMinutes = Math.Clamp(AutoModeDelayMinutes, 20, 60);
+        AutoModeRunCount = Math.Clamp(AutoModeRunCount, 1, 20);
         if (ReturnHomeAfterRun)
         {
             PostRunDestination = PostRunDestination.HomeWorld;
@@ -238,4 +245,10 @@ internal sealed class PersistedRunState
     public bool ReturnHomeAfterRun { get; set; }
     public ulong TeleportGilSpent { get; set; }
     public string Status { get; set; } = string.Empty;
+    public bool AutoModeEnabled { get; set; }
+    public bool AutoModeInfinite { get; set; }
+    public int AutoModeRunLimit { get; set; } = 1;
+    public int AutoModeCompletedRuns { get; set; }
+    public int AutoModeDelayMinutes { get; set; } = 30;
+    public DateTime NextRunUtc { get; set; }
 }
