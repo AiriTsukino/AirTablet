@@ -93,18 +93,27 @@ public sealed class MainWindow : Window
         ImGui.SetNextItemWidth(MathF.Min(AirTablet.UI.TabletAppTheme.Px(340f), width * 0.42f));
         DrawVenueSelector(venue, "dashboard");
 
+        var firedrillWidth = AirTablet.UI.TabletAppTheme.Px(156f);
         var settingsWidth = AirTablet.UI.TabletAppTheme.Px(118f);
         var resetWidth = AirTablet.UI.TabletAppTheme.Px(126f);
         var gap = AirTablet.UI.TabletAppTheme.Px(10f);
-        var totalButtonWidth = settingsWidth + resetWidth + gap;
+        var totalButtonWidth = firedrillWidth + settingsWidth + resetWidth + gap * 2f;
         var buttonStart = MathF.Max(AirTablet.UI.TabletAppTheme.Px(360f), width - totalButtonWidth);
         ImGui.SetCursorPos(new Vector2(buttonStart, AirTablet.UI.TabletAppTheme.Px(10f)));
-        if (ImGui.Button("Settings", new Vector2(settingsWidth, AirTablet.UI.TabletAppTheme.Px(30f)))) openSettings();
-        UiHelpers.Help("Open the separate ShiftKeeper settings window for staff, shifts, pay, and venue profiles.");
-        ImGui.SameLine(0, gap);
+        var firedrill = config.FiredrillMode;
+        if (ImGui.Checkbox("Firedrill mode", ref firedrill))
+        {
+            config.FiredrillMode = firedrill;
+            persistence.SaveNow();
+        }
+        UiHelpers.Help("Tracks staff regardless of location if they are in same zone");
+        ImGui.SameLine(buttonStart + firedrillWidth + gap, 0f);
         if (ImGui.Button("Reset Night", new Vector2(resetWidth, AirTablet.UI.TabletAppTheme.Px(30f)))) openResetNightPopup = true;
         UiHelpers.Help("Archive this night, clear timers and paid states, and begin a fresh venue night.");
-        var resetButtonX = buttonStart + settingsWidth + gap;
+        ImGui.SameLine(0, gap);
+        if (ImGui.Button("Settings", new Vector2(settingsWidth, AirTablet.UI.TabletAppTheme.Px(30f)))) openSettings();
+        UiHelpers.Help("Open the separate ShiftKeeper settings window for staff, shifts, pay, and venue profiles.");
+        var resetButtonX = buttonStart + firedrillWidth + gap;
         ImGui.SetCursorPos(new Vector2(resetButtonX, AirTablet.UI.TabletAppTheme.Px(48f)));
         ImGui.TextDisabled("Night started");
         ImGui.SetCursorPosX(resetButtonX);

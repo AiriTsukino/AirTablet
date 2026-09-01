@@ -51,7 +51,7 @@
   {
     "id": "ShoutRunner",
     "name": "ShoutRunner",
-    "version": "1.0.42.0",
+    "version": "1.0.43.0",
     "tagline": "Automated venue shout routes",
     "iconUrl": "Resources/Apps/ShoutRunner/SRLogo.png"
   },
@@ -61,5 +61,19 @@
     "version": "1.0.9.0",
     "tagline": "Party Finder presets and refreshing",
     "iconUrl": "Resources/Apps/PartyRefresh/PRLogo.png"
+  },
+  {
+    "id": "PrizeTrader",
+    "name": "PrizeTrader",
+    "version": "1.0.21.0",
+    "tagline": "Verified multi-trade gil payouts",
+    "iconUrl": "Resources/Apps/PrizeTrader/PTLogo.png"
+  },
+  {
+    "id": "WardrobeManager",
+    "name": "WardrobeManager",
+    "version": "1.0.53.0",
+    "tagline": "Outfits, characters, and emote replacers",
+    "iconUrl": "Resources/Apps/WardrobeManager/WMLogo.png"
   }
 ]

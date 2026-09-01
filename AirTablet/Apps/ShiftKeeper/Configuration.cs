@@ -18,4 +18,5 @@ public sealed class Configuration : IPluginConfiguration
     public bool CountUpPerShiftPay { get; set; }
     public bool HostCrashRecoveryEnabled { get; set; } = true;
     public bool AutoDetectTradePayments { get; set; } = true;
+    public bool FiredrillMode { get; set; }
 }

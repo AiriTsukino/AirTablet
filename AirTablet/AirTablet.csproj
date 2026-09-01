@@ -8,13 +8,22 @@
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
     <AssemblyName>AirTablet</AssemblyName>
     <RootNamespace>AirTablet</RootNamespace>
-    <Version>1.0.56.1</Version>
+    <Version>1.0.24.2</Version>
     <Description>A modern tablet OS for Airi's bundled venue apps.</Description>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Glamourer.Api" Version="2.8.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Penumbra.Api" Version="5.15.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="TerraFX.Interop.Windows">
+      <HintPath>$(DalamudLibPath)TerraFX.Interop.Windows.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
@@ -36,6 +45,8 @@
     <Content Include="Apps\ShoutRunner\Resources\Gridania.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShoutRunner\Gridania.png" />
     <Content Include="Apps\ShoutRunner\Resources\Uldah.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\ShoutRunner\Uldah.png" />
     <Content Include="Apps\PartyRefresh\Resources\PRLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\PartyRefresh\PRLogo.png" />
+    <Content Include="Apps\PrizeTrader\Resources\PTLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\PrizeTrader\PTLogo.png" />
+    <Content Include="Apps\WardrobeManager\Resources\WMLogo.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Apps\WardrobeManager\WMLogo.png" />
     <Content Include="Resources\Dock\Discord.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Dock\Discord.png" />
     <Content Include="Resources\Dock\KoFi.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Dock\KoFi.png" />
     <Content Include="Resources\Settings\Appearance.png" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" TargetPath="Resources\Settings\Appearance.png" />

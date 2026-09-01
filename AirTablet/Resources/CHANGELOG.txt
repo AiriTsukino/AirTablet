@@ -7,6 +7,16 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-1] AirTabOS v1.0.24.2
+- [NEW APP] PrizeTrader an app to automatically trade large amounts of prize gil to a winner of any event. Also has option to auto accept incoming trades
+- [NEW APP] WardrobeManager an app to manage Glamourer outfits, Character presets including glamourer appearance presets, penumbra mod collection, customize+ profile and honorific title.
+
+[2026-09-1] ShiftKeeper v1.0.18.0
+- Added Firedrill mode where you can track active staff in any location the app host/operator is in. (Useful for outdoor events)
+
+[2026-09-1] ShoutRunner v1.0.43.0
+- Removed early access warning during app opening. (Please report any future issues/bugs on the discord ♥)
+ 
 [2026-08-27] AirTabOS v1.0.56.1
 - [NEW APP] PartyRefresh an app that will automatically refresh your party finder entry or start a party finder with a configured preset.
 - Updated Supporter list ♥

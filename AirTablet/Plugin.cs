@@ -82,6 +82,26 @@ public sealed class Plugin : IDalamudPlugin
             config.Version = 17;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
+        if (hadExistingConfig && previousVersion < 18)
+        {
+            config.Version = 18;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
+        if (hadExistingConfig && previousVersion < 19)
+        {
+            config.Version = 19;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
+        if (hadExistingConfig && previousVersion < 20)
+        {
+            config.Version = 20;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
+        if (hadExistingConfig && previousVersion < 21)
+        {
+            config.Version = 21;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
         SaveAppSelectionState(config);
         catalog = new CatalogService(config);
         changelog = new ChangelogService();

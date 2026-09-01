@@ -7,7 +7,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.0.56.1";
+    private const string ReleaseVersion = "1.0.24.2";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -624,7 +624,9 @@ internal sealed class TabletWindow
         var bubbleWidth = MathF.Min(
             screenMax.X - screenMin.X - S(36f),
             S(430f));
-        var bubbleHeight = S(62f);
+        var messageWidth = bubbleWidth - S(30f);
+        var messageHeight = ImGui.CalcTextSize(notice, false, messageWidth).Y;
+        var bubbleHeight = MathF.Max(S(62f), S(31f) + messageHeight + S(12f));
         var bubbleX = screenMin.X +
             (screenMax.X - screenMin.X - bubbleWidth) * 0.5f;
         var bubbleY = screenMin.Y + S(9f) -
@@ -664,11 +666,13 @@ internal sealed class TabletWindow
                 palette.AccentHover.Z,
                 progress)),
             "AirTablet");
-        var messageWidth = bubbleWidth - S(30f);
         draw.AddText(
+            ImGui.GetFont(),
+            ImGui.GetFontSize(),
             bubbleMin + S(new Vector2(15f, 31f)),
             ImGui.GetColorU32(new Vector4(0.96f, 0.97f, 1f, progress)),
-            FitTextToWidth(notice, messageWidth));
+            notice,
+            messageWidth);
         draw.PopClipRect();
     }
 
@@ -1147,21 +1151,6 @@ internal sealed class TabletWindow
             end + S(new Vector2(-8f, 13f)),
             end + S(new Vector2(8f, 13f)),
             packed);
-    }
-
-    private static string FitTextToWidth(string text, float width)
-    {
-        if (ImGui.CalcTextSize(text).X <= width)
-            return text;
-
-        const string ellipsis = "…";
-        var length = text.Length;
-        while (length > 1 &&
-               ImGui.CalcTextSize(text[..length] + ellipsis).X > width)
-        {
-            length--;
-        }
-        return text[..Math.Max(1, length)].TrimEnd() + ellipsis;
     }
 
     private void DrawPhysicalLockButton(Vector2 bodyMax)
@@ -5531,7 +5520,8 @@ internal sealed class TabletWindow
     {
         notice = message;
         noticeStartedAt = ImGui.GetTime();
-        noticeUntil = DateTime.UtcNow.AddSeconds(4);
+        var readingSeconds = Math.Clamp(4d + Math.Max(0, message.Length - 90) / 45d, 4d, 10d);
+        noticeUntil = DateTime.UtcNow.AddSeconds(readingSeconds);
     }
 
     private void DrawTooltip(string text)

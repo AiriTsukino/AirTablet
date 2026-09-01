@@ -23,6 +23,8 @@ internal sealed class AppHostService : IDisposable
         new("ShopHelper", typeof(ShopHelper.Configuration), () => new ShopHelper.AirTabletModule()),
         new("ShoutRunner", typeof(ShoutRunner.Configuration), () => new ShoutRunner.AirTabletModule(), false),
         new("PartyRefresh", typeof(PartyRefresh.Configuration), () => new PartyRefresh.AirTabletModule(), false),
+        new("PrizeTrader", typeof(PrizeTrader.Configuration), () => new PrizeTrader.AirTabletModule(), false),
+        new("WardrobeManager", typeof(WardrobeManager.Configuration), () => new WardrobeManager.AirTabletModule(), false),
     ];
 
     public static IReadOnlyList<string> BundledAppIds { get; } =

@@ -45,7 +45,13 @@ public sealed class StaffTrackingService : IDisposable
     private void Tick(DateTimeOffset now, double elapsed)
     {
         var venue = persistence.ActiveVenue;
-        var visible = CollectVisiblePlayers();
+        var territoryId = DalamudServices.ClientState.TerritoryType;
+        if (!config.FiredrillMode && territoryId != 0 && venue.CurrentNight.TrackingTerritoryId == 0)
+            venue.CurrentNight.TrackingTerritoryId = territoryId;
+        var trackingThisTerritory = config.FiredrillMode ||
+                                    venue.CurrentNight.TrackingTerritoryId == 0 ||
+                                    venue.CurrentNight.TrackingTerritoryId == territoryId;
+        var visible = trackingThisTerritory ? CollectVisiblePlayers() : [];
         var localNow = DateTime.Now;
         var recovery = TryApplyCrashRecovery(venue, visible, now);
         if (recovery == RecoveryResult.Applied)

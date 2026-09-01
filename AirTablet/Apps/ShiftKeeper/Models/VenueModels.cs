@@ -168,6 +168,7 @@ public sealed class NightSession
     public DateTimeOffset? LastCrashRecoveryUtc { get; set; }
     public double LastCrashRecoverySeconds { get; set; }
     public int LastCrashRecoveryStaffCount { get; set; }
+    public uint TrackingTerritoryId { get; set; }
     public List<NightlyStaffRecord> Staff { get; set; } = [];
 
     public NightlyStaffRecord GetOrCreate(Guid staffId)

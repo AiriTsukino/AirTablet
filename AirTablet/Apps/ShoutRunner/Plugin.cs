@@ -1,6 +1,3 @@
-using System.Numerics;
-using AirTablet.UI;
-using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin;
 using ShoutRunner.UI;
 
@@ -8,9 +5,6 @@ namespace ShoutRunner;
 
 internal sealed class Plugin : IDisposable
 {
-    private const string EarlyAccessModal = "ShoutRunner early access##ShoutRunner";
-    private const string ShoutRunnerVersion = "1.0.42.0";
-
     private readonly Configuration config;
     private readonly PersistenceService persistence;
     private readonly TravelService travel;
@@ -19,8 +13,6 @@ internal sealed class Plugin : IDisposable
     private readonly CityIconService cityIcons;
     private readonly MainView view;
     private bool settingsOpen;
-    private bool earlyAccessMessageRequested;
-    private bool homeRequested;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -49,25 +41,11 @@ internal sealed class Plugin : IDisposable
             view.DrawSettings();
         else
             view.DrawMain();
-
-        if (!string.Equals(
-                config.LastAcknowledgedEarlyAccessVersion,
-                ShoutRunnerVersion,
-                StringComparison.OrdinalIgnoreCase))
-            DrawEarlyAccessPopup();
-        else
-            earlyAccessMessageRequested = false;
     }
 
     public bool ConsumeForegroundRequest() => runner.ConsumeForegroundRequest();
 
-    public bool ConsumeHomeRequest()
-    {
-        if (!homeRequested)
-            return false;
-        homeRequested = false;
-        return true;
-    }
+    public bool ConsumeHomeRequest() => false;
 
     public bool CanNavigateBackEmbedded() => settingsOpen;
 
@@ -106,43 +84,6 @@ internal sealed class Plugin : IDisposable
         settingsOpen = true;
         config.SettingsWindowVisible = true;
         persistence.SaveConfig();
-    }
-
-    private void DrawEarlyAccessPopup()
-    {
-        if (!earlyAccessMessageRequested)
-        {
-            TabletAppTheme.OpenCenteredModal(EarlyAccessModal);
-            earlyAccessMessageRequested = true;
-        }
-
-        if (!TabletAppTheme.BeginCenteredModal(
-                EarlyAccessModal,
-                ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings))
-            return;
-
-        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + TabletAppTheme.Px(420f));
-        ImGui.TextWrapped("ShoutRunner is still in active development and some travel steps may not work reliably yet. Please report bugs in the community Discord.");
-        ImGui.PopTextWrapPos();
-        ImGui.Spacing();
-        var buttonWidth = TabletAppTheme.Px(150f);
-        var buttonGap = TabletAppTheme.Px(8f);
-        var buttonsWidth = buttonWidth * 2f + buttonGap;
-        ImGui.SetCursorPosX(MathF.Max(ImGui.GetCursorPosX(), (ImGui.GetWindowWidth() - buttonsWidth) * 0.5f));
-        if (ImGui.Button("Acknowledge", new Vector2(buttonWidth, 0f)))
-        {
-            config.LastAcknowledgedEarlyAccessVersion = ShoutRunnerVersion;
-            persistence.SaveConfig();
-            TabletAppTheme.CloseCenteredModal();
-        }
-        ImGui.SameLine(0f, buttonGap);
-        if (ImGui.Button("Return home", new Vector2(buttonWidth, 0f)))
-        {
-            homeRequested = true;
-            TabletAppTheme.CloseCenteredModal();
-        }
-        ImGui.Dummy(new Vector2(1f, TabletAppTheme.Px(8f)));
-        TabletAppTheme.EndCenteredModal();
     }
 
     public void Dispose()
