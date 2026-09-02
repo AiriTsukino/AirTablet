@@ -1612,48 +1612,34 @@ internal sealed class IntegrationService : IDisposable
                     ? ApplyResult.Ok($"Applied character preset {preset.Name}.")
                     : ApplyResult.Fail($"Applied with failures: {string.Join(", ", failures.Distinct())}.");
             }
-            var selected = preset.Mods.Where(x => x.Enabled && installed.ContainsKey(x.Directory))
+            var layers = preset.Mods.Where(x => installed.ContainsKey(x.Directory))
                 .GroupBy(x => x.Directory, StringComparer.OrdinalIgnoreCase).Select(x => x.First()).ToList();
-            var selectedDirectories = selected.Select(x => x.Directory).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var selectedPaths = selected.SelectMany(rule => GetChangedItems(rule.Directory, installed[rule.Directory])
-                .Select(item => item.Key)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var enabled = 0;
             var disabled = 0;
-            var conflictPriority = int.MinValue;
-
-            if (selectedPaths.Count > 0)
+            foreach (var rule in layers)
             {
-                foreach (var candidate in installed)
+                var stateChanged = setMod.Invoke(collectionId, rule.Directory, rule.Enabled, Source);
+                if (!IsSuccess(stateChanged))
                 {
-                    if (selectedDirectories.Contains(candidate.Key)) continue;
-                    var paths = GetChangedItems(candidate.Key, candidate.Value).Select(item => item.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    if (!paths.Overlaps(selectedPaths) || !TryGetEnabledSettings(collectionId, candidate.Key, candidate.Value, out var priority)) continue;
-                    conflictPriority = Math.Max(conflictPriority, priority);
-                    if (IsSuccess(setMod.Invoke(collectionId, candidate.Key, false, Source)))
-                    {
-                        setPriority.Invoke(collectionId, candidate.Key, 0, Source);
-                        disabled++;
-                    }
+                    failures.Add(rule.Name);
+                    continue;
                 }
-            }
+                if (!rule.Enabled)
+                {
+                    disabled++;
+                    continue;
+                }
 
-            foreach (var rule in selected.OrderBy(x => x.Role))
-            {
-                var enabled = setMod.Invoke(collectionId, rule.Directory, true, Source);
+                enabled++;
                 var prioritized = setPriority.Invoke(collectionId, rule.Directory, rule.Priority, Source);
-                if (!IsSuccess(enabled) || !IsSuccess(prioritized)) failures.Add(rule.Name);
+                if (!IsSuccess(prioritized)) failures.Add(rule.Name);
                 foreach (var option in rule.Options)
                     if (!IsSuccess(setOptions.Invoke(collectionId, rule.Directory, option.Key, option.Value, Source))) failures.Add($"{rule.Name}: {option.Key}");
             }
 
-            if (!string.IsNullOrWhiteSpace(preset.GlamourerState))
-            {
-                var result = applyState.Invoke(preset.GlamourerState, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment | ApplyFlag.Customization);
-                if (result != GlamourerApiEc.Success) failures.Add($"Glamourer appearance ({result})");
-            }
-
             redraw.Invoke(0, RedrawType.Redraw);
             return failures.Count == 0
-                ? ApplyResult.Ok($"Applied {preset.Name}: {selected.Count} selected mod layer(s), {disabled} conflicting mod(s) disabled.")
+                ? ApplyResult.Ok($"Applied {preset.Name}: {enabled} listed layer(s) enabled, {disabled} listed layer(s) disabled; unlisted mods were unchanged.")
                 : ApplyResult.Fail($"Applied with failures: {string.Join(", ", failures.Distinct())}.");
         }
         catch (Exception ex)

@@ -7,7 +7,7 @@
 # Quick start
 - Enable and configure Penumbra and Glamourer before opening WardrobeManager.
 - Choose Outfits, Characters, or Emotes, then choose New Preset.
-- Name the preset and select a portrait or use Take Selfie.
+- Name the preset. Outfit and character presets can also use a portrait or selfie.
 - Configure the appearance and related mods or plugin selections.
 - For an outfit or character, capture the current appearance and save it to Glamourer.
 - Return to the library and choose Apply on the preset card.
@@ -60,7 +60,7 @@ Emote presets manage a chosen set of Penumbra mods, priorities, and options with
 - Set higher priorities for layers that must override lower-priority files.
 - Expand Penumbra options to select the desired mod groups.
 
-When an emote preset is applied, its enabled layers are activated and overlapping enabled mods outside the preset are disabled. Review the affected Penumbra collection before using emote presets that share files with other active mods.
+When an emote preset is applied, every listed enabled layer is turned on with its saved priority and options, and every listed disabled layer is turned off. Mods that are not listed in the preset are left unchanged, even when they share files with a listed layer.
 
 # Outfit folders and Quick Designs
 Outfit folders organize cards and correspond to Glamourer folder paths. Creating or assigning an outfit folder places its linked Glamourer design in that folder when saved.
@@ -70,7 +70,7 @@ Removing a folder moves its outfits to Unfiled and moves their linked designs to
 The Quick Design selector lists designs marked as Quick Designs in Glamourer. Choose a design and Apply Selected to use it. A Quick Design can be applied even when it does not have a WardrobeManager card.
 
 # Portraits and selfies
-Choose Portrait imports a PNG, JPG, JPEG, WebP, or BMP image for the preset. Take Selfie opens the live game camera with a 9:16 guide and saves a portrait to the configured selfie folder.
+Outfit and character presets can use portraits. Choose Portrait imports a PNG, JPG, JPEG, WebP, or BMP image. Take Selfie opens the live game camera with a 9:16 guide and saves a portrait to the configured selfie folder. Emote presets do not use portraits.
 
 Settings lets you choose the selfie folder, return to the default folder, rescan for missing preset images, or delete unused images. Rescan Images can relink a missing portrait when a matching image is found. Delete Unused Images keeps every referenced portrait and the newest identifiable selfie for each preset while removing older unused captures after confirmation.
 

@@ -8,7 +8,7 @@ namespace WardrobeManager;
 internal sealed class Plugin : IDisposable
 {
     private enum HonorificSavePhase { None, WaitingForUnload, WaitingForReload }
-    private const string WardrobeManagerVersion = "1.0.53.0";
+    private const string WardrobeManagerVersion = "1.0.54.0";
     private const string DevelopmentWarningModal = "WardrobeManager is in development##WardrobeManager";
     private const string ManualHonorificModal = "New Honorific Title";
     private static readonly string[] HonorificEffectPalettes =
@@ -655,6 +655,9 @@ internal sealed class Plugin : IDisposable
                 if (ImGui.InputText("##wardrobe-preset-name", ref name, 80)) { preset.Name = name; persistence.Save(); }
             }
 
+            if (preset.Type == WardrobePresetType.Emote)
+                return;
+
             var portrait = textures.Get(preset.ImagePath);
             var portraitWidth = MathF.Min(ImGui.GetContentRegionAvail().X, TabletAppTheme.Px(175f));
             var size = new Vector2(portraitWidth, portraitWidth * 16f / 9f);
@@ -723,7 +726,6 @@ internal sealed class Plugin : IDisposable
                     : string.IsNullOrWhiteSpace(preset.OutfitAppearanceJson) && string.IsNullOrWhiteSpace(preset.GlamourerState)
                         ? "No outfit captured" : "Outfit captured (physical appearance excluded)");
             }
-            else if (ImGui.Button("Choose Portrait", new Vector2(-1f, 0f))) ChoosePortrait(preset);
         }, false);
     }
 
@@ -1105,7 +1107,7 @@ internal sealed class Plugin : IDisposable
         {
             ImGui.TextWrapped(glamourerDesign
                 ? $"These entries mirror Glamourer's mod associations for this {TypeLabel(preset.Type).ToLowerInvariant().TrimEnd('s')}. Add or remove mods manually, choose their enabled state, priority, and options, then save the changes back to Glamourer."
-                : "Higher priorities overwrite lower priorities. Conflicting mods outside this preset are disabled when it is applied.");
+                : "Only the layers listed in this preset are changed when it is applied. Enabled layers are turned on with their saved priority and options; disabled layers are turned off.");
             if (glamourerDesign)
             {
                 var actionWidth = MathF.Max(TabletAppTheme.Px(105f), (ImGui.GetContentRegionAvail().X - TabletAppTheme.Px(10f)) / 3f);

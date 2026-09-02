@@ -7,6 +7,13 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-1] AirTabOS v1.1.0.3 
+- Changed automatic update checks from hourly to every five minutes.
+
+[2026-09-1] WardrobeManager v1.0.54.0
+- Emote presets now change only their listed Penumbra layers. (There was a bug disabling unrelated emotes to the layers)
+- Removed portrait selection for emotes as they list their enabled and disabled layers in library cards.
+
 [2026-09-1] AirTabOS v1.1.0.2
 - Added PrizeTrader and WardrobeManager wiki guides.
 - Fixed about panel not sizing to content.

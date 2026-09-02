@@ -6,7 +6,7 @@ internal sealed class UpdateCheckService : IDisposable
 {
     private const string ManifestUrl =
         "https://raw.githubusercontent.com/AiriTsukino/AirTablet/main/pluginmaster.json";
-    private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(1);
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(5);
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(12) };
     private readonly object stateLock = new();
     private readonly Version installedVersion =

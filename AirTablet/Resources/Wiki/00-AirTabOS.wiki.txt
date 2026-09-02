@@ -68,7 +68,7 @@ Choose 12/24-hour time and whether battery information is shown.
 ## Migrate Configs
 Copies supported settings from the original standalone plugins. Original files are not modified. Repeating migration may overwrite changes made inside AirTablet with values from the old plugins.
 ## About
-Shows the installed AirTabOS version and Ko-fi supporter list. AirTablet checks for updates after startup and about once per hour. Choose Check for Updates to check immediately. When a newer version is available, choose Update to open Dalamud's Plugin Installer with AirTablet already searched.
+Shows the installed AirTabOS version and Ko-fi supporter list. AirTablet checks for updates after startup and about every five minutes. Choose Check for Updates to check immediately. When a newer version is available, choose Update to open Dalamud's Plugin Installer with AirTablet already searched.
 
 # Moving and recovery
 - Unlock the tablet before dragging the full tablet.
