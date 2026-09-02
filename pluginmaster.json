@@ -3,7 +3,7 @@
     "Author": "Airi Tsukino",
     "Name": "AirTablet",
     "InternalName": "AirTablet",
-    "AssemblyVersion": "1.1.0.1",
+    "AssemblyVersion": "1.1.0.2",
     "Description": "A modern tablet OS for Airi's venue apps.",
     "Punchline": "Your plugin suite in one modern tablet OS.",
     "RepoUrl": "https://github.com/AiriTsukino/AirTablet",
@@ -12,8 +12,8 @@
     "DalamudApiLevel": 15,
     "IsHide": false,
     "IsTestingExclusive": false,
-    "DownloadLinkInstall": "https://raw.githubusercontent.com/AiriTsukino/AirTablet/main/AirTablet.zip",
-    "DownloadLinkUpdate": "https://raw.githubusercontent.com/AiriTsukino/AirTablet/main/AirTablet.zip",
-    "LastUpdate": "1788311134"
+    "DownloadLinkInstall": "https://raw.githubusercontent.com/AiriTsukino/AirTablet/main/AirTablet.zip?v=1.1.0.2",
+    "DownloadLinkUpdate": "https://raw.githubusercontent.com/AiriTsukino/AirTablet/main/AirTablet.zip?v=1.1.0.2",
+    "LastUpdate": "1788314240"
   }
 ]

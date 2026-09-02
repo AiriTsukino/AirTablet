@@ -7,6 +7,10 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-1] AirTabOS v1.1.0.2
+- Added PrizeTrader and WardrobeManager wiki guides.
+- Fixed about panel not sizing to content.
+
 [2026-09-1] AirTabOS v1.1.0.1
 - Added a manual check for updates in about tab.
 

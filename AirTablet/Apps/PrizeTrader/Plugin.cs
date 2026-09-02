@@ -302,5 +302,40 @@ internal sealed class Plugin : IDisposable
         ImGui.PopTextWrapPos();
     }
 
+    internal IReadOnlyList<AirTablet.Services.ControlCenterWidget> GetControlCenterWidgets() =>
+    [
+        new(
+            "prizetrader.payout",
+            "PrizeTrader",
+            "Payout progress",
+            "Show the current PrizeTrader recipient and confirmed payout progress.",
+            AirTablet.Services.ControlCenterWidgetKind.Stat,
+            AirTablet.Services.ControlCenterWidgetSize.Compact,
+            ReadPayoutWidget),
+    ];
+
+    private AirTablet.Services.ControlCenterWidgetSnapshot ReadPayoutWidget()
+    {
+        if (trades.IsIncomingTradeActive)
+            return new("Incoming trade", trades.Status, true);
+        if (trades.NeedsRetry)
+            return new("Needs retry", $"{trades.CurrentChunk:N0} gil · {trades.LockedDisplay}", false);
+        if (trades.IsRunning)
+            return new(
+                $"{trades.ConfirmedAmount:N0} / {trades.TotalAmount:N0}",
+                $"{trades.LockedDisplay} · {trades.RemainingAmount:N0} remaining",
+                true);
+        if (trades.TotalAmount > 0 && trades.ConfirmedAmount >= trades.TotalAmount)
+            return new("Payout complete", $"{trades.ConfirmedAmount:N0} gil · {trades.LockedDisplay}", true);
+        if (trades.TotalAmount > 0)
+            return new(
+                "Payout stopped",
+                $"{trades.ConfirmedAmount:N0} of {trades.TotalAmount:N0} gil · {trades.LockedDisplay}",
+                false);
+        if (trades.HasLockedTarget)
+            return new("Recipient locked", trades.LockedDisplay ?? string.Empty);
+        return new("Ready", "Lock a recipient in PrizeTrader");
+    }
+
     public void Dispose() => trades.Dispose();
 }

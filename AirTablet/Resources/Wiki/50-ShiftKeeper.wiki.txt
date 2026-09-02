@@ -37,7 +37,7 @@ Tracking days are selected per venue. Overnight shifts keep the selected start d
 When enabled, crash/reload recovery restores eligible timer time within the configured grace behavior. Reset Night archives the current night into venue history, then starts clean timers and paid states. Review the displayed last-recovery summary before making manual corrections.
 
 # Venue profiles
-Profiles separate venue name/currency, tracking days, shifts, permanent roster, active night, and history. Export saves the complete venue as JSON. Import creates a separate venue with new internal IDs and does not overwrite an existing one.
+Profiles separate venue name/currency, tracking days, shifts, permanent roster, active night, and history. Export saves the complete venue. Import adds it as a separate venue and does not overwrite an existing one.
 
 # Staff tells
 The tell popup sends a message to the selected staff member. Pressing Enter behaves like Send Tell and closes the popup after sending.
@@ -47,8 +47,6 @@ The tell popup sends a message to the selected staff member. Pressing Enter beha
 Check their full character name, home world, attendance mode, current venue, and whether they are visible under the selected detection rule.
 ## Pay differs from raw worked time
 Review assigned shifts, scheduled-only tracking, payable-time rounding, calculated-pay rounding, pay format, and rate.
-## An action column becomes wider
-This is expected when a stopped timer exposes Resume and status controls. Other columns size to content and remaining space goes to Staff Name.
 ## Tell cannot be sent
 Confirm the character name and world are valid and that chat is currently available.
 ## A trade payment was not applied

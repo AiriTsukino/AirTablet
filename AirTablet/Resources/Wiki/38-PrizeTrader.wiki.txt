@@ -1,0 +1,74 @@
+@id prizetrader
+@title PrizeTrader
+@summary Send large gil prizes through a verified sequence of normal trades and optionally accept incoming trades.
+@category Bundled Apps
+@order 38
+
+# Quick start
+- Target the prize recipient while they are visible nearby.
+- Choose Lock Current Target and verify the displayed Name@World.
+- Enter the complete payout amount. PrizeTrader shows how many trades are required.
+- Choose Start Payout and verify the recipient and total in the confirmation.
+- Keep the recipient nearby while each trade completes.
+- Watch Confirmed, Remaining, Current trade, and the progress bar until the payout finishes.
+
+> warning: PrizeTrader is an early-access tool for real gil transfers. Verify the locked recipient, entered amount, every FFXIV trade window, and the final confirmed total before treating a prize as paid.
+
+# Outgoing payouts
+FFXIV limits a normal gil trade to 1,000,000 gil. PrizeTrader divides a larger total into trades of up to 1,000,000 gil and continues until the full amount is confirmed. For example, a 2,500,000-gil payout uses two 1,000,000-gil trades and one 500,000-gil trade.
+
+## Locking the recipient
+Lock Current Target records the visible player's character name and home world. Starting a payout requires a locked recipient. If the target changes before a payout starts, the displayed progress is cleared so an old amount cannot be mistaken for a new recipient's payout.
+
+PrizeTrader waits when the exact locked player is not visible in the current zone. It does not open a trade with another player who has a similar name.
+
+## Confirmation and progress
+The confirmation displays the complete payout and locked recipient before the first trade begins. During the sequence:
+- Confirmed is the gil FFXIV has reported as successfully traded.
+- Remaining is the unpaid part of the entered total.
+- Current trade is the amount assigned to the active trade.
+- The status message explains what PrizeTrader is waiting for.
+
+A trade is counted only after FFXIV reports both the expected gil amount and a completed trade. Closing, declining, or leaving a trade unanswered does not advance the payout. There is no recipient-response timeout, so the recipient may take the time they need to review and accept each trade.
+
+## Failed trades and cancellation
+If FFXIV reports a failed trade or the Trade window closes before completion, PrizeTrader pauses without counting that chunk. Check the recipient and current trade amount, then choose Retry Current Trade to repeat the unchanged chunk or Cancel Payout to stop.
+
+Cancel Payout stops future trades but cannot undo gil already confirmed. The status retains the confirmed and total amounts for review.
+
+# Incoming trade acceptance
+Settings > General includes Automatically accept incoming trades. It is off by default.
+
+When enabled, PrizeTrader can accept an incoming request, wait for the other player to mark their side ready, ready your empty side, and approve the final FFXIV trade confirmation. PrizeTrader does not add gil or items to your side of an incoming trade.
+
+> warning: Automatic incoming trade acceptance applies to any player who sends you a trade request while the setting is enabled. Turn it off whenever you do not actively need it.
+
+Outgoing payout controls are unavailable while an incoming trade is being handled. They return after the incoming trade completes, fails, or closes.
+
+# Control Center widget
+Add PrizeTrader's Payout progress widget from Control Center to monitor a payout while viewing another app. It shows a ready, active, retry, incoming-trade, cancelled, or completed state along with the recipient and relevant gil progress.
+
+# Settings and diagnostics
+## General
+- Automatically accept incoming trades controls the optional incoming-trade workflow.
+
+## Debug Log
+The session log records recipient locking, status changes, trade confirmations, failures, and relevant FFXIV trade messages. Choose Copy All for a complete report, select individual text and press Ctrl+C for a smaller excerpt, or choose Clear to start a fresh session log.
+
+The log is kept only for the current session.
+
+# Troubleshooting
+## Lock Current Target reports no visible player
+Target the nearby player directly and try again. Confirm the target is a player character and their home world has loaded.
+
+## The payout waits for the recipient to be visible
+Make sure the locked Name@World is still in the same zone and loaded nearby. Do not change recipients during an active payout; cancel and start again if the intended recipient changed.
+
+## A trade closed or failed
+Nothing from that chunk is counted. Review the status and FFXIV messages, then retry the unchanged chunk or cancel. Check the Debug Log before making a manual payment so the same gil is not paid twice.
+
+## The recipient says a trade completed but progress did not advance
+Do not assume it was counted. Compare Confirmed and Remaining with FFXIV's trade messages and copy the Debug Log. Cancel if the totals cannot be verified safely.
+
+## Incoming trades are accepted unexpectedly
+Open Settings > General and disable Automatically accept incoming trades. The option accepts requests from any player while enabled.

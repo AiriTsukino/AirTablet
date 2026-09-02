@@ -56,7 +56,7 @@ Choose Folder as the key type to create a category. Folder keys can use an in-ga
 # Venue profiles
 Venue profiles keep separate decks and separate Control Center quick-key assignments. The selected profile remains active until you choose another one.
 
-Open Profiles to rename the active profile, create or delete profiles, export the active profile to JSON, or import a profile. Import adds the venue as a separate profile without overwriting an existing one.
+Open Profiles to rename the active profile, create or delete profiles, export the active profile, or import a profile. Import adds the venue as a separate profile without overwriting an existing one.
 
 # Popout deck
 Enable Popout from the MacroDeck top bar to show a detachable, Stream Deck-style 8 by 4 controller. It follows the active venue profile and supports the same folders, protected Home/Back navigation keys, and macro execution as the full deck. The popout is disabled by default.

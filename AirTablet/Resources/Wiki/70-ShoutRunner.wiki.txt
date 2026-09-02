@@ -66,7 +66,7 @@ The receipt shows character, duration, local time zone, date, start time, comple
 
 # Troubleshooting
 ## Aetheryte interaction does not begin
-Stand in one of the supported city-state territories and wait for the local object list to load. ShoutRunner targets the matching city Aetheryte directly and can approach it without its nameplate being visible.
+Confirm you are in a supported main city-state territory, allow the area to finish loading, and move within walking range of the main Aetheryte before resuming.
 ## A world transfer does not complete
 Open Travel diagnostics, copy the log, and check which game window or travel state is waiting. Confirm that World Visit and Data Center Travel are currently available for the character.
 ## No worlds are selected

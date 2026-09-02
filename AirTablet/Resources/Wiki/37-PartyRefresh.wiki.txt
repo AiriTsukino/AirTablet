@@ -34,7 +34,7 @@ Additional options control role restrictions, class availability, duplicate jobs
 The Conditions tab controls completion requirements, average item level, Duty Finder settings, loot rules, and recruitment languages.
 
 # Refreshing recruitment
-Refresh Now is available while an existing Party Finder recruitment is active. It opens Recruitment Criteria, chooses Edit, applies the currently selected preset, and then renews the recruitment timer. Changes to the comment, duty, conditions, roles, and other preset fields are therefore included in the refresh.
+Refresh Now is available while an existing Party Finder recruitment is active. It applies the currently selected preset to that listing and renews the recruitment timer, including changes to the comment, duty, conditions, roles, and other preset fields.
 
 Automatic refresh can be enabled from the main screen or Settings > Refresh. The interval can be set from 1 to 55 minutes, and the main screen displays the time remaining before the next refresh. Automatic refresh waits when no recruitment is active.
 
@@ -47,7 +47,7 @@ End Recruitment is available while a Party Finder recruitment is active. It asks
 PartyRefresh provides an Auto refresh toggle and a Party Finder status widget. The status widget shows whether a recruitment is active, the selected preset, current work in progress, and the next automatic refresh countdown when enabled.
 
 # Import and export
-Export Profile opens the operating system's save-file window and saves the complete active venue profile as JSON. Import Profile opens the operating system's file-selection window and adds the chosen profile without overwriting existing profiles.
+Export Profile opens the operating system's save-file window and saves the complete active venue profile. Import Profile opens the operating system's file-selection window and adds the chosen profile without overwriting existing profiles.
 
 # Troubleshooting
 ## Post Preset is unavailable

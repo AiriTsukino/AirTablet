@@ -1,0 +1,109 @@
+@id wardrobemanager
+@title WardrobeManager
+@summary Organize and apply Glamourer outfits, character appearances, Penumbra layers, Customize+ profiles, and Honorific titles.
+@category Bundled Apps
+@order 80
+
+# Quick start
+- Enable and configure Penumbra and Glamourer before opening WardrobeManager.
+- Choose Outfits, Characters, or Emotes, then choose New Preset.
+- Name the preset and select a portrait or use Take Selfie.
+- Configure the appearance and related mods or plugin selections.
+- For an outfit or character, capture the current appearance and save it to Glamourer.
+- Return to the library and choose Apply on the preset card.
+
+> warning: Applying a preset can change your current appearance, Penumbra collection or mod state, Customize+ profile, and Honorific title. Keep Confirm before applying presets enabled while learning the app, and review important changes in the related plugins after applying.
+
+# Requirements and library
+Penumbra and Glamourer are required for the main wardrobe features. Their connection status appears above the library. Customize+ and Honorific are optional and are used only when a character preset includes one of their profiles or titles.
+
+The library separates Outfits, Characters, Emotes, and outfit Folders. Presets marked with the star appear before other presets of the same type, followed by alphabetical order. Choose Apply to use a preset or Edit to change it.
+
+WardrobeManager keeps linked Glamourer outfits and characters synchronized with the Glamourer design library. Glamourer design names, folders, appearance data, and mod associations are reflected in WardrobeManager. Removing a linked design from Glamourer also removes its linked WardrobeManager card after the library refreshes.
+
+# Outfit presets
+Outfits capture equipment, weapons, accessories, dyes, materials, and advanced dyes. They exclude physical character appearance and Customize Parameters.
+
+## Creating and editing an outfit
+- Choose New Preset from Outfits or New Outfit from an open folder.
+- Enter a name and optionally assign an outfit folder.
+- Equip the desired look, then choose Capture Current Appearance.
+- Search installed Penumbra mods to add associations.
+- Set each association to Enabled, Disabled, Inherit, Remove, or Ignore, then set its priority and available options.
+- Choose Save to Glamourer and confirm creation or replacement of the linked outfit design.
+
+Applying an outfit uses the linked Glamourer design, including its saved appearance, mod associations, Quick Design behavior, and other Glamourer settings. An outfit must be saved to Glamourer before it can be applied.
+
+Refresh reloads the linked design's name, appearance, and mod associations from Glamourer. Open Glamourer opens the linked design for further editing. If you replace an existing design, review any Glamourer automation rules that referenced the previous design.
+
+# Character presets
+Characters capture physical Customizations and Customize Parameters. They exclude equipment, weapons, accessories, dyes, crests, materials, and advanced dyes.
+
+A character preset can also select:
+- A Penumbra collection to assign to your character.
+- A Customize+ profile, or Do not change.
+- An existing Honorific title, No title, or Do not change.
+- Glamourer mod associations with state, priority, and options.
+
+Choose Capture Current Appearance after setting the physical appearance you want, then choose Save to create or replace the linked Glamourer character design. Applying the preset combines the linked physical appearance with the selected Penumbra, Customize+, and Honorific choices.
+
+## Creating an Honorific title
+Choose New Honorific Title inside a character preset to create a persistent title. Configure prefix or suffix placement, colour, glow or gradient effect, animation, and an optional activation condition. Location conditions require a territory; choose Use Current Location to fill it from your current area.
+
+Confirming the title temporarily reloads Honorific so the new title is saved and remains editable there. Wait for WardrobeManager's completion notice before applying the character preset.
+
+# Emote presets
+Emote presets manage a chosen set of Penumbra mods, priorities, and options without creating a Glamourer design.
+
+- Search installed Penumbra mods and add the layers used by the emote replacement.
+- Enable only the layers that should be active.
+- Set higher priorities for layers that must override lower-priority files.
+- Expand Penumbra options to select the desired mod groups.
+
+When an emote preset is applied, its enabled layers are activated and overlapping enabled mods outside the preset are disabled. Review the affected Penumbra collection before using emote presets that share files with other active mods.
+
+# Outfit folders and Quick Designs
+Outfit folders organize cards and correspond to Glamourer folder paths. Creating or assigning an outfit folder places its linked Glamourer design in that folder when saved.
+
+Removing a folder moves its outfits to Unfiled and moves their linked designs to Glamourer's root; it does not delete the outfits. Enable Reload Glamourer after deleting an outfit folder only if you want WardrobeManager to reload Glamourer immediately so its folder list refreshes.
+
+The Quick Design selector lists designs marked as Quick Designs in Glamourer. Choose a design and Apply Selected to use it. A Quick Design can be applied even when it does not have a WardrobeManager card.
+
+# Portraits and selfies
+Choose Portrait imports a PNG, JPG, JPEG, WebP, or BMP image for the preset. Take Selfie opens the live game camera with a 9:16 guide and saves a portrait to the configured selfie folder.
+
+Settings lets you choose the selfie folder, return to the default folder, rescan for missing preset images, or delete unused images. Rescan Images can relink a missing portrait when a matching image is found. Delete Unused Images keeps every referenced portrait and the newest identifiable selfie for each preset while removing older unused captures after confirmation.
+
+# Settings
+- Confirm before applying presets adds an Apply confirmation and is recommended for safer testing.
+- Reload Glamourer after deleting an outfit folder refreshes Glamourer's folder list immediately by reloading Glamourer.
+- Selfie folder chooses where direct 9:16 selfie captures are exported.
+- Rescan Images searches the selected folder for missing preset portraits.
+- Delete Unused Images removes unreferenced managed portraits and older duplicate selfie captures after confirmation.
+
+# Deleting presets
+Deleting an outfit or character also deletes its linked Glamourer design and removes it from Glamourer's Quick Design list. Penumbra mods are not deleted. Any Glamourer automation rule that referenced the deleted design will need another design selected.
+
+Deleting an emote preset removes only the WardrobeManager preset. Its installed Penumbra mods remain available.
+
+# Troubleshooting
+## Penumbra or Glamourer shows connection required
+Confirm the required plugin is installed, enabled, and fully loaded, then reopen WardrobeManager. Outfit and character capture, saving, and applying require Glamourer; mod and collection actions require Penumbra.
+
+## Apply says the outfit or character must be saved first
+Open Edit, capture the appropriate current appearance, choose Save or Save to Glamourer, and complete the confirmation before applying.
+
+## A preset applies with failures
+Read the AirTablet notification and check that every selected Penumbra collection, installed mod, Customize+ profile, Honorific title, and linked Glamourer design still exists. Open each related plugin and correct or reselect missing entries.
+
+## A linked preset disappeared
+Check whether its Glamourer design was deleted. WardrobeManager mirrors linked outfit and character designs and removes cards whose linked design no longer exists.
+
+## A portrait is missing
+Open Settings, choose the folder containing the image, and use Rescan Images. If it cannot be matched, edit the preset and choose the portrait again.
+
+## Glamourer's folder list still shows a removed folder
+Reload Glamourer, or enable Reload Glamourer after deleting an outfit folder before removing future folders.
+
+## A new Honorific title is unavailable
+Wait for the save/reload notice. Confirm Honorific is enabled and the title appears there, then reopen the character preset and select it again if needed.

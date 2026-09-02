@@ -32,10 +32,10 @@ Min Bet, Max Bet, Last Bet, Recent Trade, and Custom Bet reserve available bank 
 
 # Trade detection and safety
 - Verified incoming gil from a party member adds to their bank; verified outgoing gil subtracts from it.
-- Only game-authored system trade messages are trusted. Typed lookalike chat is ignored.
-- Gil direction comes from the verified receive/hand-over result, not who opened the trade.
+- Player banks change only after FFXIV reports the gil received or handed over. Ordinary typed chat does not count as a trade.
+- Gil direction follows whether FFXIV reports receiving or handing over the gil, not who opened the trade.
 - Chat and dice commands pause during a detected trade and resume after Trade complete or a recognized failure/cancel.
-- The red unable-to-trade game toast is detected even though it is absent from chat. It clears the waiting state and is written to Trades.
+- If FFXIV reports that a player is unable to trade, the waiting state clears and the failure appears in Trades.
 - A pending player association remains available for a slow response, then becomes stale after two minutes without a gil result.
 - Manual Buy-in / Bank Deposit and Manual Cash-Out remain available when automatic detection cannot be used.
 
@@ -49,7 +49,7 @@ Profiles control soft 17, ties/pushes, split matching, maximum hands, resplittin
 Broadcast Rules reports active-profile limits, applicable VIP maximum, soft-17/tie behavior, returns, Double Down rule, and split availability.
 
 # Overlay
-The overlay follows the tablet theme and supports compact mode plus one or more player-panel columns. Buttons wrap within the configured panel width.
+The overlay follows the tablet theme and supports compact mode plus one or more player-panel columns.
 
 ## Context-sensitive controls
 - Between hands: Open Betting.
@@ -84,4 +84,4 @@ Check automatic tracking, party membership, identity, and the trusted gil plus T
 ## A VIP bet is rejected
 Confirm profile, exact Name/Home World, current party membership, and a VIP maximum above standard.
 ## Dice do not progress a hand
-Confirm command/range, expected roller, genuine game dice payload, and pending action. Copied logs include raw parser context.
+Confirm the dice command and range, expected roller, and pending action. Copy the relevant Log Terminal entries when reporting the problem.

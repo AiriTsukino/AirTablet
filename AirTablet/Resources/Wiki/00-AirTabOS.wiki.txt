@@ -15,7 +15,7 @@
 > tip: Returning Home, minimizing, or switching apps does not disable bundled apps. Enabled apps continue running in the background.
 
 # Control Center
-Control Center is a full-screen quick view drawn above the current tablet app. Open it by clicking the status indicators in the upper-right corner. Close it by clicking the same status area again or by clicking the Home gesture bar. The app underneath remains open and does not receive clicks while Control Center is visible.
+Control Center provides quick controls and live app summaries without closing the app you were using. Open it by clicking the status indicators in the upper-right corner. Close it by clicking the same status area again or by clicking the Home gesture bar.
 
 ## Adding and removing widgets
 - A new Control Center starts with one Add widget tile.
@@ -23,13 +23,14 @@ Control Center is a full-screen quick view drawn above the current tablet app. O
 - After adding a widget, another Add widget tile appears while space and unused widgets remain.
 - Click the minus button in a widget's upper-right corner to remove it.
 - Widget choices are saved locally and return the next time AirTablet starts.
-- Long widget text scrolls so the complete value or description can be read.
 
 ## Live controls and summaries
 - AutoGreet: toggle auto-greeting, see current visitors, or check the greeting queue.
 - BarManager: view the bar jackpot or current-night sales.
 - GambaAssistant: view Blackjack table state or Death Roll tournament progress.
 - MacroDeck: run four assigned macros from the active venue profile.
+- PartyRefresh: toggle automatic refresh or view the current Party Finder recruitment.
+- PrizeTrader: monitor the recipient, confirmed gil, and remaining payout while a trade sequence is active.
 - RaffleManager: view ticket totals, contestants, jackpot, and projected payout information.
 - ShiftKeeper: view current shift timers or scheduled staff currently on shift.
 - ShoutRunner: view the current advertising route and its status.
@@ -67,7 +68,7 @@ Choose 12/24-hour time and whether battery information is shown.
 ## Migrate Configs
 Copies supported settings from the original standalone plugins. Original files are not modified. Repeating migration may overwrite changes made inside AirTablet with values from the old plugins.
 ## About
-Shows the installed AirTabOS version and Ko-fi supporter list. AirTablet checks its GitHub manifest about once per hour; when a newer version is available, About shows the version and an Update button that opens Dalamud's Plugin Installer with AirTablet already searched.
+Shows the installed AirTabOS version and Ko-fi supporter list. AirTablet checks for updates after startup and about once per hour. Choose Check for Updates to check immediately. When a newer version is available, choose Update to open Dalamud's Plugin Installer with AirTablet already searched.
 
 # Moving and recovery
 - Unlock the tablet before dragging the full tablet.

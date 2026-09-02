@@ -78,10 +78,10 @@ Controls display name, rolls per drink, dice range, session completion, paste en
 ## Buyouts & Jackpot
 Sets jackpot base, active jackpot, full buyout price, and hourly buyout price.
 ## Files
-Shows or opens the storage locations used for data, reports, audit records, and gamba configuration.
+Opens the folders used for saved setup, reports, audit records, and gamba exports.
 
 # Sessions and Report
-Sessions provides saved operational history, including gamba details. Report summarizes the current audit into venue-facing totals. Configuration JSON is for setup transfer; report/session output is for completed-night records.
+Sessions provides saved operational history, including gamba details. Report summarizes the current audit into venue-facing totals. Use configuration exports to transfer setup and report or session exports for completed-night records.
 
 # Troubleshooting
 ## A roll was not detected
