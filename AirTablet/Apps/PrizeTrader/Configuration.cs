@@ -9,4 +9,5 @@ public sealed class Configuration : IPluginConfiguration
     public long LastAmount { get; set; } = 1_000_000;
     public bool SettingsVisible { get; set; }
     public bool AutoAcceptIncomingTrades { get; set; }
+    public string LastAcknowledgedEarlyAccessVersion { get; set; } = string.Empty;
 }

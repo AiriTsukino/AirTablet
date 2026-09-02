@@ -6,7 +6,7 @@ namespace AirTablet;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 21;
+    public int Version { get; set; } = 22;
     public bool SetupCompleted { get; set; }
     public bool TutorialCompleted { get; set; }
     public bool ShowStartupAnimation { get; set; } = true;
@@ -29,6 +29,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool Use24HourClock { get; set; } = true;
     public List<string> ControlCenterWidgets { get; set; } = [];
     public string LastReadChangelogVersion { get; set; } = string.Empty;
+    public string LastSeenAvailableUpdateVersion { get; set; } = string.Empty;
     public List<string> AppOrder { get; set; } = [];
     public bool AppSelectionInitialized { get; set; }
     public List<string> EnabledApps { get; set; } = [];

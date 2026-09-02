@@ -2,12 +2,13 @@ using System.Numerics;
 using AirTablet.Models;
 using AirTablet.Services;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
 
 namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.0.24.2";
+    private const string ReleaseVersion = "1.1.0.0";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -69,6 +70,7 @@ internal sealed class TabletWindow
     private readonly TextureCache textures;
     private readonly FileDialogService dialogs;
     private readonly AppHostService appHost;
+    private readonly UpdateCheckService updates;
     private readonly Action save;
     private readonly Action saveImmediate;
     private readonly string[] supporters;
@@ -130,6 +132,21 @@ internal sealed class TabletWindow
             ReleaseVersion,
             StringComparison.OrdinalIgnoreCase);
 
+    private bool HasUnreadUpdate
+    {
+        get
+        {
+            var latest = updates.LatestVersion;
+            return config.SetupCompleted &&
+                   updates.IsUpdateAvailable &&
+                   latest is not null &&
+                   !string.Equals(
+                       config.LastSeenAvailableUpdateVersion,
+                       latest.ToString(),
+                       StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private bool ControlCenterVisible =>
         controlCenterOpen || controlCenterProgress > 0.01f;
 
@@ -140,6 +157,7 @@ internal sealed class TabletWindow
         TextureCache textures,
         FileDialogService dialogs,
         AppHostService appHost,
+        UpdateCheckService updates,
         Action save,
         Action saveImmediate)
     {
@@ -150,6 +168,7 @@ internal sealed class TabletWindow
         this.textures = textures;
         this.dialogs = dialogs;
         this.appHost = appHost;
+        this.updates = updates;
         this.save = save;
         this.saveImmediate = saveImmediate;
         TabletAppTheme.RememberTheme(ThemePalette.Resolve(config.Theme));
@@ -2480,7 +2499,8 @@ internal sealed class TabletWindow
             draw.AddRectFilled(iconMin, iconMax, ImGui.GetColorU32(background), S(15f));
             drawGlyph(draw, (iconMin + iconMax) * 0.5f, Vector4.One);
         }
-        if (id.Equals("settings", StringComparison.OrdinalIgnoreCase) && HasUnreadChangelog)
+        if (id.Equals("settings", StringComparison.OrdinalIgnoreCase) &&
+            (HasUnreadChangelog || HasUnreadUpdate))
             DrawNotificationBadge(
                 draw,
                 new Vector2(iconMax.X - S(1f), iconMin.Y + S(1f)),
@@ -3595,7 +3615,8 @@ internal sealed class TabletWindow
         {
             draw.AddRectFilled(iconMin, iconMax, ImGui.GetColorU32(fallbackColor), C(7f));
         }
-        if (page == SettingsPage.WhatsNew && HasUnreadChangelog)
+        if ((page == SettingsPage.WhatsNew && HasUnreadChangelog) ||
+            (page == SettingsPage.About && HasUnreadUpdate))
             DrawNotificationBadge(
                 draw,
                 new Vector2(iconMax.X - C(1f), iconMin.Y + C(1f)),
@@ -4274,6 +4295,14 @@ internal sealed class TabletWindow
                 ImGui.GetColorU32(Vector4.One),
                 letter);
         }
+        if ((target == SettingsPage.WhatsNew && HasUnreadChangelog) ||
+            (target == SettingsPage.About && HasUnreadUpdate))
+            DrawNotificationBadge(
+                draw,
+                new Vector2(iconMax.X - C(1f), iconMin.Y + C(1f)),
+                C(9f),
+                ThemePalette.Resolve(config.Theme),
+                "1");
         draw.AddText(rowStart + C(new Vector2(61, 21)), ImGui.GetColorU32(new Vector4(0.94f, 0.95f, 0.99f, 1f)), label);
         var valueSize = ImGui.CalcTextSize(value);
         draw.AddText(rowStart + new Vector2(rowSize.X - valueSize.X - C(33f), C(21f)), ImGui.GetColorU32(new Vector4(0.61f, 0.62f, 0.69f, 1f)), value);
@@ -4579,12 +4608,14 @@ internal sealed class TabletWindow
 
     private void DrawAboutSettings(ThemePalette palette)
     {
+        MarkUpdateRead();
         DrawSettingsGroupLabel("AirTablet");
         if (BeginSettingsGroup(
                 "##about-airtablet-group",
                 104f,
                 palette))
         {
+            var rowWidth = ImGui.GetContentRegionAvail().X;
             var icon = textures.GetResourceIcon(
                 "settings-about-large",
                 @"Resources\Settings\About.png");
@@ -4600,11 +4631,31 @@ internal sealed class TabletWindow
             ImGui.BeginGroup();
             ImGui.TextColored(palette.AccentHover, "AirTabOS");
             ImGui.TextUnformatted($"Version {ReleaseVersion}");
+            if (updates.IsUpdateAvailable && updates.LatestVersion is { } latestVersion)
+                ImGui.TextColored(
+                    new Vector4(0.96f, 0.72f, 0.24f, 1f),
+                    $"Version {latestVersion} is available");
             ImGui.PushTextWrapPos();
             ImGui.TextUnformatted(
                 "A modern tablet environment for Airi Tsukino's bundled Dalamud apps.");
             ImGui.PopTextWrapPos();
             ImGui.EndGroup();
+
+            if (updates.IsUpdateAvailable)
+            {
+                var buttonSize = C(new Vector2(116f, 38f));
+                ImGui.SetCursorScreenPos(new Vector2(
+                    start.X + rowWidth - buttonSize.X,
+                    start.Y + (iconSize.Y - buttonSize.Y) * 0.5f));
+                if (ImGui.Button("Update", buttonSize))
+                {
+                    if (!DalamudServices.PluginInterface.OpenPluginInstallerTo(
+                            PluginInstallerOpenKind.AllPlugins,
+                            "AirTablet"))
+                        ShowNotice("Dalamud's Plugin Installer could not be opened.");
+                }
+                DrawTooltip("Open Dalamud's Plugin Installer with AirTablet in the search box.");
+            }
         }
         EndSettingsGroup();
 
@@ -5467,6 +5518,14 @@ internal sealed class TabletWindow
         if (!HasUnreadChangelog)
             return;
         config.LastReadChangelogVersion = ReleaseVersion;
+        saveImmediate();
+    }
+
+    private void MarkUpdateRead()
+    {
+        if (!HasUnreadUpdate || updates.LatestVersion is not { } latest)
+            return;
+        config.LastSeenAvailableUpdateVersion = latest.ToString();
         saveImmediate();
     }
 

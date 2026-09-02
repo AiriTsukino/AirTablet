@@ -7,9 +7,17 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-1] AirTabOS v1.1.0.0
+- Fixed version ruling so users should no longer be locked to older versions and not get updates. 
+
+[2026-09-1] PrizeTrader v1.0.22.0
+- Added an early-access warning for the current app version. (New bugs were popping up so gotta fix those before im happy with removing the EA warning)
+- Added a selectable and fully copyable diagnostic log in a separate Settings tab for troubleshooting trades.
+
 [2026-09-1] AirTabOS v1.0.24.2
 - [NEW APP] PrizeTrader an app to automatically trade large amounts of prize gil to a winner of any event. Also has option to auto accept incoming trades
 - [NEW APP] WardrobeManager an app to manage Glamourer outfits, Character presets including glamourer appearance presets, penumbra mod collection, customize+ profile and honorific title.
+- Added an hourly update check with unread Settings and About notifications plus a direct AirTablet Plugin Installer search.
 
 [2026-09-1] ShiftKeeper v1.0.18.0
 - Added Firedrill mode where you can track active staff in any location the app host/operator is in. (Useful for outdoor events)

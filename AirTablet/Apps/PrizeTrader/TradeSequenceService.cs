@@ -12,6 +12,7 @@ namespace PrizeTrader;
 
 internal sealed unsafe class TradeSequenceService : IDisposable
 {
+    private const int MaximumDiagnosticEntries = 1000;
     public const long MaximumChunk = 1_000_000;
     private static readonly Regex OutgoingGil = new(@"\b(?:you\s+)?(?:hand\s+over|gave|give|trade|traded|pay|paid)\s+(?<amount>[\d,]+)\s+gil\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex TradeComplete = new(@"\btrade\s+complete\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -19,6 +20,8 @@ internal sealed unsafe class TradeSequenceService : IDisposable
     private static readonly Regex UnavailableToast = new(@"\bis\s+unable\s+to\s+trade\s+at\s+this\s+time\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly Func<bool> autoAcceptIncomingTrades;
+    private readonly object diagnosticLock = new();
+    private readonly List<string> diagnosticEntries = [];
     private string lockedName = string.Empty;
     private string lockedWorld = string.Empty;
     private DateTimeOffset nextActionUtc;
@@ -31,6 +34,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
     private IncomingTradeStage incomingStage;
     private DateTimeOffset nextIncomingActionUtc;
     private string? notification;
+    private string status = "Lock a visible player target to prepare a payout.";
 
     public string? LockedDisplay => HasLockedTarget ? $"{lockedName}@{lockedWorld}" : null;
     public bool HasLockedTarget => !string.IsNullOrWhiteSpace(lockedName) && !string.IsNullOrWhiteSpace(lockedWorld);
@@ -42,13 +46,47 @@ internal sealed unsafe class TradeSequenceService : IDisposable
     public long ConfirmedAmount { get; private set; }
     public long RemainingAmount => Math.Max(0, TotalAmount - ConfirmedAmount);
     public long CurrentChunk => IsRunning ? Math.Min(MaximumChunk, RemainingAmount) : 0;
-    public string Status { get; private set; } = "Lock a visible player target to prepare a payout.";
+    public string Status
+    {
+        get => status;
+        private set
+        {
+            if (status.Equals(value, StringComparison.Ordinal)) return;
+            status = value;
+            Trace($"Status: {value}");
+        }
+    }
+    public string DebugLogText
+    {
+        get
+        {
+            lock (diagnosticLock)
+                return string.Join(Environment.NewLine, diagnosticEntries);
+        }
+    }
+    public int DebugLogLineCount
+    {
+        get
+        {
+            lock (diagnosticLock)
+                return diagnosticEntries.Count;
+        }
+    }
 
     public TradeSequenceService(Func<bool> autoAcceptIncomingTrades)
     {
         this.autoAcceptIncomingTrades = autoAcceptIncomingTrades;
         DalamudServices.ChatGui.ChatMessage += OnChatMessage;
         DalamudServices.ToastGui.ErrorToast += OnErrorToast;
+        Trace("PrizeTrader diagnostics started.");
+        Trace($"Automatic incoming trade acceptance is {(autoAcceptIncomingTrades() ? "enabled" : "disabled")}.");
+        Trace($"Status: {Status}");
+    }
+
+    public void ClearDebugLog()
+    {
+        lock (diagnosticLock)
+            diagnosticEntries.Clear();
     }
 
     public void LockCurrentTarget()
@@ -81,7 +119,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
         ResetChunkState();
         stage = SequenceStage.OpeningTrade;
         Status = $"Preparing the first {CurrentChunk:N0} gil trade with {LockedDisplay}.";
-        DalamudServices.Log.Information("PrizeTrader sequence started. Total={Total:N0}; chunk={Chunk:N0}.", TotalAmount, CurrentChunk);
+        Trace($"Sequence started. Total={TotalAmount:N0}; chunk={CurrentChunk:N0}; recipient={LockedDisplay}.");
     }
 
     public void Cancel(string reason)
@@ -141,7 +179,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                     return;
                 }
                 openCommandSent = true;
-                DalamudServices.Log.Information("PrizeTrader sent the trade request for chunk {Chunk:N0}.", CurrentChunk);
+                Trace($"Sent the trade request for chunk {CurrentChunk:N0}.");
                 Status = $"Trade request sent to {LockedDisplay}; waiting for the normal Trade window. There is no response timeout.";
             }
             nextActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
@@ -176,7 +214,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                     if (TrySubmitNumericInput(numeric, checked((int)CurrentChunk)))
                     {
                         numericSubmitted = true;
-                        DalamudServices.Log.Information("PrizeTrader submitted the numeric gil callback once for {Chunk:N0}.", CurrentChunk);
+                        Trace($"Submitted the numeric gil callback once for {CurrentChunk:N0}.");
                         Status = $"Confirmed the {CurrentChunk:N0} gil entry; preparing the trade.";
                     }
                     else Status = "The gil amount is entered, but the confirmation control is not ready yet.";
@@ -202,7 +240,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                 }
                 tradeButtonClicked = true;
                 stage = SequenceStage.ConfirmingTrade;
-                DalamudServices.Log.Information("PrizeTrader sent the Trade callback once for chunk {Chunk:N0}.", CurrentChunk);
+                Trace($"Sent the Trade callback once for chunk {CurrentChunk:N0}.");
                 nextActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
                 Status = $"Submitted {CurrentChunk:N0} gil; waiting for the game's final trade confirmation.";
             }
@@ -227,7 +265,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                     return;
                 }
                 stage = SequenceStage.AwaitingCompletion;
-                DalamudServices.Log.Information("PrizeTrader sent Yes once and is now passively waiting for trusted completion messages.");
+                Trace("Sent Yes once and began waiting for trusted completion messages.");
                 Status = $"Confirmed Yes once. Waiting for {LockedDisplay} and the trusted Trade complete system message; this wait has no time limit.";
                 nextActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
                 return;
@@ -255,6 +293,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
 
     public void OnIncomingAutoAcceptSettingChanged()
     {
+        Trace($"Automatic incoming trade acceptance changed to {(autoAcceptIncomingTrades() ? "enabled" : "disabled")}.");
         if (autoAcceptIncomingTrades()) return;
         ResetIncomingTrade();
     }
@@ -281,7 +320,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                 incomingStage = IncomingTradeStage.WaitingForTradeWindow;
                 nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
                 Status = "Accepted an incoming trade request once; waiting for the Trade window.";
-                DalamudServices.Log.Information("PrizeTrader auto-accepted an incoming trade request once.");
+                Trace("Auto-accepted an incoming trade request once.");
                 return;
             }
 
@@ -292,7 +331,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             incomingStage = IncomingTradeStage.ReadyingEmptySide;
             nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
             Status = "Detected an open incoming Trade window; preparing to ready the empty PrizeTrader side.";
-            DalamudServices.Log.Information("PrizeTrader adopted an already-open incoming Trade window.");
+            Trace("Adopted an already-open incoming Trade window.");
             return;
         }
 
@@ -324,7 +363,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                 nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(250);
                 return;
             }
-            DalamudServices.Log.Information("PrizeTrader detected the other player's native Trade ready state.");
+            Trace("Detected the other player's native Trade ready state.");
             if (!TryFireTradeCallback(trade, 0))
             {
                 nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
@@ -333,7 +372,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             incomingStage = IncomingTradeStage.WaitingForFinalPrompt;
             nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
             Status = "Readied the empty side once; waiting for the final Complete trade prompt.";
-            DalamudServices.Log.Information("PrizeTrader readied its empty incoming trade side once.");
+            Trace("Readied the empty incoming trade side once.");
             return;
         }
 
@@ -350,7 +389,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                 incomingStage = IncomingTradeStage.WaitingForCompletion;
                 nextIncomingActionUtc = DateTimeOffset.UtcNow.AddSeconds(1);
                 Status = "Confirmed the incoming trade Yes once; waiting for the trusted Trade complete system message with no time limit.";
-                DalamudServices.Log.Information("PrizeTrader confirmed incoming trade Yes once and is passively waiting for Trade complete.");
+                Trace("Confirmed incoming trade Yes once and began waiting for Trade complete.");
                 return;
             }
 
@@ -379,6 +418,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
         var sender = message.OriginalSender.ToString();
         var body = message.OriginalMessage.ToString();
         if (!IsTrustedSystemLine(message, sender)) return;
+        Trace($"Observed trusted chat line: kind={DescribeChatKind(message)}; text={Clean(body)}");
         var combined = Clean($"{sender} {body}");
 
         if (!IsRunning)
@@ -390,7 +430,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                 return;
             }
             if (!TradeComplete.IsMatch(combined)) return;
-            DalamudServices.Log.Information("PrizeTrader observed the trusted Trade complete system line for the incoming trade.");
+            Trace("Matched the trusted Trade complete system line for the incoming trade.");
             ResetIncomingTrade("Incoming trade complete.");
             Notify("PrizeTrader incoming trade completed.");
             return;
@@ -407,7 +447,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             if (amount == CurrentChunk)
             {
                 stagedOutgoingAmount = amount;
-                DalamudServices.Log.Information("PrizeTrader observed the matching trusted outgoing gil line for {Amount:N0}.", amount);
+                Trace($"Matched the trusted outgoing gil line for {amount:N0}.");
                 Status = $"The game reported {amount:N0} gil handed over; waiting for Trade complete before counting it.";
             }
             else
@@ -417,7 +457,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             return;
         }
         if (!TradeComplete.IsMatch(combined)) return;
-        DalamudServices.Log.Information("PrizeTrader observed the trusted Trade complete system line.");
+        Trace("Matched the trusted Trade complete system line.");
         if (stagedOutgoingAmount != CurrentChunk || stagedOutgoingAmount <= 0)
         {
             Cancel("A Trade complete message arrived without the exact expected outgoing gil confirmation.");
@@ -439,6 +479,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
     private void OnErrorToast(ref SeString message, ref bool isHandled)
     {
         if (!UnavailableToast.IsMatch(Clean(message.TextValue))) return;
+        Trace($"Observed matching trade error toast: {Clean(message.TextValue)}");
         if (IsRunning)
             PauseFailedTrade(message.TextValue.Trim());
         else if (incomingStage != IncomingTradeStage.Idle)
@@ -515,7 +556,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
         return string.IsNullOrWhiteSpace(Clean(sender)) || kind.Contains("System", StringComparison.OrdinalIgnoreCase) || kind.Contains("Log", StringComparison.OrdinalIgnoreCase) || kind.Contains("Notice", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool SendGameCommand(string command)
+    private bool SendGameCommand(string command)
     {
         try
         {
@@ -528,6 +569,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
         }
         catch (Exception ex)
         {
+            Trace($"ERROR sending the trade command: {ex.GetType().Name}: {ex.Message}");
             DalamudServices.Log.Warning(ex, "PrizeTrader could not send the trade command.");
             return false;
         }
@@ -698,6 +740,22 @@ internal sealed unsafe class TradeSequenceService : IDisposable
     private static string Clean(string? value) => Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim();
     private static string Normalize(string? value) => new((value ?? string.Empty).Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
     private static bool TryParseAmount(string value, out long amount) => long.TryParse(value.Replace(",", string.Empty), NumberStyles.Integer, CultureInfo.InvariantCulture, out amount) && amount > 0;
+    private static string DescribeChatKind(IHandleableChatMessage message)
+    {
+        try { return message.LogKind.ToString(); }
+        catch { return "unknown"; }
+    }
+    private void Trace(string message)
+    {
+        var line = $"[{DateTime.Now:HH:mm:ss.fff}] {Clean(message)}";
+        lock (diagnosticLock)
+        {
+            diagnosticEntries.Add(line);
+            if (diagnosticEntries.Count > MaximumDiagnosticEntries)
+                diagnosticEntries.RemoveRange(0, diagnosticEntries.Count - MaximumDiagnosticEntries);
+        }
+        DalamudServices.Log.Information("[PrizeTrader] {Message}", message);
+    }
     private void Notify(string value) => notification = value;
     public string? ConsumeNotification() { var value = notification; notification = null; return value; }
 

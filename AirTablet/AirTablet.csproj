@@ -8,7 +8,7 @@
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
     <AssemblyName>AirTablet</AssemblyName>
     <RootNamespace>AirTablet</RootNamespace>
-    <Version>1.0.24.2</Version>
+    <Version>1.1.0.0</Version>
     <Description>A modern tablet OS for Airi's bundled venue apps.</Description>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
@@ -61,4 +61,11 @@
     <EmbeddedResource Include="Apps\AutoGreet\Resources\default-doorbell.mp3" />
     <EmbeddedResource Include="Apps\RaffleManager\Resources\tick.wav" />
   </ItemGroup>
+
+  <Target Name="CopyDalamudReleaseZipToRepository"
+          AfterTargets="DefaultDalamudPackagerRelease"
+          Condition="'$(Configuration)' == 'Release' and Exists('$(OutputPath)$(AssemblyName)\latest.zip')">
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName)\latest.zip"
+          DestinationFiles="$(MSBuildProjectDirectory)\..\AirTablet.zip" />
+  </Target>
 </Project>

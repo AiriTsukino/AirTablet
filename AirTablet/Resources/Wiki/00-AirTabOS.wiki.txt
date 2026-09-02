@@ -42,7 +42,7 @@ Controls use the same local app configuration as their full app. For example, ch
 ## Discord
 Opens the AiriPluginHub community Discord invite link in your default browser.
 ## Settings
-Opens AirTabOS settings. A red badge means a new tablet version has unread release notes. Open What's New to clear it for that version.
+Opens AirTabOS settings. A red badge means AirTablet has unread release notes or found a newer plugin version. Open What's New or About to clear the matching notice.
 ## Wiki
 Opens these bundled guides. Search checks article titles, summaries, headings, and body text.
 ## Feedback
@@ -67,7 +67,7 @@ Choose 12/24-hour time and whether battery information is shown.
 ## Migrate Configs
 Copies supported settings from the original standalone plugins. Original files are not modified. Repeating migration may overwrite changes made inside AirTablet with values from the old plugins.
 ## About
-Shows the installed AirTabOS version and Ko-fi supporter list.
+Shows the installed AirTabOS version and Ko-fi supporter list. AirTablet checks its GitHub manifest about once per hour; when a newer version is available, About shows the version and an Update button that opens Dalamud's Plugin Installer with AirTablet already searched.
 
 # Moving and recovery
 - Unlock the tablet before dragging the full tablet.

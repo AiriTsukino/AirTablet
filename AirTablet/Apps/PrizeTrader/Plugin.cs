@@ -8,6 +8,8 @@ namespace PrizeTrader;
 
 internal sealed class Plugin : IDisposable
 {
+    private const string PrizeTraderVersion = "1.0.22.0";
+    private const string EarlyAccessWarningModal = "PrizeTrader early access##PrizeTrader";
     private readonly Configuration config;
     private readonly TradeSequenceService trades;
     private long amount;
@@ -15,6 +17,7 @@ internal sealed class Plugin : IDisposable
     private bool settingsVisible;
     private nint observedTargetAddress;
     private bool targetObservationInitialized;
+    private bool earlyAccessWarningOpened;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -37,6 +40,7 @@ internal sealed class Plugin : IDisposable
         if (settingsVisible)
         {
             DrawSettings();
+            DrawEarlyAccessWarning();
             return;
         }
 
@@ -56,6 +60,7 @@ internal sealed class Plugin : IDisposable
         }
 
         DrawConfirmation();
+        DrawEarlyAccessWarning();
     }
 
     private void DrawSetup()
@@ -136,6 +141,23 @@ internal sealed class Plugin : IDisposable
     {
         ImGui.TextColored(TabletAppTheme.AccentHover, "PrizeTrader Settings");
         ImGui.Separator();
+        if (!ImGui.BeginTabBar("##prizetrader-settings-tabs"))
+            return;
+        if (ImGui.BeginTabItem("General"))
+        {
+            DrawGeneralSettings();
+            ImGui.EndTabItem();
+        }
+        if (ImGui.BeginTabItem("Debug Log"))
+        {
+            DrawDebugLog();
+            ImGui.EndTabItem();
+        }
+        ImGui.EndTabBar();
+    }
+
+    private void DrawGeneralSettings()
+    {
         var autoAccept = config.AutoAcceptIncomingTrades;
         if (ImGui.Checkbox("Automatically accept incoming trades", ref autoAccept))
         {
@@ -147,6 +169,61 @@ internal sealed class Plugin : IDisposable
             "Off by default. When enabled, PrizeTrader accepts incoming trade requests, readies your empty side, confirms Yes once, and waits for the trusted Trade complete system message. It never adds gil or items to incoming trades.");
         TextColoredWrapped(new Vector4(1f, 0.72f, 0.30f, 1f),
             "This accepts trades from any player who sends you a request while the setting is enabled.");
+    }
+
+    private void DrawDebugLog()
+    {
+        ImGui.TextColored(TabletAppTheme.AccentHover, "PrizeTrader diagnostics");
+        TextColoredWrapped(TabletAppTheme.MutedText,
+            "Use this session log when reporting trade problems. Click inside the log to select specific text and press Ctrl+C, or copy the entire log with the button below.");
+        ImGui.Spacing();
+
+        var logText = trades.DebugLogText;
+        if (ImGui.Button("Copy All", TabletAppTheme.Px(new Vector2(105f, 30f))))
+            ImGui.SetClipboardText(logText);
+        ImGui.SameLine();
+        if (ImGui.Button("Clear", TabletAppTheme.Px(new Vector2(90f, 30f))))
+            trades.ClearDebugLog();
+        ImGui.SameLine();
+        ImGui.TextDisabled($"{trades.DebugLogLineCount:N0} line(s)");
+
+        ImGui.Spacing();
+        logText = trades.DebugLogText;
+        var height = MathF.Max(TabletAppTheme.Px(220f), ImGui.GetContentRegionAvail().Y);
+        ImGui.InputTextMultiline(
+            "##prizetrader-copyable-debug-log",
+            ref logText,
+            Math.Max(logText.Length + 1024, 4096),
+            new Vector2(-1f, height),
+            ImGuiInputTextFlags.ReadOnly | ImGuiInputTextFlags.AllowTabInput);
+    }
+
+    private void DrawEarlyAccessWarning()
+    {
+        if (config.LastAcknowledgedEarlyAccessVersion.Equals(PrizeTraderVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            earlyAccessWarningOpened = false;
+            return;
+        }
+        if (!earlyAccessWarningOpened)
+        {
+            earlyAccessWarningOpened = true;
+            TabletAppTheme.OpenCenteredModal(EarlyAccessWarningModal);
+        }
+        if (!TabletAppTheme.BeginCenteredModal(EarlyAccessWarningModal,
+                ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings))
+            return;
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + TabletAppTheme.Px(420f));
+        ImGui.TextWrapped("PrizeTrader is in early access and may not be fully functional yet. Carefully verify every recipient, gil amount, and completed trade while testing, and report any problems with the Debug Log from Settings.");
+        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
+        if (ImGui.Button("Acknowledge", TabletAppTheme.Px(new Vector2(150f, 0f))))
+        {
+            config.LastAcknowledgedEarlyAccessVersion = PrizeTraderVersion;
+            SaveConfig();
+            TabletAppTheme.CloseCenteredModal();
+        }
+        TabletAppTheme.EndCenteredModal();
     }
 
     private void ObserveTargetChange()

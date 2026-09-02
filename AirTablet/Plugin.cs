@@ -24,6 +24,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Configuration config;
     private readonly CatalogService catalog;
     private readonly ChangelogService changelog;
+    private readonly UpdateCheckService updates;
     private readonly TextureCache textures;
     private readonly FileDialogService dialogs;
     private readonly AppHostService appHost;
@@ -102,9 +103,16 @@ public sealed class Plugin : IDalamudPlugin
             config.Version = 21;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
+        if (hadExistingConfig && previousVersion < 22)
+        {
+            config.LastSeenAvailableUpdateVersion ??= string.Empty;
+            config.Version = 22;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+        }
         SaveAppSelectionState(config);
         catalog = new CatalogService(config);
         changelog = new ChangelogService();
+        updates = new UpdateCheckService();
         textures = new TextureCache();
         dialogs = new FileDialogService();
         appHost = new AppHostService(config);
@@ -115,6 +123,7 @@ public sealed class Plugin : IDalamudPlugin
             textures,
             dialogs,
             appHost,
+            updates,
             QueueSave,
             SaveNow);
 
@@ -150,6 +159,7 @@ public sealed class Plugin : IDalamudPlugin
         dialogs.Dispose();
         textures.Dispose();
         changelog.Dispose();
+        updates.Dispose();
         catalog.Dispose();
     }
 
@@ -178,6 +188,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
+            updates.Tick();
             var gameReady = UpdateInitialWorldReady();
             var keepTravelShellVisible = appHost.KeepTabletVisibleDuringTravel;
             if (gameReady || keepTravelShellVisible)
