@@ -8,7 +8,7 @@
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
     <AssemblyName>AirTablet</AssemblyName>
     <RootNamespace>AirTablet</RootNamespace>
-    <Version>1.1.0.0</Version>
+    <Version>1.1.0.1</Version>
     <Description>A modern tablet OS for Airi's bundled venue apps.</Description>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

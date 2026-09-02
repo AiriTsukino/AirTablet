@@ -320,13 +320,28 @@ internal sealed class Plugin : IDisposable
     {
         ImGui.PushStyleColor(ImGuiCol.ChildBg, TabletAppTheme.SurfaceRaised);
         ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(TabletAppTheme.Accent.X, TabletAppTheme.Accent.Y, TabletAppTheme.Accent.Z, 0.48f));
-        if (ImGui.BeginChild($"##wardrobe-emote-card-{preset.Id}", new Vector2(-1f, TabletAppTheme.Px(220f)), true,
+        if (ImGui.BeginChild($"##wardrobe-emote-card-{preset.Id}", new Vector2(-1f, TabletAppTheme.Px(240f)), true,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
+            var titlePosition = ImGui.GetCursorScreenPos();
+            var titleWidth = ImGui.GetContentRegionAvail().X;
+            var favoriteSize = GetFavoriteStarSize(preset);
+            var favoritePosition = new Vector2(
+                titlePosition.X + MathF.Max(0f, titleWidth - favoriteSize.X),
+                titlePosition.Y);
+            var availableTitleWidth = MathF.Max(
+                TabletAppTheme.Px(24f),
+                titleWidth - favoriteSize.X - ImGui.GetStyle().ItemSpacing.X);
+            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + availableTitleWidth);
             ImGui.TextWrapped(preset.Name);
+            ImGui.PopTextWrapPos();
+            var titleBottom = ImGui.GetItemRectMax().Y;
+            DrawFavoriteStar(preset, favoritePosition);
+            ImGui.SetCursorScreenPos(new Vector2(
+                titlePosition.X,
+                MathF.Max(titleBottom, favoritePosition.Y + favoriteSize.Y) + ImGui.GetStyle().ItemSpacing.Y));
             var previewHeight = ImGui.GetTextLineHeightWithSpacing() * 5f + TabletAppTheme.Px(8f);
             ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.12f, 0.10f, 0.18f, 1f));
-            var previewPosition = ImGui.GetCursorScreenPos();
             if (ImGui.BeginChild("##emote-preview", new Vector2(-1f, previewHeight), true))
             {
                 if (preset.Mods.Count == 0)
@@ -352,7 +367,6 @@ internal sealed class Plugin : IDisposable
             ImGui.SameLine();
             if (ImGui.Button($"Edit##{preset.Id}", new Vector2(buttonWidth, 0f))) BeginEdit(preset);
             ImGui.Dummy(new Vector2(0f, TabletAppTheme.Px(6f)));
-            DrawFavoriteStar(preset, previewPosition + TabletAppTheme.Px(new Vector2(5f, 5f)));
         }
         ImGui.EndChild();
         ImGui.PopStyleColor(2);
@@ -397,6 +411,18 @@ internal sealed class Plugin : IDisposable
         if (hovered)
             ImGui.SetTooltip(preset.IsFavorite ? "Remove from favorites" : "Keep this preset at the start of the page");
         ImGui.SetCursorScreenPos(cursor);
+    }
+
+    private unsafe Vector2 GetFavoriteStarSize(WardrobePreset preset)
+    {
+        var star = preset.IsFavorite ? "\u2605" : "\u2606";
+        var font = ImGui.GetFont();
+        var glyph = font.FindGlyph(star[0]);
+        var fontScale = font.FontSize > 0f ? ImGui.GetFontSize() / font.FontSize : 1f;
+        var glyphSize = glyph is null
+            ? ImGui.CalcTextSize(star)
+            : new Vector2((glyph->X1 - glyph->X0) * fontScale, (glyph->Y1 - glyph->Y0) * fontScale);
+        return glyphSize + TabletAppTheme.Px(new Vector2(20f, 20f));
     }
 
     private void DrawConnectionAndQuickRow(bool synchronizeQuickSelection)
@@ -1966,6 +1992,7 @@ internal sealed class Plugin : IDisposable
             DalamudServices.PluginInterface.SavePluginConfig(config);
             TabletAppTheme.CloseCenteredModal();
         }
+        ImGui.Dummy(new Vector2(0f, TabletAppTheme.Px(10f)));
         TabletAppTheme.EndCenteredModal();
     }
 

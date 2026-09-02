@@ -8,7 +8,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.1.0.0";
+    private const string ReleaseVersion = "1.1.0.1";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -4616,6 +4616,13 @@ internal sealed class TabletWindow
                 palette))
         {
             var rowWidth = ImGui.GetContentRegionAvail().X;
+            var checkButtonSize = C(new Vector2(154f, 38f));
+            var updateButtonSize = C(new Vector2(116f, 38f));
+            var actionSpacing = C(8f);
+            var actionWidth = checkButtonSize.X +
+                              (updates.IsUpdateAvailable
+                                  ? actionSpacing + updateButtonSize.X
+                                  : 0f);
             var icon = textures.GetResourceIcon(
                 "settings-about-large",
                 @"Resources\Settings\About.png");
@@ -4631,23 +4638,51 @@ internal sealed class TabletWindow
             ImGui.BeginGroup();
             ImGui.TextColored(palette.AccentHover, "AirTabOS");
             ImGui.TextUnformatted($"Version {ReleaseVersion}");
-            if (updates.IsUpdateAvailable && updates.LatestVersion is { } latestVersion)
+            if (updates.IsChecking)
+                ImGui.TextColored(
+                    new Vector4(0.62f, 0.64f, 0.72f, 1f),
+                    "Checking for updates...");
+            else if (updates.IsUpdateAvailable && updates.LatestVersion is { } latestVersion)
                 ImGui.TextColored(
                     new Vector4(0.96f, 0.72f, 0.24f, 1f),
                     $"Version {latestVersion} is available");
-            ImGui.PushTextWrapPos();
+            else if (updates.LatestVersion is not null)
+                ImGui.TextColored(
+                    new Vector4(0.48f, 0.78f, 0.58f, 1f),
+                    "AirTablet is up to date.");
+            else if (!string.IsNullOrWhiteSpace(updates.LastError))
+                ImGui.TextColored(
+                    new Vector4(0.92f, 0.42f, 0.42f, 1f),
+                    "Update check failed.");
+            var textWidth = MathF.Max(
+                C(140f),
+                rowWidth - iconSize.X - C(26f) - actionWidth);
+            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + textWidth);
             ImGui.TextUnformatted(
                 "A modern tablet environment for Airi Tsukino's bundled Dalamud apps.");
             ImGui.PopTextWrapPos();
             ImGui.EndGroup();
 
+            var actionsStart = new Vector2(
+                start.X + rowWidth - actionWidth,
+                start.Y + (iconSize.Y - checkButtonSize.Y) * 0.5f);
+            ImGui.SetCursorScreenPos(actionsStart);
+            ImGui.BeginDisabled(updates.IsChecking);
+            if (ImGui.Button(
+                    updates.IsChecking ? "Checking..." : "Check for Updates",
+                    checkButtonSize))
+                updates.CheckNow();
+            ImGui.EndDisabled();
+            DrawTooltip(updates.IsChecking
+                ? "AirTablet is checking the published plugin manifest."
+                : "Check the published plugin manifest now.");
+
             if (updates.IsUpdateAvailable)
             {
-                var buttonSize = C(new Vector2(116f, 38f));
                 ImGui.SetCursorScreenPos(new Vector2(
-                    start.X + rowWidth - buttonSize.X,
-                    start.Y + (iconSize.Y - buttonSize.Y) * 0.5f));
-                if (ImGui.Button("Update", buttonSize))
+                    actionsStart.X + checkButtonSize.X + actionSpacing,
+                    actionsStart.Y));
+                if (ImGui.Button("Update", updateButtonSize))
                 {
                     if (!DalamudServices.PluginInterface.OpenPluginInstallerTo(
                             PluginInstallerOpenKind.AllPlugins,

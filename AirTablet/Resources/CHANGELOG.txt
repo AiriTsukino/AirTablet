@@ -7,6 +7,12 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-1] AirTabOS v1.1.0.1
+- Added a manual check for updates in about tab.
+
+[2026-09-1] WardrobeManager v1.0.53.0
+- Fixed emote card favourite button locations to top right of card as they were unpressable.
+
 [2026-09-1] AirTabOS v1.1.0.0
 - Fixed version ruling so users should no longer be locked to older versions and not get updates. 
 

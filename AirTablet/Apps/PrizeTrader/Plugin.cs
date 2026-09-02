@@ -223,6 +223,7 @@ internal sealed class Plugin : IDisposable
             SaveConfig();
             TabletAppTheme.CloseCenteredModal();
         }
+        ImGui.Dummy(new Vector2(0f, TabletAppTheme.Px(10f)));
         TabletAppTheme.EndCenteredModal();
     }
 
