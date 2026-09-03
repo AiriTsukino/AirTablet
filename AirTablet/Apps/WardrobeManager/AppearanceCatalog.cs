@@ -62,7 +62,6 @@ internal sealed class AppearanceCatalog
         if (name == "Clan") return data.GetExcelSheet<Tribe>().Where(r => r.RowId >= race * 2 - 1 && r.RowId <= race * 2)
             .Select(r => new Choice((int)r.RowId, (gender == 1 ? r.Feminine : r.Masculine).ExtractText())).ToArray();
         if (name == "Gender") return [new(0, "Masculine"), new(1, "Feminine")];
-        if (name == "BodyType") return [new(1, "Default body")];
         if (clan is < 1 or > 16 || gender is < 0 or > 1) return [];
         var rowId = (uint)((clan - 1) * 2 + gender);
         var row = data.GetExcelSheet<CharaMakeType>().GetRow(rowId);

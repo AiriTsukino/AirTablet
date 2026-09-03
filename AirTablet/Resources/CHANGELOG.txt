@@ -7,6 +7,9 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-03] WardrobeManager v1.1.0.2
+- Added pagination for preset libraries as it was causing rendering lag for large collections.
+
 [2026-09-03] WardrobeManager v1.1.0.1
 - Optimized Penumbra mod searches using its synchronized live catalogue, with debounced and time-sliced processing to prevent large mod libraries from causing game hitches.
 - Added outfit, character, and emote preset counts beside the Penumbra and Glamourer connection status.

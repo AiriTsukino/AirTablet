@@ -8,7 +8,7 @@ namespace WardrobeManager;
 internal sealed class Plugin : IDisposable
 {
     private enum HonorificSavePhase { None, WaitingForUnload, WaitingForReload }
-    private const string WardrobeManagerVersion = "1.1.0.1";
+    private const string WardrobeManagerVersion = "1.1.0.2";
     private const string DevelopmentWarningModal = "WardrobeManager is in development##WardrobeManager";
     private const string ManualHonorificModal = "New Honorific Title";
     private static readonly string[] HonorificEffectPalettes =
@@ -24,6 +24,7 @@ internal sealed class Plugin : IDisposable
     private readonly PortraitTextureCache textures = new();
     private readonly AppearanceEditor appearanceEditor = new();
     private readonly SelfieCameraService selfieCamera;
+    private readonly StartupDiagnosticLog startupDiagnostics;
     private IReadOnlyList<AvailableMod> modMatches = [];
     private bool modSearchPending;
     private bool modSearchRunning;
@@ -44,6 +45,9 @@ internal sealed class Plugin : IDisposable
     private string newFolderName = string.Empty;
     private bool imageCleanupRequested;
     private DateTime nextAutomaticGlamourerScan;
+    private bool automaticGlamourerScanRunning;
+    private GlamourerImportState? glamourerImport;
+    private DateTime lastAppDraw;
     private readonly Dictionary<Guid, int> missingGlamourerDesignScans = [];
     private bool outfitDirty;
     private bool closeEditorAfterSync;
@@ -67,13 +71,22 @@ internal sealed class Plugin : IDisposable
     private DateTime honorificConfigWriteBeforeUnload;
     private WardrobePreset? manualHonorificPreset;
     private ManualHonorificDraft? manualHonorificDraft;
+    private const int PresetsPerPage = 25;
+    private int libraryPage;
+    private string libraryPageKey = string.Empty;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
         DalamudServices.Initialize(pluginInterface);
-        config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        persistence = new PersistenceService();
-        integrations = new IntegrationService();
+        startupDiagnostics = new StartupDiagnosticLog(pluginInterface.ConfigDirectory);
+        using (startupDiagnostics.MeasureOnce("config-load", "Loading WardrobeManager configuration"))
+            config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        using (startupDiagnostics.MeasureOnce("wardrobe-load", "Loading and normalizing wardrobe.json"))
+            persistence = new PersistenceService();
+        startupDiagnostics.Once("wardrobe-counts",
+            $"Loaded presets={persistence.Data.Presets.Count}; folders={persistence.Data.Folders.Count}");
+        using (startupDiagnostics.MeasureOnce("integration-create", "Creating integration IPC subscribers"))
+            integrations = new IntegrationService();
         selfieCamera = new SelfieCameraService(
             config,
             persistence,
@@ -114,6 +127,18 @@ internal sealed class Plugin : IDisposable
 
     public void Draw()
     {
+        var drawNow = DateTime.UtcNow;
+        if (lastAppDraw == default || drawNow - lastAppDraw > TimeSpan.FromSeconds(5))
+        {
+            // The host keeps the module alive while another app is visible. Start
+            // one fresh, incremental reconciliation whenever WardrobeManager is
+            // opened again, rather than continuously polling Glamourer.
+            if (!automaticGlamourerScanRunning && glamourerImport is null) nextAutomaticGlamourerScan = drawNow;
+            startupDiagnostics.BeginVisibleSession();
+            startupDiagnostics.Once("app-open", "WardrobeManager became visible; queued one incremental Glamourer reconciliation");
+        }
+        lastAppDraw = drawNow;
+        startupDiagnostics.Once("first-draw", "First WardrobeManager draw entered");
         imageDialog.Pump();
         TryAutomaticGlamourerImport();
         if (settingsVisible) DrawSettings();
@@ -126,7 +151,11 @@ internal sealed class Plugin : IDisposable
             if (visible) DrawEditor();
             ImGui.EndChild();
         }
-        else DrawLibrary();
+        else
+        {
+            using var libraryDraw = startupDiagnostics.MeasureOnce("library-first-draw", "Drawing the WardrobeManager library");
+            DrawLibrary();
+        }
         DrawApplyConfirmation();
         DrawDesignSyncConfirmation();
         DrawDeleteConfirmation();
@@ -229,16 +258,51 @@ internal sealed class Plugin : IDisposable
             return;
         }
 
+        var pageKey = $"{foldersVisible}/{activeType}/{activeFolderId}";
+        if (!libraryPageKey.Equals(pageKey, StringComparison.Ordinal))
+        {
+            libraryPageKey = pageKey;
+            libraryPage = 0;
+        }
+        var pageCount = Math.Max(1, (presets.Count + PresetsPerPage - 1) / PresetsPerPage);
+        libraryPage = Math.Clamp(libraryPage, 0, pageCount - 1);
+        if (pageCount > 1) DrawLibraryPagination(presets.Count, pageCount, "top");
+
         var available = ImGui.GetContentRegionAvail().X;
         var cardWidth = TabletAppTheme.Px(220f);
         var columns = Math.Max(1, (int)((available + TabletAppTheme.Px(10f)) / (cardWidth + TabletAppTheme.Px(10f))));
         if (!ImGui.BeginTable("##wardrobe-grid", columns, ImGuiTableFlags.SizingStretchSame | ImGuiTableFlags.NoSavedSettings)) return;
-        foreach (var preset in presets)
+        foreach (var preset in presets.Skip(libraryPage * PresetsPerPage).Take(PresetsPerPage))
         {
             ImGui.TableNextColumn();
             DrawPresetCard(preset);
         }
         ImGui.EndTable();
+        if (pageCount > 1) DrawLibraryPagination(presets.Count, pageCount, "bottom");
+    }
+
+    private void DrawLibraryPagination(int presetCount, int pageCount, string id)
+    {
+        ImGui.Spacing();
+        ImGui.PushID("wardrobe-pagination-" + id);
+        var buttonWidth = TabletAppTheme.Px(100f);
+        var label = $"Page {libraryPage + 1} of {pageCount} · {presetCount} presets";
+        var spacing = ImGui.GetStyle().ItemSpacing.X;
+        var rowWidth = buttonWidth * 2f + spacing * 2f + ImGui.CalcTextSize(label).X;
+        var start = ImGui.GetCursorPosX() + MathF.Max(0f, (ImGui.GetContentRegionAvail().X - rowWidth) * 0.5f);
+        ImGui.SetCursorPosX(start);
+        ImGui.BeginDisabled(libraryPage <= 0);
+        if (ImGui.Button("Previous", new Vector2(buttonWidth, 0f))) libraryPage--;
+        ImGui.EndDisabled();
+        ImGui.SameLine();
+        label = $"Page {libraryPage + 1} of {pageCount} · {presetCount} presets";
+        ImGui.TextUnformatted(label);
+        ImGui.SameLine();
+        ImGui.BeginDisabled(libraryPage >= pageCount - 1);
+        if (ImGui.Button("Next", new Vector2(buttonWidth, 0f))) libraryPage++;
+        ImGui.EndDisabled();
+        ImGui.PopID();
+        ImGui.Spacing();
     }
 
     private void DrawOutfitFolders()
@@ -1172,7 +1236,13 @@ internal sealed class Plugin : IDisposable
                 else notification = error;
             }
             if (glamourerDesign && ImGui.IsItemHovered())
-                ImGui.SetTooltip("Edit the linked Glamourer design's physical appearance settings, including character customizations, colours, application toggles, and advanced Customize Parameters.");
+            {
+                ImGui.BeginTooltip();
+                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + TabletAppTheme.Px(340f));
+                ImGui.TextUnformatted("Edit the linked Glamourer design's physical appearance settings, including character customizations, colours, application toggles, and advanced Customize Parameters.");
+                ImGui.PopTextWrapPos();
+                ImGui.EndTooltip();
+            }
             ImGui.SetNextItemWidth(-1f);
             var searchChanged = ImGui.InputTextWithHint(
                 "##wardrobe-mod-search", "Search installed Penumbra mods", ref modSearch, 120);
@@ -1396,49 +1466,70 @@ internal sealed class Plugin : IDisposable
 
     private void TryAutomaticGlamourerImport()
     {
-        if (DateTime.UtcNow < nextAutomaticGlamourerScan) return;
-        nextAutomaticGlamourerScan = DateTime.UtcNow.AddSeconds(3);
-        ImportGlamourerDesigns();
-    }
-
-    private void ImportGlamourerDesigns()
-    {
-        var scan = integrations.ScanGlamourerDesigns();
-        if (!scan.Success)
+        if (glamourerImport is not null)
         {
+            ContinueGlamourerImport();
             return;
         }
 
+        if (!automaticGlamourerScanRunning)
+        {
+            if (DateTime.UtcNow < nextAutomaticGlamourerScan) return;
+            using var measured = startupDiagnostics.MeasureOnce("glamourer-scan-start", "Reading Glamourer design index");
+            var started = integrations.StartGlamourerDesignScan();
+            startupDiagnostics.Once("glamourer-scan-size", $"Glamourer scan contains {started.Total} designs");
+            if (!started.Success)
+            {
+                nextAutomaticGlamourerScan = DateTime.MaxValue;
+                return;
+            }
+            if (started.Complete)
+            {
+                BeginGlamourerImport(started.Designs);
+                nextAutomaticGlamourerScan = DateTime.MaxValue;
+                return;
+            }
+            automaticGlamourerScanRunning = true;
+            return;
+        }
+
+        using var step = startupDiagnostics.MeasureOnce("glamourer-scan-first-design", "Reading one Glamourer design");
+        var scan = integrations.ContinueGlamourerDesignScan();
+        if (!scan.Complete) return;
+        automaticGlamourerScanRunning = false;
+        nextAutomaticGlamourerScan = DateTime.MaxValue;
+        startupDiagnostics.Once("glamourer-scan-complete",
+            $"Glamourer scan completed; processed={scan.Processed}; returned={scan.Designs.Count}; success={scan.Success}");
+        if (scan.Success) BeginGlamourerImport(scan.Designs);
+    }
+
+    private void BeginGlamourerImport(IReadOnlyList<GlamourerDesign> designs)
+    {
         var existing = persistence.Data.Presets
             .Where(preset => preset.GlamourerDesignId != Guid.Empty)
             .GroupBy(preset => preset.GlamourerDesignId)
             .ToDictionary(group => group.Key, group => group.First());
-        var designIds = scan.Designs.Select(design => design.Id).ToHashSet();
+        var designIds = designs.Select(design => design.Id).ToHashSet();
         foreach (var present in designIds) missingGlamourerDesignScans.Remove(present);
         foreach (var missing in existing.Keys.Where(id => !designIds.Contains(id)))
             missingGlamourerDesignScans[missing] = missingGlamourerDesignScans.GetValueOrDefault(missing) + 1;
-        var removed = persistence.Data.Presets.RemoveAll(preset =>
-            (preset.Type is WardrobePresetType.Outfit or WardrobePresetType.Character)
-            && preset.GlamourerDesignId != Guid.Empty
-            && missingGlamourerDesignScans.GetValueOrDefault(preset.GlamourerDesignId) >= 2);
-        if (removed > 0)
-            foreach (var missing in missingGlamourerDesignScans.Where(pair => pair.Value >= 2).Select(pair => pair.Key).ToList())
-                missingGlamourerDesignScans.Remove(missing);
-        var added = 0;
-        var reclassified = 0;
-        var organized = 0;
-        var synchronized = 0;
-        var foldersCreated = 0;
-        var importedIntoFolders = 0;
-        foreach (var design in scan.Designs)
+        glamourerImport = new GlamourerImportState(new Queue<GlamourerDesign>(designs), existing);
+        if (designs.Count == 0) ContinueGlamourerImport();
+    }
+
+    private void ContinueGlamourerImport()
+    {
+        var state = glamourerImport;
+        if (state is null) return;
+        if (state.Designs.TryDequeue(out var design))
         {
             var type = design.AppliesEquipment ? WardrobePresetType.Outfit : WardrobePresetType.Character;
-            if (existing.TryGetValue(design.Id, out var existingPreset))
+            if (state.Existing.TryGetValue(design.Id, out var existingPreset))
             {
-                // Never overwrite unsaved editor changes with the periodic mirror.
-                if (ReferenceEquals(existingPreset, editing) && outfitDirty) continue;
+                // Never overwrite unsaved editor changes with the opening-time mirror.
+                if (ReferenceEquals(existingPreset, editing) && outfitDirty) return;
                 var existingFolderId = type == WardrobePresetType.Outfit
-                    ? ResolveGlamourerFolder(design.FolderPath, ref foldersCreated)
+                    ? ResolveGlamourerFolder(design.FolderPath, ref state.FoldersCreated)
                     : Guid.Empty;
                 var changed = existingPreset.Type != type
                     || existingPreset.FolderId != existingFolderId
@@ -1451,21 +1542,21 @@ internal sealed class Plugin : IDisposable
                         ? !existingPreset.CharacterAppearanceJson.Equals(design.CharacterJson, StringComparison.Ordinal)
                         : !existingPreset.OutfitAppearanceJson.Equals(design.OutfitJson, StringComparison.Ordinal))
                     || !ModRulesEqual(existingPreset.Mods, design.ModAssociations);
-                if (!changed) continue;
+                if (!changed) return;
                 if (existingPreset.Type != type)
                 {
                     existingPreset.Type = type;
-                    reclassified++;
+                    state.Reclassified++;
                 }
                 if (existingPreset.FolderId != existingFolderId)
                 {
                     existingPreset.FolderId = existingFolderId;
-                    organized++;
+                    state.Organized++;
                 }
                 if (!existingPreset.EquipmentItemIds.OrderBy(pair => pair.Key).SequenceEqual(design.EquipmentItemIds.OrderBy(pair => pair.Key)))
                 {
                     existingPreset.EquipmentItemIds = new Dictionary<string, uint>(design.EquipmentItemIds, StringComparer.OrdinalIgnoreCase);
-                    organized++;
+                    state.Organized++;
                 }
                 existingPreset.Name = design.Name.Trim();
                 existingPreset.GlamourerState = design.State;
@@ -1477,12 +1568,12 @@ internal sealed class Plugin : IDisposable
                 existingPreset.Mods = design.ModAssociations.Select(CloneRule).ToList();
                 existingPreset.RegisteredOutfitMods = [];
                 existingPreset.AutomaticLayersScanned = false;
-                synchronized++;
-                continue;
+                state.Synchronized++;
+                return;
             }
 
             var folderId = type == WardrobePresetType.Outfit
-                ? ResolveGlamourerFolder(design.FolderPath, ref foldersCreated)
+                ? ResolveGlamourerFolder(design.FolderPath, ref state.FoldersCreated)
                 : Guid.Empty;
             persistence.Data.Presets.Add(new WardrobePreset
             {
@@ -1499,11 +1590,24 @@ internal sealed class Plugin : IDisposable
                 EquipmentItemIds = new Dictionary<string, uint>(design.EquipmentItemIds, StringComparer.OrdinalIgnoreCase),
                 Mods = design.ModAssociations.Select(CloneRule).ToList(),
             });
-            added++;
-            if (folderId != Guid.Empty) importedIntoFolders++;
+            state.Added++;
+            if (folderId != Guid.Empty) state.ImportedIntoFolders++;
+            return;
         }
 
-        if (added > 0 || removed > 0 || reclassified > 0 || organized > 0 || foldersCreated > 0 || synchronized > 0) persistence.Save();
+        state.Removed = persistence.Data.Presets.RemoveAll(preset =>
+            (preset.Type is WardrobePresetType.Outfit or WardrobePresetType.Character)
+            && preset.GlamourerDesignId != Guid.Empty
+            && missingGlamourerDesignScans.GetValueOrDefault(preset.GlamourerDesignId) >= 2);
+        if (state.Removed > 0)
+            foreach (var missing in missingGlamourerDesignScans.Where(pair => pair.Value >= 2).Select(pair => pair.Key).ToList())
+                missingGlamourerDesignScans.Remove(missing);
+        if (state.Added > 0 || state.Removed > 0 || state.Reclassified > 0 || state.Organized > 0
+            || state.FoldersCreated > 0 || state.Synchronized > 0)
+        {
+            using var save = startupDiagnostics.MeasureOnce("glamourer-import-save", "Saving the reconciled WardrobeManager library");
+            persistence.Save();
+        }
         if (!config.GlamourerInitialImportCompleted)
         {
             config.GlamourerInitialImportCompleted = true;
@@ -1519,8 +1623,9 @@ internal sealed class Plugin : IDisposable
             config.GlamourerFolderImportCompleted = true;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
-        if (added > 0 || removed > 0 || reclassified > 0 || organized > 0 || foldersCreated > 0)
-            notification = $"Glamourer library synchronized: imported {added}, removed {removed}, reclassified {reclassified}, updated folder placement for {organized + importedIntoFolders}.";
+        if (state.Added > 0 || state.Removed > 0 || state.Reclassified > 0 || state.Organized > 0 || state.FoldersCreated > 0)
+            notification = $"Glamourer library synchronized: imported {state.Added}, removed {state.Removed}, reclassified {state.Reclassified}, updated folder placement for {state.Organized + state.ImportedIntoFolders}.";
+        glamourerImport = null;
     }
 
     private static WardrobeModRule CloneRule(WardrobeModRule source) => new()
@@ -2178,7 +2283,22 @@ internal sealed class Plugin : IDisposable
         selfieCamera.Dispose();
         imageDialog.Dispose();
         textures.Dispose();
+        startupDiagnostics.Dispose();
     }
+}
+
+internal sealed class GlamourerImportState(Queue<GlamourerDesign> designs,
+    Dictionary<Guid, WardrobePreset> existing)
+{
+    public Queue<GlamourerDesign> Designs { get; } = designs;
+    public Dictionary<Guid, WardrobePreset> Existing { get; } = existing;
+    public int Added;
+    public int Removed;
+    public int Reclassified;
+    public int Organized;
+    public int Synchronized;
+    public int FoldersCreated;
+    public int ImportedIntoFolders;
 }
 
 internal sealed class ManualHonorificDraft

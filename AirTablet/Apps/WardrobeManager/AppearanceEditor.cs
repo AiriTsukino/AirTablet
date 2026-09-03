@@ -94,6 +94,10 @@ internal sealed class AppearanceEditor
         foreach (var property in fields.Properties())
         {
             if (property.Value is not JObject) continue;
+            // Glamourer serializes BodyType for state compatibility, but does not
+            // expose it as a normal customization choice. Its UI only offers a
+            // one-shot reset when an imported NPC body type is non-default.
+            if (section == "Customize" && property.Name == "BodyType") continue;
             var label = Label(property.Name);
             if (!label.Contains(search, StringComparison.OrdinalIgnoreCase)) continue;
             if (selected.Length == 0) selected = property.Name;
@@ -117,7 +121,6 @@ internal sealed class AppearanceEditor
         if (draft![section]?[selected] is not JObject entry) { ImGui.TextWrapped("Select a feature to edit."); return; }
         ImGui.TextWrapped(Label(selected));
         var apply = entry.Value<bool?>("Apply") ?? false;
-        ImGui.BeginDisabled(section == "Customize" && selected == "BodyType");
         if (TabletAppTheme.VisibleCheckbox("Apply with this preset", ref apply))
         {
             entry["Apply"] = apply;
@@ -127,13 +130,11 @@ internal sealed class AppearanceEditor
                 SetApply("Clan", apply);
             }
         }
-        ImGui.EndDisabled();
-        if (section == "Customize" && selected == "BodyType") ImGui.TextWrapped("Body-type application is managed by Glamourer.");
         ImGui.TextWrapped("Unchecked values are saved but do not replace the character's current value when applied.");
         ImGui.Separator();
         if (section == "Parameters") DrawParameter(entry);
         else DrawCustomization(entry);
-        if (section == "Customize" && entry["Value"]?.Type == JTokenType.Integer && selected is not ("Race" or "Gender" or "Clan" or "BodyType"))
+        if (section == "Customize" && entry["Value"]?.Type == JTokenType.Integer && selected is not ("Race" or "Gender" or "Clan"))
         {
             if (ImGui.TreeNode("Custom value (advanced)"))
             {

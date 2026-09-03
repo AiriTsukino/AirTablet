@@ -62,6 +62,9 @@ internal sealed class IntegrationService : IDisposable
     private int modSearchScanned;
     private int liveModCount;
     private Guid activeTemporaryCollectionId;
+    private List<GlamourerDesignHeader>? glamourerDesignScanQueue;
+    private readonly List<GlamourerDesign> glamourerDesignScanResults = [];
+    private int glamourerDesignScanIndex;
 
     public IntegrationService()
     {
@@ -1672,35 +1675,82 @@ internal sealed class IntegrationService : IDisposable
         catch { return false; }
     }
 
-    public GlamourerDesignScan ScanGlamourerDesigns()
+    public GlamourerDesignScanProgress StartGlamourerDesignScan()
     {
         try
         {
-            var designs = new List<GlamourerDesign>();
-            foreach (var pair in getDesignListExtended.Invoke().OrderBy(pair => pair.Value.Item1, StringComparer.OrdinalIgnoreCase))
-            {
-                var state = getDesignBase64.Invoke(pair.Key) ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(state)) continue;
-                var data = ParseDesignObject(getDesignJObject.InvokeFunc(pair.Key));
-                designs.Add(new GlamourerDesign(
-                    pair.Key,
-                    pair.Value.Item1,
-                    state,
-                    DesignAppliesEquipment(data),
-                    data?.Value<string>("FileSystemFolder")?.Trim() ?? string.Empty,
-                    ParseEquipmentItems(data),
-                    ParseAssociatedMods(data).Select(ToWardrobeRule).ToList(),
-                    pair.Value.Item4,
-                    CharacterAppearanceJson(data),
-                    OutfitAppearanceJson(data)));
-            }
-            return new GlamourerDesignScan(true, designs, string.Empty);
+            glamourerDesignScanQueue = getDesignListExtended.Invoke()
+                .OrderBy(pair => pair.Value.Item1, StringComparer.OrdinalIgnoreCase)
+                .Select(pair => new GlamourerDesignHeader(pair.Key, pair.Value.Item1, pair.Value.Item4))
+                .ToList();
+            glamourerDesignScanResults.Clear();
+            glamourerDesignScanIndex = 0;
+            return Progress(glamourerDesignScanQueue.Count == 0);
         }
         catch (Exception ex)
         {
             DalamudServices.Log.Debug(ex, "WardrobeManager could not scan Glamourer designs.");
-            return new GlamourerDesignScan(false, [], "Glamourer is unavailable: " + ex.Message);
+            CancelGlamourerDesignScan();
+            return new GlamourerDesignScanProgress(false, true, 0, 0, [], "Glamourer is unavailable: " + ex.Message);
         }
+    }
+
+    public GlamourerDesignScanProgress ContinueGlamourerDesignScan()
+    {
+        if (glamourerDesignScanQueue is null)
+            return new GlamourerDesignScanProgress(false, true, 0, 0, [], "No Glamourer design scan is running.");
+        try
+        {
+            // One design per frame prevents large libraries from issuing hundreds
+            // of synchronous Glamourer IPC calls in a single render frame.
+            if (glamourerDesignScanIndex < glamourerDesignScanQueue.Count)
+            {
+                var header = glamourerDesignScanQueue[glamourerDesignScanIndex++];
+                var state = getDesignBase64.Invoke(header.Id) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(state))
+                {
+                    var data = ParseDesignObject(getDesignJObject.InvokeFunc(header.Id));
+                    glamourerDesignScanResults.Add(new GlamourerDesign(
+                        header.Id,
+                        header.Name,
+                        state,
+                        DesignAppliesEquipment(data),
+                        data?.Value<string>("FileSystemFolder")?.Trim() ?? string.Empty,
+                        ParseEquipmentItems(data),
+                        ParseAssociatedMods(data).Select(ToWardrobeRule).ToList(),
+                        header.QuickDesign,
+                        CharacterAppearanceJson(data),
+                        OutfitAppearanceJson(data)));
+                }
+            }
+
+            var complete = glamourerDesignScanIndex >= glamourerDesignScanQueue.Count;
+            return Progress(complete);
+        }
+        catch (Exception ex)
+        {
+            DalamudServices.Log.Debug(ex, "WardrobeManager could not continue its Glamourer design scan.");
+            var processed = glamourerDesignScanIndex;
+            var total = glamourerDesignScanQueue.Count;
+            CancelGlamourerDesignScan();
+            return new GlamourerDesignScanProgress(false, true, processed, total, [], "Glamourer is unavailable: " + ex.Message);
+        }
+    }
+
+    private GlamourerDesignScanProgress Progress(bool complete)
+    {
+        var total = glamourerDesignScanQueue?.Count ?? 0;
+        var result = new GlamourerDesignScanProgress(true, complete, glamourerDesignScanIndex, total,
+            complete ? glamourerDesignScanResults.ToArray() : [], string.Empty);
+        if (complete) CancelGlamourerDesignScan();
+        return result;
+    }
+
+    private void CancelGlamourerDesignScan()
+    {
+        glamourerDesignScanQueue = null;
+        glamourerDesignScanResults.Clear();
+        glamourerDesignScanIndex = 0;
     }
 
     public ApplyResult Apply(WardrobePreset preset)
@@ -2628,7 +2678,9 @@ internal sealed record LayerScanResult(bool Success, string Message)
 internal sealed record GlamourerDesign(Guid Id, string Name, string State, bool AppliesEquipment, string FolderPath,
     Dictionary<string, uint> EquipmentItemIds, IReadOnlyList<WardrobeModRule> ModAssociations, bool QuickDesign,
     string CharacterJson, string OutfitJson);
-internal sealed record GlamourerDesignScan(bool Success, IReadOnlyList<GlamourerDesign> Designs, string Error);
+internal sealed record GlamourerDesignHeader(Guid Id, string Name, bool QuickDesign);
+internal sealed record GlamourerDesignScanProgress(bool Success, bool Complete, int Processed, int Total,
+    IReadOnlyList<GlamourerDesign> Designs, string Error);
 internal sealed record GlamourerQuickDesign(Guid Id, string Name, string Path, uint Color);
 internal sealed record ModOptionGroup(string Name, IReadOnlyList<string> Choices, bool AllowsMultiple);
 
