@@ -8,7 +8,7 @@ namespace WardrobeManager;
 internal sealed class Plugin : IDisposable
 {
     private enum HonorificSavePhase { None, WaitingForUnload, WaitingForReload }
-    private const string WardrobeManagerVersion = "1.0.54.1";
+    private const string WardrobeManagerVersion = "1.1.0.1";
     private const string DevelopmentWarningModal = "WardrobeManager is in development##WardrobeManager";
     private const string ManualHonorificModal = "New Honorific Title";
     private static readonly string[] HonorificEffectPalettes =
@@ -24,7 +24,10 @@ internal sealed class Plugin : IDisposable
     private readonly PortraitTextureCache textures = new();
     private readonly AppearanceEditor appearanceEditor = new();
     private readonly SelfieCameraService selfieCamera;
-    private List<AvailableMod> availableMods = [];
+    private IReadOnlyList<AvailableMod> modMatches = [];
+    private bool modSearchPending;
+    private bool modSearchRunning;
+    private DateTime modSearchDue;
     private WardrobePresetType activeType;
     private WardrobePreset? editing;
     private WardrobePreset? editingSnapshot;
@@ -83,7 +86,6 @@ internal sealed class Plugin : IDisposable
             config.Version = 10;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
-        RefreshMods();
     }
 
     public void Tick()
@@ -448,6 +450,14 @@ internal sealed class Plugin : IDisposable
         ImGui.TextColored(status.GlamourerConnected ? connectedColor : disconnectedColor, "Glamourer");
         ImGui.SameLine(0f, 0f);
         ImGui.TextUnformatted(" " + status.Message);
+        var outfitCount = persistence.Data.Presets.Count(preset => preset.Type == WardrobePresetType.Outfit);
+        var characterCount = persistence.Data.Presets.Count(preset => preset.Type == WardrobePresetType.Character);
+        var emoteCount = persistence.Data.Presets.Count(preset => preset.Type == WardrobePresetType.Emote);
+        ImGui.SameLine();
+        ImGui.TextColored(TabletAppTheme.MutedText,
+            $"| {outfitCount:N0} Outfit{(outfitCount == 1 ? string.Empty : "s")} | "
+            + $"{characterCount:N0} Character{(characterCount == 1 ? string.Empty : "s")} | "
+            + $"{emoteCount:N0} Emote{(emoteCount == 1 ? string.Empty : "s")}");
         ImGui.TableNextColumn();
         var cellWidth = ImGui.GetContentRegionAvail().X;
         var buttonWidth = MathF.Min(TabletAppTheme.Px(118f), cellWidth * 0.34f);
@@ -526,15 +536,22 @@ internal sealed class Plugin : IDisposable
         editingSnapshot = ClonePreset(preset);
         outfitDirty = false;
         modSearch = string.Empty;
-        RefreshMods();
+        modMatches = [];
+        modSearchPending = false;
+        modSearchRunning = false;
+        integrations.CancelModSearch();
     }
 
     private void CloseEditor()
     {
+        integrations.CancelModSearch();
         editing = null;
         editingSnapshot = null;
         outfitDirty = false;
         modSearch = string.Empty;
+        modMatches = [];
+        modSearchPending = false;
+        modSearchRunning = false;
     }
 
     private static WardrobePreset ClonePreset(WardrobePreset preset)
@@ -1154,15 +1171,37 @@ internal sealed class Plugin : IDisposable
                 if (integrations.TryGetEditableAppearance(preset, out var appearance, out var error)) appearanceEditor.Open(preset, appearance!);
                 else notification = error;
             }
+            if (glamourerDesign && ImGui.IsItemHovered())
+                ImGui.SetTooltip("Edit the linked Glamourer design's physical appearance settings, including character customizations, colours, application toggles, and advanced Customize Parameters.");
             ImGui.SetNextItemWidth(-1f);
-            ImGui.InputTextWithHint("##wardrobe-mod-search", "Search installed Penumbra mods", ref modSearch, 120);
-            var matches = string.IsNullOrWhiteSpace(modSearch) ? [] : availableMods.Where(x => x.Name.Contains(modSearch.Trim(), StringComparison.OrdinalIgnoreCase) || x.Directory.Contains(modSearch.Trim(), StringComparison.OrdinalIgnoreCase)).Where(x => preset.Mods.All(rule => !rule.Directory.Equals(x.Directory, StringComparison.OrdinalIgnoreCase))).Take(8).ToList();
-            foreach (var match in matches)
+            var searchChanged = ImGui.InputTextWithHint(
+                "##wardrobe-mod-search", "Search installed Penumbra mods", ref modSearch, 120);
+            if (searchChanged)
+            {
+                integrations.CancelModSearch();
+                modMatches = [];
+                modSearchRunning = false;
+                modSearchPending = !string.IsNullOrWhiteSpace(modSearch);
+                modSearchDue = DateTime.UtcNow.AddMilliseconds(250);
+            }
+            if (modSearchPending && DateTime.UtcNow >= modSearchDue)
+                StartModSearch(preset, false);
+            else if (modSearchRunning)
+                ApplyModSearchResult(integrations.ContinueModSearch(TimeSpan.FromMilliseconds(1)));
+            if (modSearchPending)
+                ImGui.TextColored(TabletAppTheme.MutedText, "Waiting for typing to finish...");
+            else if (modSearchRunning)
+                ImGui.TextColored(TabletAppTheme.MutedText, "Searching installed Penumbra mods...");
+            foreach (var match in modMatches)
             {
                 if (ImGui.Selectable($"{match.Name}##add-{match.Directory}"))
                 {
                     preset.Mods.Add(integrations.CreateRule(match, 0));
                     modSearch = string.Empty;
+                    modMatches = [];
+                    modSearchPending = false;
+                    modSearchRunning = false;
+                    integrations.CancelModSearch();
                     if (glamourerDesign) outfitDirty = true;
                     persistence.Save();
                 }
@@ -2072,7 +2111,20 @@ internal sealed class Plugin : IDisposable
         TabletAppTheme.EndCenteredModal();
     }
 
-    private void RefreshMods() => availableMods = integrations.GetMods().ToList();
+    private void StartModSearch(WardrobePreset preset, bool reconnect)
+    {
+        modSearchPending = false;
+        var excluded = preset.Mods.Select(rule => rule.Directory).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        ApplyModSearchResult(integrations.StartModSearch(modSearch, excluded, 8, reconnect));
+    }
+
+    private void ApplyModSearchResult(ModSearchResult result)
+    {
+        modMatches = result.Matches;
+        modSearchRunning = result.Success && !result.Complete;
+        if (!result.Success)
+            notification = "WardrobeManager could not connect to Penumbra's live mod catalogue. Confirm Penumbra is enabled and try again.";
+    }
     private static string TypeLabel(WardrobePresetType type) => type switch { WardrobePresetType.Outfit => "Outfits", WardrobePresetType.Character => "Characters", _ => "Emotes" };
 
     private static void DrawPortrait(Dalamud.Interface.Textures.TextureWraps.IDalamudTextureWrap texture, Vector2 size)

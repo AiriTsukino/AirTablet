@@ -3,6 +3,7 @@ using Glamourer.Api.IpcSubscribers;
 using Dalamud.Plugin.Ipc;
 using Newtonsoft.Json.Linq;
 using Penumbra.Api.Enums;
+using Penumbra.Api.Helpers;
 using Penumbra.Api.IpcSubscribers;
 using Lumina.Excel.Sheets;
 
@@ -13,7 +14,8 @@ internal sealed class IntegrationService : IDisposable
     private const string Source = "AirTablet WardrobeManager";
     private const string FolderSetupDesignName = ".WardrobeManager Folder Setup";
     private const int TemporarySettingsKey = -1094335841;
-    private readonly GetModList getModList;
+    private const int MaximumModsPerSearchFrame = 512;
+    private readonly GetModListAdapter getModListAdapter;
     private readonly GetChangedItems getChangedItems;
     private readonly GetCollection getCollection;
     private readonly GetCollectionForObject getCollectionForObject;
@@ -51,12 +53,20 @@ internal sealed class IntegrationService : IDisposable
     private readonly Dictionary<string, IReadOnlyList<ChangedItem>> changedItemCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IReadOnlyList<ModOptionGroup>> optionCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> effectiveConflictCache = new(StringComparer.OrdinalIgnoreCase);
+    private ModListWrapper? liveModList;
+    private IEnumerator<AvailableMod>? modSearchEnumerator;
+    private HashSet<string> modSearchExcluded = new(StringComparer.OrdinalIgnoreCase);
+    private List<AvailableMod> modSearchMatches = [];
+    private string modSearchQuery = string.Empty;
+    private int modSearchLimit;
+    private int modSearchScanned;
+    private int liveModCount;
     private Guid activeTemporaryCollectionId;
 
     public IntegrationService()
     {
         var pi = DalamudServices.PluginInterface;
-        getModList = new GetModList(pi);
+        getModListAdapter = new GetModListAdapter(pi);
         getChangedItems = new GetChangedItems(pi);
         getCollection = new GetCollection(pi);
         getCollectionForObject = new GetCollectionForObject(pi);
@@ -240,11 +250,104 @@ internal sealed class IntegrationService : IDisposable
         }
     }
 
-    public IReadOnlyList<AvailableMod> GetMods()
+    public ModSearchResult StartModSearch(string search, IReadOnlySet<string> excludedDirectories, int limit, bool reconnect = false)
     {
-        try { return getModList.Invoke().Select(pair => new AvailableMod(pair.Key, pair.Value)).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList(); }
-        catch (Exception ex) { DalamudServices.Log.Debug(ex, "WardrobeManager could not read the Penumbra mod list."); return []; }
+        try
+        {
+            CancelModSearch();
+            if (reconnect)
+            {
+                liveModList?.Dispose();
+                liveModList = null;
+            }
+
+            var catalog = GetLiveModList();
+            liveModCount = catalog.Count;
+            if (string.IsNullOrWhiteSpace(search) || limit <= 0)
+                return new ModSearchResult(true, true, liveModCount, 0, []);
+
+            modSearchQuery = search.Trim();
+            modSearchExcluded = excludedDirectories.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            modSearchLimit = limit;
+            modSearchMatches = new List<AvailableMod>(Math.Min(limit, 8));
+            modSearchScanned = 0;
+            modSearchEnumerator = EnumerateLiveMods(catalog).GetEnumerator();
+            return ContinueModSearch(TimeSpan.FromMilliseconds(1));
+        }
+        catch (Exception ex)
+        {
+            return FailModSearch(ex);
+        }
     }
+
+    public ModSearchResult ContinueModSearch(TimeSpan budget)
+    {
+        if (modSearchEnumerator is null)
+            return new ModSearchResult(true, true, liveModCount, modSearchScanned, modSearchMatches.ToList());
+        try
+        {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var processedThisFrame = 0;
+            do
+            {
+                if (!modSearchEnumerator.MoveNext())
+                {
+                    CancelModSearch(false);
+                    return new ModSearchResult(true, true, liveModCount, modSearchScanned, modSearchMatches.ToList());
+                }
+                processedThisFrame++;
+                modSearchScanned++;
+                var mod = modSearchEnumerator.Current;
+                if (modSearchExcluded.Contains(mod.Directory)) continue;
+                if (!mod.Name.Contains(modSearchQuery, StringComparison.OrdinalIgnoreCase)
+                    && !mod.Directory.Contains(modSearchQuery, StringComparison.OrdinalIgnoreCase)) continue;
+                modSearchMatches.Add(mod);
+                if (modSearchMatches.Count >= modSearchLimit)
+                {
+                    CancelModSearch(false);
+                    return new ModSearchResult(true, true, liveModCount, modSearchScanned, modSearchMatches.ToList());
+                }
+            }
+            while (processedThisFrame < MaximumModsPerSearchFrame
+                && System.Diagnostics.Stopwatch.GetElapsedTime(started) < budget);
+
+            return new ModSearchResult(true, false, liveModCount, modSearchScanned, modSearchMatches.ToList());
+        }
+        catch (Exception ex)
+        {
+            return FailModSearch(ex);
+        }
+    }
+
+    public void CancelModSearch() => CancelModSearch(true);
+
+    private void CancelModSearch(bool clearResults)
+    {
+        modSearchEnumerator?.Dispose();
+        modSearchEnumerator = null;
+        if (!clearResults) return;
+        modSearchMatches = [];
+        modSearchScanned = 0;
+        modSearchQuery = string.Empty;
+    }
+
+    private ModSearchResult FailModSearch(Exception ex)
+    {
+        CancelModSearch();
+        liveModList?.Dispose();
+        liveModList = null;
+        liveModCount = 0;
+        DalamudServices.Log.Debug(ex, "WardrobeManager could not search Penumbra's live mod catalogue.");
+        return new ModSearchResult(false, true, 0, 0, []);
+    }
+
+    private static IEnumerable<AvailableMod> EnumerateLiveMods(ModListWrapper catalog)
+    {
+        foreach (var mod in catalog)
+            yield return new AvailableMod(mod.Identifier, mod.Name);
+    }
+
+    private ModListWrapper GetLiveModList() => liveModList ??= getModListAdapter.Invoke();
 
     public IReadOnlyList<ModOptionGroup> GetAvailableOptions(WardrobeModRule rule)
     {
@@ -360,21 +463,21 @@ internal sealed class IntegrationService : IDisposable
             if (string.IsNullOrWhiteSpace(modDirectory) || !Directory.Exists(modDirectory))
                 return LayerScanResult.Fail("Penumbra's mod directory is unavailable.");
 
-            var installed = new Dictionary<string, string>(getModList.Invoke(), StringComparer.OrdinalIgnoreCase);
             var roots = new List<(string Directory, string Name, string Root)>();
             var normalizedModDirectory = Path.GetFullPath(modDirectory)
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            foreach (var mod in installed)
+            foreach (var mod in GetLiveModList())
             {
                 try
                 {
-                    var root = Path.GetFullPath(Path.Combine(modDirectory, mod.Key))
+                    var root = Path.GetFullPath(Path.Combine(modDirectory, mod.Identifier))
                         .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
                     if (root.StartsWith(normalizedModDirectory, StringComparison.OrdinalIgnoreCase) && Directory.Exists(root))
-                        roots.Add((mod.Key, mod.Value, root));
+                        roots.Add((mod.Identifier, mod.Name, root));
                 }
                 catch { }
             }
+            var installed = roots.ToDictionary(mod => mod.Directory, mod => mod.Name, StringComparer.OrdinalIgnoreCase);
             roots.Sort((left, right) => right.Root.Length.CompareTo(left.Root.Length));
 
             var resourcePaths = getPlayerResourcePaths.Invoke();
@@ -1617,7 +1720,6 @@ internal sealed class IntegrationService : IDisposable
             var collection = ResolveCollection(preset);
             if (collection is null) return ApplyResult.Fail("Penumbra has no collection assigned to Yourself.");
             var collectionId = collection.Value.Id;
-            var installed = getModList.Invoke();
             var failures = new List<string>();
             if (preset.Type == WardrobePresetType.Character && preset.PenumbraCollectionId != Guid.Empty)
             {
@@ -1651,7 +1753,10 @@ internal sealed class IntegrationService : IDisposable
                     ? ApplyResult.Ok($"Applied character preset {preset.Name}.")
                     : ApplyResult.Fail($"Applied with failures: {string.Join(", ", failures.Distinct())}.");
             }
-            var layers = preset.Mods.Where(x => installed.ContainsKey(x.Directory))
+            // Let Penumbra validate each explicitly listed directory. Requesting the
+            // complete installed-mod dictionary just to pre-filter a small preset is
+            // more expensive and provides no stronger result than TrySetMod's status.
+            var layers = preset.Mods
                 .GroupBy(x => x.Directory, StringComparer.OrdinalIgnoreCase).Select(x => x.First()).ToList();
             var enabled = 0;
             var disabled = 0;
@@ -2493,10 +2598,18 @@ internal sealed class IntegrationService : IDisposable
 
     private static bool IsSuccess(PenumbraApiEc result) => result is PenumbraApiEc.Success or PenumbraApiEc.NothingChanged;
 
-    public void Dispose() => ClearTemporaryOutfitOverrides(false);
+    public void Dispose()
+    {
+        CancelModSearch();
+        liveModList?.Dispose();
+        liveModList = null;
+        ClearTemporaryOutfitOverrides(false);
+    }
 }
 
 internal sealed record AvailableMod(string Directory, string Name);
+internal sealed record ModSearchResult(bool Success, bool Complete, int Total, int Scanned,
+    IReadOnlyList<AvailableMod> Matches);
 internal sealed record PenumbraCollection(Guid Id, string Name);
 internal sealed record CustomizePlusProfile(Guid Id, string Name, string Path,
     IReadOnlyList<(string Name, ushort WorldId, byte CharacterType, ushort CharacterSubType)> Characters,
