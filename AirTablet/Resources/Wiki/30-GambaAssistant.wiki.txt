@@ -32,9 +32,11 @@ Min Bet, Max Bet, Last Bet, Recent Trade, and Custom Bet reserve available bank 
 
 # Trade detection and safety
 - Verified incoming gil from a party member adds to their bank; verified outgoing gil subtracts from it.
-- Player banks change only after FFXIV reports the gil received or handed over. Ordinary typed chat does not count as a trade.
-- Gil direction follows whether FFXIV reports receiving or handing over the gil, not who opened the trade.
-- Chat and dice commands pause during a detected trade and resume after Trade complete or a recognized failure/cancel.
+- Automatic detection checks the operator's exact gil balance change against both sides of the native Trade offer every 100 milliseconds. It stops on a match or three seconds after final confirmation closes. A matched balance plus the main Trade window closing can update banks even when system messages are disabled.
+- The balance path identifies the actual native Trade participant by name, home world, and object identity, and requires that player to remain in the current party. It does not infer the recipient from the current target or typed chat.
+- Trusted system gil messages remain a fallback. Incoming gil adds to the partner's bank and outgoing gil subtracts; who opened the trade does not determine direction. Chat and balance evidence do not count the same payment twice.
+- Zero-net exchanges, unavailable balances, or unexpected balance changes cannot prove payment from gil alone. Avoid other gil-changing activities during a trade; review Trades and Warnings before correcting a bank manually.
+- Chat and dice commands pause during a detected trade and resume after verified balance completion, Trade complete, or a recognized failure/cancel.
 - If FFXIV reports that a player is unable to trade, the waiting state clears and the failure appears in Trades.
 - A pending player association remains available for a slow response, then becomes stale after two minutes without a gil result.
 - Manual Buy-in / Bank Deposit and Manual Cash-Out remain available when automatic detection cannot be used.

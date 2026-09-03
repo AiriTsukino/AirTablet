@@ -8,7 +8,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.1.0.3";
+    private const string ReleaseVersion = "1.1.0.4";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";
@@ -4513,7 +4513,7 @@ internal sealed class TabletWindow
                 ImGui.SameLine();
                 ImGui.TextColored(
                     new Vector4(0.60f, 0.62f, 0.70f, 1f),
-                    release.Date.ToLocalTime().ToString("dd MMM yyyy"));
+                    release.Date == default ? "Unknown date" : release.Date.ToString("dd MMM yyyy"));
                 ImGui.Separator();
                 foreach (var item in items)
                 {

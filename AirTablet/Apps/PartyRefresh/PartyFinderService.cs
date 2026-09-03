@@ -32,7 +32,9 @@ internal sealed class PartyFinderService
     private int confirmationChecks;
     private long nextStepAt;
     private long operationDeadline;
-    private DateTime nextAutomaticRefreshUtc;
+    private readonly RefreshSchedule refreshSchedule = new();
+    private bool criteriaSubmitted;
+    private bool criteriaWasVisible;
     private string? notification;
 
     public PartyFinderService(Configuration config, Func<PartyFinderPreset> activePreset)
@@ -48,23 +50,23 @@ internal sealed class PartyFinderService
         {
             DalamudServices.Log.Warning(ex, "PartyRefresh could not resolve the active recruitment opener.");
         }
-        nextAutomaticRefreshUtc = DateTime.UtcNow.AddMinutes(config.RefreshIntervalMinutes);
+        RefreshScheduleChanged();
     }
 
     public bool IsBusy => step != OperationStep.Idle;
     public bool IsRecruiting => DalamudServices.ClientState.IsLoggedIn &&
         DalamudServices.ObjectTable.LocalPlayer?.OnlineStatus.RowId == 26;
     public string Status { get; private set; } = "Ready.";
-    public DateTime NextAutomaticRefreshUtc => nextAutomaticRefreshUtc;
+    public DateTime NextAutomaticRefreshUtc => DateTime.UtcNow + AutomaticRefreshRemaining;
     public TimeSpan AutomaticRefreshRemaining => config.AutoRefreshEnabled
-        ? nextAutomaticRefreshUtc - DateTime.UtcNow
+        ? TimeSpan.FromMilliseconds(refreshSchedule.RemainingMilliseconds(Environment.TickCount64))
         : TimeSpan.Zero;
 
     public unsafe bool ApplyPreset(PartyFinderPreset preset)
     {
         if (!CanStart(out var error))
         {
-            Fail(error);
+            RejectStart(error);
             return false;
         }
         if (IsRecruiting)
@@ -85,16 +87,12 @@ internal sealed class PartyFinderService
             return false;
         }
         pendingPreset = preset;
+        criteriaSubmitted = false;
         refreshOnly = false;
         var openCriteria = GetVisibleConditionAddon();
         if (openCriteria is not null)
         {
-            if (openCriteria->CancelButton is null)
-            {
-                Fail("Close the open Recruitment Criteria window before applying a preset.");
-                return false;
-            }
-            ClickButton(&openCriteria->AtkUnitBase, openCriteria->CancelButton);
+            openCriteria->AtkUnitBase.Close(true);
             Status = "Closing the current Recruitment Criteria window.";
             step = OperationStep.WaitingToOpenPartyFinder;
             operationDeadline = Environment.TickCount64 + 20_000;
@@ -109,7 +107,7 @@ internal sealed class PartyFinderService
     {
         if (!CanStart(out var error))
         {
-            Fail(error);
+            RejectStart(error);
             return false;
         }
         if (!IsRecruiting)
@@ -123,6 +121,7 @@ internal sealed class PartyFinderService
             return false;
         }
         pendingPreset = activePreset();
+        criteriaSubmitted = false;
         refreshOnly = true;
         BeginRefresh();
         return true;
@@ -132,7 +131,7 @@ internal sealed class PartyFinderService
     {
         if (!CanStart(out var error))
         {
-            Fail(error);
+            RejectStart(error);
             return false;
         }
         if (!IsRecruiting)
@@ -161,7 +160,7 @@ internal sealed class PartyFinderService
     public void SetAutoRefresh(bool enabled)
     {
         config.AutoRefreshEnabled = enabled;
-        nextAutomaticRefreshUtc = DateTime.UtcNow.AddMinutes(config.RefreshIntervalMinutes);
+        RefreshScheduleChanged();
         DalamudServices.PluginInterface.SavePluginConfig(config);
         Status = enabled
             ? $"Automatic refresh enabled. The next refresh is in {config.RefreshIntervalMinutes} minutes."
@@ -170,23 +169,20 @@ internal sealed class PartyFinderService
 
     public void RefreshScheduleChanged()
     {
-        nextAutomaticRefreshUtc = DateTime.UtcNow.AddMinutes(config.RefreshIntervalMinutes);
+        refreshSchedule.Reset(Environment.TickCount64, config.RefreshIntervalMinutes);
     }
 
-    public void Tick()
+    public unsafe void Tick()
     {
+        var criteriaVisible = GetVisibleConditionAddon() is not null;
+        // A manual in-game post/refresh does not necessarily toggle the online
+        // recruiting status. Closing its editor starts a fresh full interval too.
+        if (!IsBusy && criteriaWasVisible && !criteriaVisible && IsRecruiting) RefreshScheduleChanged();
+        criteriaWasVisible = criteriaVisible;
+        var refreshDue = refreshSchedule.IsDue(Environment.TickCount64, config.RefreshIntervalMinutes, IsRecruiting, IsBusy || criteriaVisible);
         if (step == OperationStep.Idle)
         {
-            if (config.AutoRefreshEnabled && DateTime.UtcNow >= nextAutomaticRefreshUtc)
-            {
-                if (IsRecruiting)
-                    RefreshCurrent();
-                else
-                {
-                    Status = "Automatic refresh is waiting for an active Party Finder recruitment.";
-                    nextAutomaticRefreshUtc = DateTime.UtcNow.AddMinutes(1);
-                }
-            }
+            if (config.AutoRefreshEnabled && refreshDue) RefreshCurrent();
             return;
         }
 
@@ -328,15 +324,12 @@ internal sealed class PartyFinderService
         {
             if (!refreshOnly)
             {
-                var detailAddon = (AddonLookingForGroupDetail*)details;
-                if (detailAddon->BackButton is not null && detailAddon->BackButton->IsEnabled)
-                {
-                    ClickButton(details, detailAddon->BackButton);
-                    Status = "Returning to the Party Finder list before posting the preset.";
-                    nextStepAt = Environment.TickCount64 + 300;
-                }
+                details->Close(true);
+                Status = "Closing conflicting Party Finder details before posting the preset.";
+                nextStepAt = Environment.TickCount64 + 300;
                 return;
             }
+            if (CloseForeignDetails(details)) return;
             if (TryClickPrimaryDetailButton(details) || TryClickButton(details, 109))
             {
                 Status = "Opening the editable recruitment criteria.";
@@ -348,7 +341,11 @@ internal sealed class PartyFinderService
 
         var main = GetVisibleAddon("LookingForGroup");
         if (main is null)
+        {
+            ExecuteCommand("/partyfinder");
+            nextStepAt = Environment.TickCount64 + 450;
             return;
+        }
         if (refreshOnly)
         {
             TryOpenActiveRecruitmentDetails();
@@ -380,6 +377,7 @@ internal sealed class PartyFinderService
             return;
         }
         var details = GetVisibleAddon("LookingForGroupDetail");
+        if (details is not null && CloseForeignDetails(details)) return;
         if (details is not null && (TryClickPrimaryDetailButton(details) || TryClickButton(details, 109)))
         {
             Status = "Opening the editable recruitment criteria.";
@@ -393,11 +391,8 @@ internal sealed class PartyFinderService
             nextStepAt = Environment.TickCount64 + 500;
             return;
         }
-        if (GetVisibleAddon("LookingForGroup") is not null)
-        {
-            step = OperationStep.WaitingForPartyFinder;
-            nextStepAt = Environment.TickCount64 + 100;
-        }
+        step = OperationStep.WaitingForPartyFinder;
+        nextStepAt = Environment.TickCount64 + 100;
     }
 
     private unsafe void ConfigureCriteria()
@@ -479,6 +474,11 @@ internal sealed class PartyFinderService
 
     private unsafe void SubmitCriteria()
     {
+        if (criteriaSubmitted)
+        {
+            step = OperationStep.Confirming;
+            return;
+        }
         var addon = GetVisibleConditionAddon();
         if (addon is null)
             return;
@@ -487,7 +487,13 @@ internal sealed class PartyFinderService
         if (addon->RecruitMembersButton is null || !addon->RecruitMembersButton->IsEnabled)
             return;
         Status = refreshOnly ? "Applying the preset and refreshing recruitment." : "Posting the Party Finder preset.";
-        ClickButton(&addon->AtkUnitBase, addon->RecruitMembersButton);
+        if (!ClickButton(&addon->AtkUnitBase, addon->RecruitMembersButton))
+        {
+            Status = "Waiting for the Recruitment Criteria submit control to become ready. Nothing has been submitted.";
+            nextStepAt = Environment.TickCount64 + 200;
+            return;
+        }
+        criteriaSubmitted = true;
         confirmationChecks = 0;
         step = OperationStep.Confirming;
         nextStepAt = Environment.TickCount64 + 150;
@@ -527,7 +533,17 @@ internal sealed class PartyFinderService
             return;
         }
 
+        var criteria = GetVisibleConditionAddon();
+        if (criteria is not null)
+        {
+            criteria->AtkUnitBase.Close(true);
+            Status = "Closing Recruitment Criteria before ending the active listing.";
+            nextStepAt = Environment.TickCount64 + 300;
+            return;
+        }
+
         var details = GetVisibleAddon("LookingForGroupDetail");
+        if (details is not null && CloseForeignDetails(details)) return;
         if (details is null)
         {
             TryOpenActiveRecruitmentDetails();
@@ -539,7 +555,7 @@ internal sealed class PartyFinderService
         var endButton = details->GetComponentButtonById(110);
         if (endButton is null || !endButton->IsEnabled)
             return;
-        ClickButton(details, endButton);
+        if (!ClickButton(details, endButton)) return;
         Status = "Waiting for confirmation to end recruitment.";
         step = OperationStep.ConfirmingEndRecruitment;
         nextStepAt = Environment.TickCount64 + 150;
@@ -563,7 +579,7 @@ internal sealed class PartyFinderService
         var yesNo = (AddonSelectYesno*)confirmation;
         if (yesNo->YesButton is null || !yesNo->YesButton->IsEnabled)
             return;
-        ClickButton(confirmation, yesNo->YesButton);
+        if (!ClickButton(confirmation, yesNo->YesButton)) return;
         Status = "Ending the active Party Finder recruitment.";
         nextStepAt = Environment.TickCount64 + 200;
     }
@@ -576,7 +592,7 @@ internal sealed class PartyFinderService
         endingRecruitment = false;
         Status = message;
         notification = message;
-        nextAutomaticRefreshUtc = DateTime.UtcNow.AddMinutes(config.RefreshIntervalMinutes);
+        RefreshScheduleChanged();
     }
 
     private void Fail(string message)
@@ -588,7 +604,14 @@ internal sealed class PartyFinderService
         Status = message;
         notification = message;
         DalamudServices.ChatGui.PrintError($"PartyRefresh: {message}");
-        nextAutomaticRefreshUtc = DateTime.UtcNow.AddMinutes(config.RefreshIntervalMinutes);
+        RefreshScheduleChanged();
+    }
+
+    private void RejectStart(string message)
+    {
+        // A duplicate request must not cancel/reset an operation in progress.
+        if (IsBusy) notification = message;
+        else Fail(message);
     }
 
     private unsafe void RecoverOperation()
@@ -617,6 +640,12 @@ internal sealed class PartyFinderService
             IsRecruiting)
         {
             Finish(refreshOnly ? $"Party Finder refreshed with preset '{pendingPreset?.Name}'." : $"Party Finder preset '{pendingPreset?.Name}' applied.");
+            return;
+        }
+
+        if (criteriaSubmitted)
+        {
+            Fail("The submitted Party Finder change could not be confirmed. Check the listing before trying again; it was not submitted a second time.");
             return;
         }
 
@@ -659,6 +688,18 @@ internal sealed class PartyFinderService
         if (agent is null || contentId == 0 || openActiveRecruitment is null)
             return false;
         openActiveRecruitment(agent, contentId);
+        return true;
+    }
+
+    private unsafe bool CloseForeignDetails(AtkUnitBase* details)
+    {
+        var agent = AgentLookingForGroup.Instance();
+        var localId = DalamudServices.PlayerState.ContentId;
+        if (agent is not null && localId != 0 && agent->LastViewedListing.LeaderContentId == localId) return false;
+        // Never treat another player's Join button as our listing's Edit button.
+        details->Close(true);
+        Status = "Closing another player's Party Finder details before reopening your recruitment.";
+        nextStepAt = Environment.TickCount64 + 300;
         return true;
     }
 
@@ -867,8 +908,7 @@ internal sealed class PartyFinderService
         }
         if (yesNo->YesButton is null || !yesNo->YesButton->IsEnabled)
             return false;
-        ClickButton(addon, yesNo->YesButton);
-        return true;
+        return ClickButton(addon, yesNo->YesButton);
     }
 
     private static unsafe bool TryClickButton(AtkUnitBase* addon, uint componentId)
@@ -878,8 +918,7 @@ internal sealed class PartyFinderService
         var button = addon->GetComponentButtonById(componentId);
         if (button is null || !button->IsEnabled)
             return false;
-        ClickButton(addon, button);
-        return true;
+        return ClickButton(addon, button);
     }
 
     private static unsafe bool TryClickPrimaryDetailButton(AtkUnitBase* addon)
@@ -889,22 +928,22 @@ internal sealed class PartyFinderService
         var detail = (AddonLookingForGroupDetail*)addon;
         if (detail->JoinPartyButton is null || !detail->JoinPartyButton->IsEnabled)
             return false;
-        ClickButton(addon, detail->JoinPartyButton);
-        return true;
+        return ClickButton(addon, detail->JoinPartyButton);
     }
 
-    private static unsafe void ClickButton(AtkUnitBase* addon, AtkComponentButton* button)
+    private static unsafe bool ClickButton(AtkUnitBase* addon, AtkComponentButton* button)
     {
-        if (addon is null || button is null || !button->IsEnabled)
-            return;
+        if (addon is null || !addon->IsReady || !addon->IsVisible || button is null || !button->IsEnabled)
+            return false;
         var owner = button->AtkComponentBase.OwnerNode;
         if (owner is null)
-            return;
+            return false;
         var node = &owner->AtkResNode;
         var clickEvent = (AtkEvent*)node->AtkEventManager.Event;
         if (clickEvent is null)
-            return;
+            return false;
         addon->ReceiveEvent(clickEvent->State.EventType, (int)clickEvent->Param, clickEvent);
+        return true;
     }
 
     private static unsafe bool ClickSyntheticAddonButton(AtkUnitBase* addon, AtkComponentButton* button)

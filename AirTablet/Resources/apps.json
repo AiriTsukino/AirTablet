@@ -2,7 +2,7 @@
   {
     "id": "AutoGreet",
     "name": "AutoGreet",
-    "version": "1.0.60.0",
+    "version": "1.1.0.0",
     "tagline": "Welcome and track venue guests",
     "iconUrl": "Resources/Apps/AutoGreet/AGLogo.png"
   },
@@ -16,7 +16,7 @@
   {
     "id": "GambaAssistant",
     "name": "GambaAssistant",
-    "version": "0.1.31.0",
+    "version": "1.1.0.0",
     "tagline": "Blackjack and DRT dealer tools",
     "iconUrl": "Resources/Apps/GambaAssistant/GALogo.png"
   },
@@ -58,21 +58,21 @@
   {
     "id": "PartyRefresh",
     "name": "PartyRefresh",
-    "version": "1.0.9.0",
+    "version": "1.1.0.0",
     "tagline": "Party Finder presets and refreshing",
     "iconUrl": "Resources/Apps/PartyRefresh/PRLogo.png"
   },
   {
     "id": "PrizeTrader",
     "name": "PrizeTrader",
-    "version": "1.0.22.0",
+    "version": "1.1.0.0",
     "tagline": "Verified multi-trade gil payouts",
     "iconUrl": "Resources/Apps/PrizeTrader/PTLogo.png"
   },
   {
     "id": "WardrobeManager",
     "name": "WardrobeManager",
-    "version": "1.0.54.0",
+    "version": "1.1.0.0",
     "tagline": "Outfits, characters, and emote replacers",
     "iconUrl": "Resources/Apps/WardrobeManager/WMLogo.png"
   }

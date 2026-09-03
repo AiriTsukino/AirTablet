@@ -78,7 +78,7 @@ internal sealed class ChangelogService : IDisposable
             items.Add(new ChangelogItem(
                 app,
                 version,
-                date == default ? DateTimeOffset.Now : date,
+                date,
                 changes.ToList()));
             changes.Clear();
         }
@@ -99,12 +99,12 @@ internal sealed class ChangelogService : IDisposable
                     var dateText = line[1..closingBracket].Trim();
                     date = DateTimeOffset.TryParseExact(
                         dateText,
-                        "yyyy-MM-dd",
+                        new[] { "yyyy-MM-dd", "yyyy-MM-d", "yyyy-M-dd", "yyyy-M-d" },
                         CultureInfo.InvariantCulture,
                         DateTimeStyles.AssumeLocal,
                         out var parsedDate)
                         ? parsedDate
-                        : DateTimeOffset.Now;
+                        : default;
                     app = line[(closingBracket + 1)..versionMarker].Trim();
                     version = line[(versionMarker + 2)..].Trim();
                     continue;

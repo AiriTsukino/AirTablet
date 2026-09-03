@@ -5,13 +5,15 @@ using Dalamud.Bindings.ImGui;
 
 namespace AutoGreet.UI.Tabs;
 
-internal sealed class VenuesTab
+internal sealed class VenuesTab : IDisposable
 {
     private readonly VenueService venues;
     private readonly PersistenceService persistence;
     private readonly DetectionService detection;
     private string newVenueName = "New Venue";
     private string plotCaptureStatus = string.Empty;
+    private readonly VenueFileDialog dialogs = new();
+    private string transferStatus = string.Empty;
 
     public VenuesTab(VenueService venues, PersistenceService persistence, DetectionService detection)
     {
@@ -22,7 +24,14 @@ internal sealed class VenuesTab
 
     public void Draw()
     {
+        dialogs.Pump();
         UiHelpers.Section("Venue profiles");
+        UiHelpers.TextDisabledWrapped("Import or export venue settings, all greeting profiles, and referenced detection regions. Visitor history, blacklist entries, and queued greetings are excluded. Imported venues stay inactive and imported regions start disabled for review.");
+        ImGui.BeginDisabled(dialogs.IsOpen);
+        if (ImGui.Button("Import Venue Profile"))
+            dialogs.Pick(false, string.Empty, ImportVenue, error => transferStatus = error);
+        ImGui.EndDisabled();
+        if (!string.IsNullOrWhiteSpace(transferStatus)) ImGui.TextWrapped(transferStatus);
         ImGui.InputText("New venue name", ref newVenueName, 80);
         ImGui.SameLine();
         if (ImGui.Button("Create venue")) venues.CreateVenue(newVenueName);
@@ -36,6 +45,22 @@ internal sealed class VenuesTab
             if (ImGui.RadioButton("Active", venues.IsVenueActive && venues.ActiveVenue.Id == venue.Id)) venues.SwitchVenue(venue.Id);
             ImGui.SameLine();
             if (venues.Venues.Count > 1 && ImGui.Button("Delete")) venues.DeleteVenue(venue.Id);
+            ImGui.SameLine();
+            ImGui.BeginDisabled(dialogs.IsOpen);
+            if (ImGui.Button("Export Profile"))
+            {
+                try
+                {
+                    var json = VenueTransfer.Export(venue, venues.AllGreetingProfiles.Select(item => item.Profile), persistence.CustomRegions);
+                    dialogs.Pick(true, venue.Name, path =>
+                    {
+                        try { File.WriteAllText(path, json); transferStatus = $"Exported venue profile to {path}."; }
+                        catch (Exception ex) { transferStatus = "Export failed: " + ex.Message; }
+                    }, error => transferStatus = error);
+                }
+                catch (Exception ex) { transferStatus = "Export failed: " + ex.Message; }
+            }
+            ImGui.EndDisabled();
             ImGui.TextDisabled($"Lifetime visitors: {venue.LifetimeVisitors.Count} | Session visitors: {venue.Session.NightlyVisitors.Count} | Blacklisted: {venue.Blacklist.Count}");
             DrawRegionRouting(venue);
             DrawPlotLock(venue);
@@ -44,6 +69,32 @@ internal sealed class VenuesTab
             ImGui.PopID();
         }
     }
+
+    private void ImportVenue(string path)
+    {
+        try
+        {
+            if (new FileInfo(path).Length > 10_000_000) throw new InvalidDataException("The venue profile exceeds the 10 MB limit.");
+            var imported = VenueTransfer.Import(File.ReadAllText(path), venues.Venues.Select(venue => venue.Name));
+            var venue = imported.Venue!;
+            persistence.CustomRegions.AddRange(imported.Regions);
+            persistence.Venues.Add(venue);
+            try { venues.RepairVenueData(venue); }
+            catch
+            {
+                persistence.Venues.Remove(venue);
+                foreach (var region in imported.Regions) persistence.CustomRegions.Remove(region);
+                throw;
+            }
+            var saved = persistence.TrySaveNow();
+            transferStatus = saved
+                ? $"Imported {venue.Name} with {venue.GreetingProfiles.Count} greeting profile(s). Review its macros and enable its imported detection regions before selecting Active."
+                : $"Imported {venue.Name} in memory, but it could not be saved yet. Check the AutoGreet log and storage permissions before closing the app.";
+        }
+        catch (Exception ex) { transferStatus = "Import failed: " + ex.Message; }
+    }
+
+    public void Dispose() => dialogs.Dispose();
 
     private void DrawRegionRouting(VenueProfile venue)
     {

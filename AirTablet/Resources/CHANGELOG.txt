@@ -7,6 +7,23 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-3] AutoGreet v1.1.0.0
+- Added venue profile imports and exports
+
+[2026-09-3] GambaAssistant v1.1.0.0
+- Added support for trade detection not using system messages incase users have system messages disabled
+
+[2026-09-3] PartyRefresh v1.1.0.0
+- Fixed automatic refresh timing to start a full interval when recruitment begins or a post, refresh or manual criteria edit finishes.
+- Improved recovery from conflicting party finder windows.
+
+[2026-09-3] PrizeTrader v1.1.0.0
+- Added support for trade detection not using system messages incase users have system messages disabled
+
+[2026-09-3] WardrobeManager v1.1.0.0
+- Added character preset per outfit option
+- Added glamourer customization options to outfit and character presets
+
 [2026-09-1] AirTabOS v1.1.0.3 
 - Changed automatic update checks from hourly to every five minutes.
 

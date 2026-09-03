@@ -8,7 +8,7 @@ namespace PartyRefresh;
 
 internal sealed class Plugin : IDisposable
 {
-    private const string Version = "1.0.9.0";
+    private const string Version = "1.0.9.1";
     private readonly Configuration config;
     private readonly PersistenceService persistence;
     private readonly PartyFinderService partyFinder;

@@ -29,12 +29,16 @@ The confirmation displays the complete payout and locked recipient before the fi
 - Current trade is the amount assigned to the active trade.
 - The status message explains what PrizeTrader is waiting for.
 
-A trade is counted only after FFXIV reports both the expected gil amount and a completed trade. Closing, declining, or leaving a trade unanswered does not advance the payout. There is no recipient-response timeout, so the recipient may take the time they need to review and accept each trade.
+A trade is counted only after the final confirmation and the Trade window closing, with either FFXIV's message reporting the exact gil amount handed over or the operator's gil balance decreasing by exactly that amount. PrizeTrader records the balance just before confirming the trade, then checks every 100 milliseconds until a match is found or three seconds have passed since the final Yes/No confirmation closed. It stops checking the balance immediately on a match and does not wait out the timer before continuing. The main Trade window must still close before the next trade begins. A separate Trade complete message is not required.
+
+Closing, declining, or leaving a trade unanswered without payment evidence does not advance the payout. There is no recipient-response timeout, so the recipient may take the time they need to review and accept each trade. Avoid other gil-changing activities during a payout. Unexpected balance changes stop the sequence for review, and unavailable balances are never treated as zero.
+
+If the recipient completes the trade after the short balance-check window expires, PrizeTrader requires the exact gil handover message. If that message is also missing, verify the payment manually before restarting.
 
 ## Failed trades and cancellation
 If FFXIV reports a failed trade or the Trade window closes before completion, PrizeTrader pauses without counting that chunk. Check the recipient and current trade amount, then choose Retry Current Trade to repeat the unchanged chunk or Cancel Payout to stop.
 
-Cancel Payout stops future trades but cannot undo gil already confirmed. The status retains the confirmed and total amounts for review.
+Cancel Payout stops future trades but cannot undo gil already confirmed. The status retains the confirmed and total amounts for review. If FFXIV reports gil handed over but completion cannot be verified, check the recipient's balance before starting another payout; do not blindly repeat that payment.
 
 # Incoming trade acceptance
 Settings > General includes Automatically accept incoming trades. It is off by default.
@@ -44,6 +48,8 @@ When enabled, PrizeTrader can accept an incoming request, wait for the other pla
 > warning: Automatic incoming trade acceptance applies to any player who sends you a trade request while the setting is enabled. Turn it off whenever you do not actively need it.
 
 Outgoing payout controls are unavailable while an incoming trade is being handled. They return after the incoming trade completes, fails, or closes.
+
+Incoming acceptance works with system messages disabled. PrizeTrader watches the native Trade window and returns to idle when that observed window closes, including after cancellation. Window closure releases the incoming workflow only: it does not confirm a payment, advance an outgoing payout, or change a player bank. A trusted completion message can also release the workflow, without adopting the same closing window again. If an accepted request never opens a Trade window, its pending state clears after ten seconds; an open trade has no recipient-response timeout.
 
 # Control Center widget
 Add PrizeTrader's Payout progress widget from Control Center to monitor a payout while viewing another app. It shows a ready, active, retry, incoming-trade, cancelled, or completed state along with the recipient and relevant gil progress.

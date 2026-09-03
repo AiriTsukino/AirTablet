@@ -6,10 +6,11 @@ using Dalamud.Bindings.ImGui;
 
 namespace AutoGreet.UI;
 
-public sealed class SettingsWindow : Window
+public sealed class SettingsWindow : Window, IDisposable
 {
     private readonly Configuration config;
     private readonly SettingsTab settings;
+    private readonly VenuesTab venues;
 
     public SettingsWindow(Configuration config, VenueService venueService, VisitorService visitorService, PersistenceService persistence, DetectionService detectionService, GreetingService greetingService, SoundService soundService, EmoteResumeService emoteResumeService, MacroEngine macroEngine)
         : base("AutoGreet Settings###AutoGreetSettingsWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoFocusOnAppearing)
@@ -22,7 +23,7 @@ public sealed class SettingsWindow : Window
         };
 
         var greetings = new GreetingsTab(venueService, persistence, macroEngine);
-        var venues = new VenuesTab(venueService, persistence, detectionService);
+        venues = new VenuesTab(venueService, persistence, detectionService);
         var vipBlacklist = new VipBlacklistTab(venueService, visitorService, persistence);
         settings = new SettingsTab(config, venueService, persistence, detectionService, greetingService, soundService, emoteResumeService, greetings, venues, vipBlacklist);
     }
@@ -32,4 +33,5 @@ public sealed class SettingsWindow : Window
     public override void PostDraw() => AutoGreetTheme.Pop();
 
     public override void Draw() => settings.Draw();
+    public void Dispose() => venues.Dispose();
 }

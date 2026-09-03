@@ -8,7 +8,7 @@ namespace PrizeTrader;
 
 internal sealed class Plugin : IDisposable
 {
-    private const string PrizeTraderVersion = "1.0.22.0";
+    private const string PrizeTraderVersion = "1.0.22.1";
     private const string EarlyAccessWarningModal = "PrizeTrader early access##PrizeTrader";
     private readonly Configuration config;
     private readonly TradeSequenceService trades;

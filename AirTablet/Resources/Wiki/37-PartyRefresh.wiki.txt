@@ -38,6 +38,8 @@ Refresh Now is available while an existing Party Finder recruitment is active. I
 
 Automatic refresh can be enabled from the main screen or Settings > Refresh. The interval can be set from 1 to 55 minutes, and the main screen displays the time remaining before the next refresh. Automatic refresh waits when no recruitment is active.
 
+A newly detected recruitment or a completed post/refresh starts a fresh full interval. Closing manually opened Recruitment Criteria while recruiting also resets the interval. Changing the system clock does not shorten the countdown. An unconfirmed submission is not automatically submitted again; review the listing before retrying.
+
 Posting a preset is available when there is no active recruitment. End the current recruitment before posting a new listing; use Refresh Now to update an existing listing from the selected preset.
 
 # Ending recruitment
@@ -57,4 +59,4 @@ End the active Party Finder recruitment first. Post Preset creates a new recruit
 Refresh Now requires an active Party Finder recruitment and remains disabled while another PartyRefresh action is running.
 
 ## A preset cannot be posted
-Close other game windows that may block Party Finder, confirm the selected duty and conditions are currently available, and try again. PartyRefresh stops instead of submitting when it cannot safely match a selected duty.
+PartyRefresh closes conflicting View Party Finder details and reopens the list or your own recruitment as needed. It does not use another player's Join button as your Edit button. If another unrelated prompt blocks progress, close that prompt, confirm the selected duty and conditions are available, and try again. PartyRefresh stops instead of submitting when it cannot safely match a selected duty.

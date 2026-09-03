@@ -27,6 +27,9 @@ internal sealed class WardrobePreset
     public string Name { get; set; } = "New Preset";
     public bool IsFavorite { get; set; }
     public string ImagePath { get; set; } = string.Empty;
+    public Guid CharacterPresetId { get; set; }
+    public Dictionary<string, bool> OutfitAppearanceOverrides { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, string> AppearanceValueOverrides { get; set; } = new(StringComparer.Ordinal);
     public string GlamourerState { get; set; } = string.Empty;
     public string OutfitAppearanceJson { get; set; } = string.Empty;
     public string CharacterAppearanceJson { get; set; } = string.Empty;

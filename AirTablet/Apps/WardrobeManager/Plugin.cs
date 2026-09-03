@@ -8,7 +8,7 @@ namespace WardrobeManager;
 internal sealed class Plugin : IDisposable
 {
     private enum HonorificSavePhase { None, WaitingForUnload, WaitingForReload }
-    private const string WardrobeManagerVersion = "1.0.54.0";
+    private const string WardrobeManagerVersion = "1.0.54.1";
     private const string DevelopmentWarningModal = "WardrobeManager is in development##WardrobeManager";
     private const string ManualHonorificModal = "New Honorific Title";
     private static readonly string[] HonorificEffectPalettes =
@@ -22,6 +22,7 @@ internal sealed class Plugin : IDisposable
     private readonly IntegrationService integrations;
     private readonly NativeImageDialog imageDialog = new();
     private readonly PortraitTextureCache textures = new();
+    private readonly AppearanceEditor appearanceEditor = new();
     private readonly SelfieCameraService selfieCamera;
     private List<AvailableMod> availableMods = [];
     private WardrobePresetType activeType;
@@ -131,6 +132,7 @@ internal sealed class Plugin : IDisposable
         DrawFolderRemovalConfirmation();
         DrawImageCleanupConfirmation();
         DrawManualHonorificModal();
+        appearanceEditor.Draw(SaveAppearanceEditor);
         DrawDevelopmentWarning();
     }
 
@@ -703,6 +705,10 @@ internal sealed class Plugin : IDisposable
                     }
                     else if (integrations.TryCaptureOutfitAppearance(out var outfitJson, out var equipment, out var outfitError))
                     {
+                        var captured = Newtonsoft.Json.Linq.JObject.Parse(outfitJson);
+                        var previous = string.IsNullOrWhiteSpace(preset.OutfitAppearanceJson) ? null : Newtonsoft.Json.Linq.JObject.Parse(preset.OutfitAppearanceJson);
+                        OutfitAppearancePolicy.PreserveAndApply(captured, previous, preset.OutfitAppearanceOverrides);
+                        outfitJson = captured.ToString(Newtonsoft.Json.Formatting.None);
                         preset.OutfitAppearanceJson = outfitJson;
                         preset.EquipmentItemIds = equipment;
                         outfitDirty = true;
@@ -717,14 +723,14 @@ internal sealed class Plugin : IDisposable
                     ImGui.PushTextWrapPos(TabletAppTheme.Px(340f));
                     ImGui.TextUnformatted(preset.Type == WardrobePresetType.Character
                         ? "Capture only your physical character appearance and Customize Parameters. Weapons, armor, accessories, dyes, crests, materials, and the portrait image are not captured."
-                        : "Capture only your current outfit: equipment, weapons, accessories, dyes, materials, and advanced dyes. Physical appearance and Customize Parameters are excluded. This does not take or change the portrait image.");
+                        : "Capture current equipment, dyes and materials. Existing Glamourer appearance values and application flags are preserved when saving. For a new outfit, appearance options start unchecked; enable individual options in the editor if wanted. This does not change the portrait image.");
                     ImGui.PopTextWrapPos();
                     ImGui.EndTooltip();
                 }
                 TextColoredWrapped(TabletAppTheme.MutedText, preset.Type == WardrobePresetType.Character
                     ? string.IsNullOrWhiteSpace(preset.CharacterAppearanceJson) ? "No physical appearance captured" : "Physical customizations and Customize Parameters captured"
                     : string.IsNullOrWhiteSpace(preset.OutfitAppearanceJson) && string.IsNullOrWhiteSpace(preset.GlamourerState)
-                        ? "No outfit captured" : "Outfit captured (physical appearance excluded)");
+                        ? "No outfit captured" : "Outfit captured; existing Glamourer appearance options are preserved");
             }
         }, false);
     }
@@ -911,7 +917,7 @@ internal sealed class Plugin : IDisposable
             ImGui.TextColored(TabletAppTheme.AccentHover, "Title options");
             ImGui.SetNextItemWidth(-1f);
             ImGui.InputTextWithHint("##manual-honorific-title", "Title text", ref draft.Title, 32);
-            ImGui.Checkbox("Appears before character name", ref draft.IsPrefix);
+            TabletAppTheme.VisibleCheckbox("Appears before character name", ref draft.IsPrefix);
 
             ImGui.TextDisabled("Glow / gradient effect");
             var paletteIndex = Math.Clamp(draft.EffectPalette + 2, 0, HonorificEffectPalettes.Length - 1);
@@ -975,7 +981,7 @@ internal sealed class Plugin : IDisposable
                 {
                     if (ImGui.BeginTabItem("Title"))
                     {
-                        ImGui.Checkbox("Use title colour", ref draft.UseTextColor);
+                        TabletAppTheme.VisibleCheckbox("Use title colour", ref draft.UseTextColor);
                         ImGui.BeginDisabled(!draft.UseTextColor);
                         DrawCenteredColorPicker("##manual-title-colour-picker", ref draft.TextColor);
                         ImGui.EndDisabled();
@@ -983,7 +989,7 @@ internal sealed class Plugin : IDisposable
                     }
                     if (draft.EffectPalette <= -1 && ImGui.BeginTabItem(draft.EffectPalette == -1 ? "Effect 1" : "Glow"))
                     {
-                        if (draft.EffectPalette == -2) ImGui.Checkbox("Use custom glow", ref draft.UseGlow);
+                        if (draft.EffectPalette == -2) TabletAppTheme.VisibleCheckbox("Use custom glow", ref draft.UseGlow);
                         ImGui.BeginDisabled(draft.EffectPalette == -2 && !draft.UseGlow);
                         DrawCenteredColorPicker("##manual-glow-colour-picker", ref draft.GlowColor);
                         ImGui.EndDisabled();
@@ -1142,6 +1148,12 @@ internal sealed class Plugin : IDisposable
                 if (outfitDirty)
                     TextColoredWrapped(TabletAppTheme.MutedText, "Unsaved Glamourer changes. Save or press Done to review the replacement confirmation.");
             }
+            if (preset.Type == WardrobePresetType.Outfit) DrawOutfitAppearanceOptions(preset);
+            if (glamourerDesign && ImGui.Button("Edit appearance...", new Vector2(-1f, 0f)))
+            {
+                if (integrations.TryGetEditableAppearance(preset, out var appearance, out var error)) appearanceEditor.Open(preset, appearance!);
+                else notification = error;
+            }
             ImGui.SetNextItemWidth(-1f);
             ImGui.InputTextWithHint("##wardrobe-mod-search", "Search installed Penumbra mods", ref modSearch, 120);
             var matches = string.IsNullOrWhiteSpace(modSearch) ? [] : availableMods.Where(x => x.Name.Contains(modSearch.Trim(), StringComparison.OrdinalIgnoreCase) || x.Directory.Contains(modSearch.Trim(), StringComparison.OrdinalIgnoreCase)).Where(x => preset.Mods.All(rule => !rule.Directory.Equals(x.Directory, StringComparison.OrdinalIgnoreCase))).Take(8).ToList();
@@ -1222,7 +1234,7 @@ internal sealed class Plugin : IDisposable
                         ImGui.TableNextRow();
                         ImGui.TableNextColumn();
                         var enabled = rule.Enabled;
-                        if (ImGui.Checkbox("##enabled", ref enabled))
+                        if (TabletAppTheme.VisibleCheckbox("##enabled", ref enabled))
                         {
                             rule.Enabled = enabled;
                             persistence.Save();
@@ -1292,14 +1304,14 @@ internal sealed class Plugin : IDisposable
         ImGui.TextColored(TabletAppTheme.AccentHover, "WardrobeManager Settings");
         ImGui.Separator();
         var confirm = config.ConfirmBeforeApply;
-        if (ImGui.Checkbox("Confirm before applying presets", ref confirm))
+        if (TabletAppTheme.VisibleCheckbox("Confirm before applying presets", ref confirm))
         {
             config.ConfirmBeforeApply = confirm;
             DalamudServices.PluginInterface.SavePluginConfig(config);
         }
         TextColoredWrapped(TabletAppTheme.MutedText, "Ask before applying a Glamourer design or another WardrobeManager preset.");
         var reloadGlamourer = config.ReloadGlamourerAfterFolderDelete;
-        if (ImGui.Checkbox("Reload Glamourer after deleting an outfit folder", ref reloadGlamourer))
+        if (TabletAppTheme.VisibleCheckbox("Reload Glamourer after deleting an outfit folder", ref reloadGlamourer))
         {
             config.ReloadGlamourerAfterFolderDelete = reloadGlamourer;
             DalamudServices.PluginInterface.SavePluginConfig(config);
@@ -1624,6 +1636,68 @@ internal sealed class Plugin : IDisposable
         BeginEdit(preset);
     }
 
+    private void DrawOutfitAppearanceOptions(WardrobePreset preset)
+    {
+        var characters = persistence.Data.Presets.Where(item => item.Type == WardrobePresetType.Character).ToList();
+        var selected = characters.FirstOrDefault(item => item.Id == preset.CharacterPresetId);
+        ImGui.TextUnformatted("Character preset for this outfit");
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.BeginCombo("##outfit-character", preset.CharacterPresetId == Guid.Empty ? "None (keep current character)" : selected?.Name ?? "Missing character preset"))
+        {
+            if (ImGui.Selectable("None (keep current character)", preset.CharacterPresetId == Guid.Empty))
+            {
+                preset.CharacterPresetId = Guid.Empty;
+                persistence.Save();
+            }
+            foreach (var character in characters)
+                if (ImGui.Selectable($"{character.Name}##{character.Id}", preset.CharacterPresetId == character.Id))
+                {
+                    preset.CharacterPresetId = character.Id;
+                    persistence.Save();
+                }
+            ImGui.EndCombo();
+        }
+        ImGui.Separator();
+    }
+
+    private string? SaveAppearanceEditor(WardrobePreset preset, Newtonsoft.Json.Linq.JObject original, Newtonsoft.Json.Linq.JObject draft)
+    {
+        // Stage the save on a copy: a failed IPC save must not mutate the preset
+        // or lose the user's draft, and Cancel never edits persisted settings.
+        var staged = ClonePreset(preset);
+        OutfitAppearancePolicy.RecordEdits(original, draft, staged.AppearanceValueOverrides);
+        if (staged.Type == WardrobePresetType.Character) staged.CharacterAppearanceJson = draft.ToString(Newtonsoft.Json.Formatting.None);
+        else staged.OutfitAppearanceJson = draft.ToString(Newtonsoft.Json.Formatting.None);
+        var folder = persistence.Data.Folders.FirstOrDefault(item => item.Id == staged.FolderId);
+        var folderPath = folder is null ? string.Empty : string.IsNullOrWhiteSpace(folder.GlamourerPath) ? folder.Name : folder.GlamourerPath;
+        var success = staged.Type == WardrobePresetType.Character
+            ? integrations.SyncCharacterToGlamourer(staged, out var message)
+            : integrations.SyncOutfitToGlamourer(staged, folderPath, out message);
+        if (!success) return message;
+        preset.GlamourerDesignId = staged.GlamourerDesignId;
+        preset.GlamourerState = staged.GlamourerState;
+        preset.GlamourerFolderPath = staged.GlamourerFolderPath;
+        preset.CharacterAppearanceJson = staged.CharacterAppearanceJson;
+        preset.OutfitAppearanceJson = staged.OutfitAppearanceJson;
+        preset.OutfitAppearanceOverrides.Clear();
+        preset.AppearanceValueOverrides.Clear();
+        if (editingSnapshot is not null)
+        {
+            // Discarding unrelated editor changes must not restore an old
+            // Glamourer ID that this successful save has already replaced.
+            editingSnapshot.GlamourerDesignId = preset.GlamourerDesignId;
+            editingSnapshot.GlamourerState = preset.GlamourerState;
+            editingSnapshot.GlamourerFolderPath = preset.GlamourerFolderPath;
+            editingSnapshot.CharacterAppearanceJson = preset.CharacterAppearanceJson;
+            editingSnapshot.OutfitAppearanceJson = preset.OutfitAppearanceJson;
+            editingSnapshot.OutfitAppearanceOverrides.Clear();
+            editingSnapshot.AppearanceValueOverrides.Clear();
+        }
+        persistence.Save();
+        notification = message;
+        return null;
+    }
+
     private void RequestApply(WardrobePreset preset)
     {
         if (!config.ConfirmBeforeApply) { Apply(preset); return; }
@@ -1638,7 +1712,7 @@ internal sealed class Plugin : IDisposable
 
     private void ApplyResolved(WardrobePreset preset)
     {
-        var result = integrations.Apply(preset);
+        var result = OutfitApplyPlan.Apply(preset, persistence.Data.Presets, integrations.Apply);
         if (result.Success && preset.Type == WardrobePresetType.Outfit)
         {
             quickSelectionId = preset.GlamourerDesignId;

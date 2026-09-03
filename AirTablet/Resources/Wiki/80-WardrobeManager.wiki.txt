@@ -22,7 +22,15 @@ The library separates Outfits, Characters, Emotes, and outfit Folders. Presets m
 WardrobeManager keeps linked Glamourer outfits and characters synchronized with the Glamourer design library. Glamourer design names, folders, appearance data, and mod associations are reflected in WardrobeManager. Removing a linked design from Glamourer also removes its linked WardrobeManager card after the library refreshes.
 
 # Outfit presets
-Outfits capture equipment, weapons, accessories, dyes, materials, and advanced dyes. They exclude physical character appearance and Customize Parameters.
+Outfits capture equipment, weapons, accessories, dyes, materials, and advanced dyes. Existing Glamourer physical appearance values and Customize Parameters, including their checked application options, are preserved when you edit or save an outfit. New outfits start with physical appearance options unchecked.
+
+Choose Edit appearance to open Appearance Studio for an outfit or character. Customization contains physical features and the game color palettes; Advanced Customization contains the linked design's color, opacity, strength, and other shader parameters. Search the feature list, choose a feature, and edit it in the right-hand panel.
+
+Face, hair, tail/ear, face-paint, and facial-feature choices use the character-creation game icons. Choices depend on clan, gender, and face. Changing those identity features reconciles incompatible dependent choices. Standard color wheels select the nearest valid game-palette color; advanced color wheels and numeric RGB fields allow unrestricted colors, including HDR values. Custom value (advanced) supports manual NPC/modded values; Glamourer may reject invalid values.
+
+Apply with this preset controls whether the stored feature replaces the character's current value when applied. Unchecked values are retained. Cancel discards the popup draft. Save to Glamourer saves the appearance and current mod associations, verifies the resulting appearance before removing the old design, and leaves the old design intact if verification fails. Untouched appearance fields preserve newer external Glamourer changes. The popup and its scrollable choice panels remain inside the tablet.
+
+Character preset for this outfit optionally applies a saved character preset before the outfit, including its body-related Penumbra collection and Customize+ choices. None (keep current character) is the default and leaves the character preset unchanged. Checked appearance options in the outfit are applied afterward. If the linked character is missing or cannot apply, the outfit stops with an explanation.
 
 ## Creating and editing an outfit
 - Choose New Preset from Outfits or New Outfit from an open folder.
@@ -71,6 +79,8 @@ The Quick Design selector lists designs marked as Quick Designs in Glamourer. Ch
 
 # Portraits and selfies
 Outfit and character presets can use portraits. Choose Portrait imports a PNG, JPG, JPEG, WebP, or BMP image. Take Selfie opens the live game camera with a 9:16 guide and saves a portrait to the configured selfie folder. Emote presets do not use portraits.
+
+Confirming Replace Existing Selfie replaces the managed portrait and deletes older identifiable exported captures for that preset from the selected selfie folder, after the new portrait is saved. The new capture, imported originals, unknown files, and images referenced by another preset are kept. Deleted old captures are not sent to the recycle bin.
 
 Settings lets you choose the selfie folder, return to the default folder, rescan for missing preset images, or delete unused images. Rescan Images can relink a missing portrait when a matching image is found. Delete Unused Images keeps every referenced portrait and the newest identifiable selfie for each preset while removing older unused captures after confirmation.
 

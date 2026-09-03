@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Dalamud.Game.Chat;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.Text.SeStringHandling;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
@@ -14,9 +15,6 @@ internal sealed unsafe class TradeSequenceService : IDisposable
 {
     private const int MaximumDiagnosticEntries = 1000;
     public const long MaximumChunk = 1_000_000;
-    private static readonly Regex OutgoingGil = new(@"\b(?:you\s+)?(?:hand\s+over|gave|give|trade|traded|pay|paid)\s+(?<amount>[\d,]+)\s+gil\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex TradeComplete = new(@"\btrade\s+complete\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex TradeFailed = new(@"\b(?:trade\s+(?:cancelled|canceled|declined|failed)|unable\s+to\s+complete\s+(?:the\s+)?trade|could\s+not\s+complete\s+(?:the\s+)?trade|other\s+player\s+is\s+busy)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex UnavailableToast = new(@"\bis\s+unable\s+to\s+trade\s+at\s+this\s+time\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly Func<bool> autoAcceptIncomingTrades;
@@ -30,8 +28,12 @@ internal sealed unsafe class TradeSequenceService : IDisposable
     private bool numericValueSet;
     private bool numericSubmitted;
     private bool tradeButtonClicked;
-    private long stagedOutgoingAmount;
+    private readonly TradeCompletionTracker completion = new();
+    private ulong tradeCharacterId;
+    private uint tradeTerritoryId;
     private IncomingTradeStage incomingStage;
+    private readonly IncomingTradeWindowTracker incomingWindow = new();
+    private DateTimeOffset incomingRequestAcceptedAt;
     private DateTimeOffset nextIncomingActionUtc;
     private string? notification;
     private string status = "Lock a visible player target to prepare a payout.";
@@ -124,6 +126,12 @@ internal sealed unsafe class TradeSequenceService : IDisposable
 
     public void Cancel(string reason)
     {
+        // Preserve a paid chunk even if Cancel is pressed before the next tick.
+        TryRecordCompletedChunk(advance: false);
+        if (completion.ReportedAmount > 0)
+            reason += $" The game reported {completion.ReportedAmount:N0} gil handed over, but this payment could not be verified. Check the recipient's balance before paying again.";
+        else if (completion.ObservedDecrease is > 0)
+            reason += $" The operator's gil decreased by {completion.ObservedDecrease:N0}, but this payment could not be verified. Check the recipient's balance before paying again.";
         stage = SequenceStage.Idle;
         ResetChunkState();
         Status = $"Payout stopped. {ConfirmedAmount:N0} of {TotalAmount:N0} gil was confirmed. {reason}";
@@ -146,6 +154,11 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             return;
         }
         if (NeedsRetry || DateTimeOffset.UtcNow < nextActionUtc) return;
+        if (stage == SequenceStage.AwaitingCompletion && !IsSameTradeContext())
+        {
+            Cancel("The operator logged out, changed character, or changed zones during the trade. Verify the payment before restarting.");
+            return;
+        }
         if (RemainingAmount <= 0)
         {
             CompletePayout();
@@ -258,16 +271,28 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                     nextActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
                     return;
                 }
+                // Arm before the callback so synchronous chat events belong to
+                // this chunk, not the next one.
+                tradeCharacterId = DalamudServices.PlayerState.ContentId;
+                tradeTerritoryId = DalamudServices.ClientState.TerritoryType;
+                var startingGil = ReadOperatorGil();
+                completion.Begin(CurrentChunk, startingGil);
+                Trace(startingGil is not null
+                    ? $"Captured operator gil before final confirmation: {startingGil:N0}; expected decrease={CurrentChunk:N0}."
+                    : "Operator gil balance is unavailable; this chunk requires the exact handover system message.");
+                stage = SequenceStage.AwaitingCompletion;
                 if (!TryConfirmYes(confirmation))
                 {
+                    completion.Reset();
+                    stage = SequenceStage.ConfirmingTrade;
                     Status = "The final Yes button is visible but is not ready yet.";
                     nextActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
                     return;
                 }
-                stage = SequenceStage.AwaitingCompletion;
-                Trace("Sent Yes once and began waiting for trusted completion messages.");
-                Status = $"Confirmed Yes once. Waiting for {LockedDisplay} and the trusted Trade complete system message; this wait has no time limit.";
-                nextActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
+                if (stage != SequenceStage.AwaitingCompletion) return;
+                Trace("Sent Yes once and began waiting for exact payment evidence and Trade window closure.");
+                Status = $"Confirmed Yes once. Waiting for {LockedDisplay} and the exact gil handover or balance decrease, followed by the Trade window closing.";
+                nextActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(100);
                 return;
             }
             Status = $"Waiting for the game's final trade confirmation with {LockedDisplay}; this wait has no time limit.";
@@ -277,8 +302,18 @@ internal sealed unsafe class TradeSequenceService : IDisposable
 
         if (stage == SequenceStage.AwaitingCompletion)
         {
-            Status = $"Waiting for the trusted Trade complete system message for the {CurrentChunk:N0} gil trade; this wait has no time limit.";
-            nextActionUtc = DateTimeOffset.UtcNow.AddSeconds(1);
+            if (TryRecordCompletedChunk()) return;
+            if (completion.HasUnexpectedBalanceChange)
+            {
+                Cancel($"The operator's gil changed unexpectedly (decrease={completion.ObservedDecrease:N0}; expected={CurrentChunk:N0}). Automatic payout stopped for review.");
+                return;
+            }
+            Status = completion.ReportedAmount > 0
+                ? $"The game reported {completion.ReportedAmount:N0} gil handed over; waiting for the Trade window to close."
+                : completion.BalanceCheckExpired
+                    ? $"No exact gil decrease was observed within 3 seconds of the final confirmation closing. Waiting for the exact {CurrentChunk:N0} gil handover message; verify payment before restarting."
+                    : $"Waiting for an exact {CurrentChunk:N0} gil handover or operator balance decrease and a closed Trade window; closure alone is not payment.";
+            nextActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(100);
         }
     }
 
@@ -300,12 +335,27 @@ internal sealed unsafe class TradeSequenceService : IDisposable
 
     private void TickIncomingTrade()
     {
+        if (!DalamudServices.ClientState.IsLoggedIn)
+        {
+            ResetIncomingTrade();
+            incomingWindow.Reset();
+            return;
+        }
         if (!autoAcceptIncomingTrades())
         {
             ResetIncomingTrade();
             return;
         }
         if (DateTimeOffset.UtcNow < nextIncomingActionUtc) return;
+        var windowVisible = ReadTradeWindowVisibility();
+        var windowClosed = incomingWindow.Observe(windowVisible);
+        if (windowClosed && incomingStage != IncomingTradeStage.Idle)
+        {
+            Trace($"Observed incoming Trade window close in {incomingStage}; released incoming state without relying on system chat. No payout or bank amount was recorded.");
+            ResetIncomingTrade("Incoming Trade window closed. Ready for the next trade; no payment is inferred from closure alone.");
+            return;
+        }
+        if (incomingWindow.AwaitingClosure) return;
 
         if (incomingStage == IncomingTradeStage.Idle)
         {
@@ -318,6 +368,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
                     return;
                 }
                 incomingStage = IncomingTradeStage.WaitingForTradeWindow;
+                incomingRequestAcceptedAt = DateTimeOffset.UtcNow;
                 nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
                 Status = "Accepted an incoming trade request once; waiting for the Trade window.";
                 Trace("Auto-accepted an incoming trade request once.");
@@ -340,6 +391,12 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             var trade = TryGetReadyAddon("Trade");
             if (trade is null)
             {
+                if (windowVisible == false && DateTimeOffset.UtcNow - incomingRequestAcceptedAt > TimeSpan.FromSeconds(10))
+                {
+                    Trace("Accepted request did not open a Trade window within 10 seconds; cleared the incoming request state without recording payment.");
+                    ResetIncomingTrade("No Trade window opened for the accepted request. Ready for the next trade.");
+                    return;
+                }
                 nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
                 return;
             }
@@ -354,7 +411,8 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             var trade = TryGetReadyAddon("Trade");
             if (trade is null)
             {
-                ResetIncomingTrade("The incoming Trade window closed before completion.");
+                // A visible but not-ready addon is not a closed trade.
+                nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(100);
                 return;
             }
             if (!IsOtherPartyReady(trade))
@@ -381,15 +439,18 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             var confirmation = TryGetReadyAddon("SelectYesno");
             if (confirmation is not null && IsCompleteTradePrompt(confirmation))
             {
+                incomingStage = IncomingTradeStage.WaitingForCompletion;
                 if (!TryConfirmYes(confirmation))
                 {
+                    if (incomingStage != IncomingTradeStage.WaitingForCompletion) return;
+                    incomingStage = IncomingTradeStage.WaitingForFinalPrompt;
                     nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
                     return;
                 }
-                incomingStage = IncomingTradeStage.WaitingForCompletion;
-                nextIncomingActionUtc = DateTimeOffset.UtcNow.AddSeconds(1);
-                Status = "Confirmed the incoming trade Yes once; waiting for the trusted Trade complete system message with no time limit.";
-                Trace("Confirmed incoming trade Yes once and began waiting for Trade complete.");
+                if (incomingStage != IncomingTradeStage.WaitingForCompletion) return;
+                nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(100);
+                Status = "Confirmed the incoming trade Yes once; waiting for the Trade window to close or a trusted completion message.";
+                Trace("Confirmed incoming trade Yes once; monitoring native window closure independently of system messages.");
                 return;
             }
 
@@ -407,48 +468,52 @@ internal sealed unsafe class TradeSequenceService : IDisposable
 
         if (incomingStage == IncomingTradeStage.WaitingForCompletion)
         {
-            Status = "Waiting for the trusted Trade complete system message for the incoming trade; this wait has no time limit.";
-            nextIncomingActionUtc = DateTimeOffset.UtcNow.AddSeconds(1);
+            Status = "Waiting for the incoming Trade window to close. System messages are optional; the other player can take as long as needed.";
+            nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(100);
         }
     }
 
     private void OnChatMessage(IHandleableChatMessage message)
     {
         if (!IsRunning && incomingStage == IncomingTradeStage.Idle) return;
-        var sender = message.OriginalSender.ToString();
-        var body = message.OriginalMessage.ToString();
-        if (!IsTrustedSystemLine(message, sender)) return;
-        Trace($"Observed trusted chat line: kind={DescribeChatKind(message)}; text={Clean(body)}");
-        var combined = Clean($"{sender} {body}");
+        var sender = Clean(message.OriginalSender.ExtractText());
+        var body = Clean(message.OriginalMessage.ExtractText());
+        var kind = DescribeChatKind(message);
+        var evidence = TradeChatEvidence.Classify(kind, sender, body, out var amount);
+        if (evidence == TradeMessageKind.None) return;
+        Trace($"Observed trusted trade line: kind={kind}; text={body}");
 
         if (!IsRunning)
         {
-            if (TradeFailed.IsMatch(combined))
+            if (evidence == TradeMessageKind.Failed)
             {
                 ResetIncomingTrade("The game reported that the incoming trade did not complete.");
                 Notify("PrizeTrader incoming trade did not complete.");
                 return;
             }
-            if (!TradeComplete.IsMatch(combined)) return;
+            // A late completion from the previous trade must not reset a new
+            // incoming request that has not reached final confirmation yet.
+            if (evidence != TradeMessageKind.Complete || incomingStage != IncomingTradeStage.WaitingForCompletion) return;
             Trace("Matched the trusted Trade complete system line for the incoming trade.");
             ResetIncomingTrade("Incoming trade complete.");
             Notify("PrizeTrader incoming trade completed.");
             return;
         }
 
-        if (TradeFailed.IsMatch(combined))
+        if (evidence == TradeMessageKind.Failed)
         {
             PauseFailedTrade("The game reported that the trade did not complete.");
             return;
         }
-        var outgoing = OutgoingGil.Match(combined);
-        if (outgoing.Success && TryParseAmount(outgoing.Groups["amount"].Value, out var amount))
+        // Late/duplicate completion lines while opening or retrying a trade
+        // cannot be credited to a new chunk that has not been confirmed yet.
+        if (stage != SequenceStage.AwaitingCompletion) return;
+        if (evidence == TradeMessageKind.Handover)
         {
-            if (amount == CurrentChunk)
+            if (completion.ObserveHandover(amount))
             {
-                stagedOutgoingAmount = amount;
                 Trace($"Matched the trusted outgoing gil line for {amount:N0}.");
-                Status = $"The game reported {amount:N0} gil handed over; waiting for Trade complete before counting it.";
+                Status = $"The game reported {amount:N0} gil handed over; waiting for the Trade window to close before counting it.";
             }
             else
             {
@@ -456,24 +521,34 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             }
             return;
         }
-        if (!TradeComplete.IsMatch(combined)) return;
+        if (evidence != TradeMessageKind.Complete) return;
         Trace("Matched the trusted Trade complete system line.");
-        if (stagedOutgoingAmount != CurrentChunk || stagedOutgoingAmount <= 0)
-        {
-            Cancel("A Trade complete message arrived without the exact expected outgoing gil confirmation.");
-            return;
-        }
-        ConfirmedAmount += stagedOutgoingAmount;
+        completion.ObserveCompletion();
+    }
+
+    private bool TryRecordCompletedChunk(bool advance = true)
+    {
+        if (stage != SequenceStage.AwaitingCompletion) return false;
+        var visible = IsSameTradeContext() ? ReadTradeWindowVisibility() : null;
+        ObserveOperatorBalance();
+        var sawCompletionMessage = completion.SawCompletionMessage;
+        var sawHandover = completion.ReportedAmount > 0;
+        var sawBalanceDecrease = completion.HasBalanceConfirmation;
+        var observedDecrease = completion.ObservedDecrease;
+        if (!completion.TryConsume(visible, out var completed)) return false;
+        ConfirmedAmount += completed;
+        Trace($"Confirmed {completed:N0} gil once with a closed Trade window. Exact handover message={sawHandover}; exact operator gil decrease={sawBalanceDecrease}; observed decrease={observedDecrease?.ToString("N0") ?? "unavailable"}; separate Trade complete message={sawCompletionMessage}.");
+        if (!advance) return true;
         if (RemainingAmount <= 0)
         {
             CompletePayout();
-            return;
+            return true;
         }
-        var completed = stagedOutgoingAmount;
         ResetChunkState();
         stage = SequenceStage.OpeningTrade;
         nextActionUtc = DateTimeOffset.UtcNow.AddSeconds(1);
         Status = $"Confirmed {completed:N0} gil. Preparing the next {CurrentChunk:N0} gil trade; {RemainingAmount:N0} gil remains.";
+        return true;
     }
 
     private void OnErrorToast(ref SeString message, ref bool isHandled)
@@ -488,6 +563,18 @@ internal sealed unsafe class TradeSequenceService : IDisposable
 
     private void PauseFailedTrade(string reason)
     {
+        if (stage == SequenceStage.AwaitingCompletion)
+        {
+            ObserveOperatorBalance();
+            completion.ObserveFailure();
+        }
+        if (completion.ReportedAmount > 0 || completion.ObservedDecrease is > 0)
+        {
+            // Conflicting payment/failure evidence must never offer a blind
+            // retry of a chunk the game already reported handing over.
+            Cancel(reason);
+            return;
+        }
         ResetChunkState();
         stage = SequenceStage.PausedAfterFailure;
         Status = $"{reason} Nothing was counted. Review the situation, then retry the unchanged chunk or cancel.";
@@ -508,13 +595,17 @@ internal sealed unsafe class TradeSequenceService : IDisposable
         numericValueSet = false;
         numericSubmitted = false;
         tradeButtonClicked = false;
-        stagedOutgoingAmount = 0;
+        completion.Reset();
+        tradeCharacterId = 0;
+        tradeTerritoryId = 0;
         nextActionUtc = DateTimeOffset.MinValue;
     }
 
     private void ResetIncomingTrade(string? status = null)
     {
+        if (incomingStage != IncomingTradeStage.Idle) incomingWindow.Finish(ReadTradeWindowVisibility());
         incomingStage = IncomingTradeStage.Idle;
+        incomingRequestAcceptedAt = default;
         nextIncomingActionUtc = DateTimeOffset.MinValue;
         if (!string.IsNullOrWhiteSpace(status)) Status = status;
     }
@@ -545,17 +636,6 @@ internal sealed unsafe class TradeSequenceService : IDisposable
         return !string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(world);
     }
 
-    private static bool IsTrustedSystemLine(IHandleableChatMessage message, string sender)
-    {
-        var kind = string.Empty;
-        try { kind = message.LogKind.ToString(); } catch { }
-        if (kind.Contains("Say", StringComparison.OrdinalIgnoreCase) || kind.Contains("Tell", StringComparison.OrdinalIgnoreCase) ||
-            kind.Contains("Party", StringComparison.OrdinalIgnoreCase) || kind.Contains("Shout", StringComparison.OrdinalIgnoreCase) ||
-            kind.Contains("Yell", StringComparison.OrdinalIgnoreCase) || kind.Contains("Linkshell", StringComparison.OrdinalIgnoreCase))
-            return false;
-        return string.IsNullOrWhiteSpace(Clean(sender)) || kind.Contains("System", StringComparison.OrdinalIgnoreCase) || kind.Contains("Log", StringComparison.OrdinalIgnoreCase) || kind.Contains("Notice", StringComparison.OrdinalIgnoreCase);
-    }
-
     private bool SendGameCommand(string command)
     {
         try
@@ -583,6 +663,60 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             if (ptr.Address == nint.Zero) return null;
             var addon = (AtkUnitBase*)ptr.Address;
             return addon is not null && addon->IsReady && addon->IsVisible ? addon : null;
+        }
+        catch { return null; }
+    }
+
+    private static bool? ReadTradeWindowVisibility()
+    {
+        try
+        {
+            if (!DalamudServices.ClientState.IsLoggedIn) return null;
+            var ptr = DalamudServices.GameGui.GetAddonByName("Trade");
+            if (ptr.Address == nint.Zero) return false;
+            // A not-ready but still visible addon is not a closed window.
+            return ((AtkUnitBase*)ptr.Address)->IsVisible;
+        }
+        catch { return null; }
+    }
+
+    private bool IsSameTradeContext() => DalamudServices.ClientState.IsLoggedIn
+        && tradeCharacterId != 0 && DalamudServices.PlayerState.ContentId == tradeCharacterId
+        && DalamudServices.ClientState.TerritoryType == tradeTerritoryId;
+
+    private void ObserveOperatorBalance()
+    {
+        // Stop native balance reads as soon as the exact amount is detected,
+        // or the short post-confirmation verification window expires.
+        if (!completion.NeedsBalanceObservation) return;
+        completion.ObserveBalance(ReadOperatorGil(), ReadFinalConfirmationVisibility(), DateTimeOffset.UtcNow);
+    }
+
+    private bool? ReadFinalConfirmationVisibility()
+    {
+        try
+        {
+            if (!IsSameTradeContext()) return null;
+            var ptr = DalamudServices.GameGui.GetAddonByName("SelectYesno");
+            if (ptr.Address == nint.Zero) return false;
+            var addon = (AtkUnitBase*)ptr.Address;
+            if (!addon->IsVisible) return false;
+            if (!addon->IsReady) return null;
+            return IsCompleteTradePrompt(addon);
+        }
+        catch { return null; }
+    }
+
+    private long? ReadOperatorGil()
+    {
+        try
+        {
+            if (!IsSameTradeContext()) return null;
+            var inventory = InventoryManager.Instance();
+            if (inventory is null) return null;
+            var currency = inventory->GetInventoryContainer(InventoryType.Currency);
+            if (currency is null || !currency->IsLoaded) return null;
+            return inventory->GetGil();
         }
         catch { return null; }
     }
@@ -739,7 +873,6 @@ internal sealed unsafe class TradeSequenceService : IDisposable
 
     private static string Clean(string? value) => Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim();
     private static string Normalize(string? value) => new((value ?? string.Empty).Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
-    private static bool TryParseAmount(string value, out long amount) => long.TryParse(value.Replace(",", string.Empty), NumberStyles.Integer, CultureInfo.InvariantCulture, out amount) && amount > 0;
     private static string DescribeChatKind(IHandleableChatMessage message)
     {
         try { return message.LogKind.ToString(); }

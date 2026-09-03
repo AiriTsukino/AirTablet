@@ -192,6 +192,8 @@ internal sealed class PersistenceService
             if (preset.Id == Guid.Empty) preset.Id = Guid.NewGuid();
             preset.Name = string.IsNullOrWhiteSpace(preset.Name) ? "Unnamed Preset" : preset.Name.Trim();
             preset.ImagePath ??= string.Empty;
+            preset.OutfitAppearanceOverrides ??= new(StringComparer.Ordinal);
+            preset.AppearanceValueOverrides ??= new(StringComparer.Ordinal);
             preset.GlamourerState ??= string.Empty;
             preset.OutfitAppearanceJson ??= string.Empty;
             preset.CharacterAppearanceJson ??= string.Empty;

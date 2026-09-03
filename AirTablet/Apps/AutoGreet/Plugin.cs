@@ -257,6 +257,7 @@ internal sealed class Plugin : IDisposable
             DalamudServices.CommandManager.RemoveHandler(SettingsCommandName);
         }
         windowSystem.RemoveAllWindows();
+        settingsWindow.Dispose();
         queue.Dispose();
         pendingEmotes.Dispose();
         greetings.Dispose();

@@ -588,11 +588,12 @@ public sealed class ChatMonitorService : IDisposable
         pendingTradeStartedUtc = DateTime.MinValue;
         pendingTradeLastAmount = 0;
         pendingTransferDirection = TradeTransferDirection.None;
-        trades.MarkTradeWindowClosed();
+        trades.MarkTradeWindowClosed(cancelled: true);
     }
 
     private string? GetFreshTradePlayer()
     {
+        if (trades.CurrentNativeTradePartner is { } nativePartner) return nativePartner;
         // The request initiator does not determine gil direction. Either participant
         // can place gil in the window, so the trusted "receive" / "hand over" amount
         // line determines the bank operation while this state only identifies player.

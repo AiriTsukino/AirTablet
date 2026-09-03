@@ -41,6 +41,13 @@ The Greets lists let you greet now, mark greeted, return someone to Ungreeted, o
 - VIP: for visitors assigned to the active VIP tier.
 
 # Venues and safety
+## Import and export
+Settings > Venues provides Import Venue Profile and an Export Profile button for each venue. These use native file-selection windows on Windows and zenity or kdialog on Linux.
+
+Exports contain venue settings, all of its greeting profiles, any shared active greeting profile, VIP tier definitions, plot settings, and referenced detection regions. Visitor history, blacklist entries, sessions, and pending greetings are excluded.
+
+Imports create a separate venue with new identifiers and a unique name, keeping existing venues unchanged. The imported venue is not automatically activated and no imported macro is run by the import. Imported detection regions start disabled because regions are shared across AutoGreet; review and enable them before use. Review the venue's scripts, plot lock, and greetings before choosing Active.
+
 ## Plot-specific safety
 When enabled, AutoGreet compares world, housing district, housing type, ward, division, and plot/apartment room. Leaving the saved location prevents that venue from greeting in the wrong house.
 ## Houses and apartments

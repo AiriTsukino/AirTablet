@@ -71,7 +71,7 @@ internal sealed unsafe class SelfieCameraService : IDisposable
             DrawWrapped(captureArmed ? TabletAppTheme.AccentHover : TabletAppTheme.MutedText, status);
             if (!string.IsNullOrWhiteSpace(pendingCapturedSelfie))
             {
-                DrawWrapped(TabletAppTheme.MutedText, "Replace the existing portrait? Confirming deletes its managed copy and assigns the newly captured selfie.");
+                DrawWrapped(TabletAppTheme.MutedText, "Replace the existing portrait? Confirming replaces its managed copy and deletes older identifiable selfie captures for this preset from the selected selfie folder. Imported originals and images used by other presets are kept.");
                 if (ImGui.Button("Replace Existing Selfie", new Vector2(-1f, 34f))) AssignCapturedSelfie(pendingCapturedSelfie);
                 if (ImGui.Button("Keep Existing and Return", new Vector2(-1f, 0f)))
                 {
@@ -226,7 +226,20 @@ internal sealed unsafe class SelfieCameraService : IDisposable
             textures.Invalidate(old);
             persistence.Save();
             pendingCapturedSelfie = string.Empty;
-            notify($"Selfie saved for {preset.Name}.");
+            var cleanupMessage = string.Empty;
+            try
+            {
+                var oldCaptures = SelfieFilePolicy.ReplacedCaptures(ResolveOutputFolder(), captured, preset.Id,
+                    persistence.Data.Presets.Select(item => item.ImagePath));
+                foreach (var oldCapture in oldCaptures) File.Delete(oldCapture);
+                if (oldCaptures.Count > 0) cleanupMessage = $" Removed {oldCaptures.Count} older selfie capture(s).";
+            }
+            catch (Exception ex)
+            {
+                DalamudServices.Log.Warning(ex, "WardrobeManager saved the new selfie but could not remove all older captures.");
+                cleanupMessage = " The new selfie was saved, but some older captures could not be removed.";
+            }
+            notify($"Selfie saved for {preset.Name}.{cleanupMessage}");
             CloseAndReturn();
         }
         catch (Exception ex) { status = "The selfie was captured but could not be assigned: " + ex.Message; }

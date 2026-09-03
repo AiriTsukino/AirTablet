@@ -37,9 +37,11 @@ public sealed class PersistenceService : IDisposable
         DalamudServices.Framework.Update += OnFrameworkUpdate;
     }
 
-    public void SaveNow()
+    public void SaveNow() => TrySaveNow();
+
+    public bool TrySaveNow()
     {
-        if (disposed) return;
+        if (disposed) return false;
         var entered = false;
         try
         {
@@ -47,7 +49,7 @@ public sealed class PersistenceService : IDisposable
             if (!entered)
             {
                 RequestSave();
-                return;
+                return false;
             }
 
             lock (saveRequestSync)
@@ -60,10 +62,12 @@ public sealed class PersistenceService : IDisposable
             SaveExternalDataUnsafe();
             DalamudServices.PluginInterface.SavePluginConfig(configuration);
             PruneLegacyBaseConfigFileUnsafe();
+            return true;
         }
         catch (Exception ex)
         {
             DalamudServices.Log.Error(ex, "Failed to save AutoGreet configuration.");
+            return false;
         }
         finally
         {

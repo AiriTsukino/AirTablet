@@ -336,7 +336,7 @@ internal sealed class IntegrationService : IDisposable
                 return false;
             }
 
-            RestrictToCharacterAppearance(state);
+            RestrictToCharacterAppearance(state, initializeApply: true);
             characterJson = state.ToString(Newtonsoft.Json.Formatting.None);
             return true;
         }
@@ -554,7 +554,6 @@ internal sealed class IntegrationService : IDisposable
             preset.Name = string.IsNullOrWhiteSpace(name) ? preset.Name : name.Trim();
             preset.GlamourerState = state;
             var outfit = (JObject)data.DeepClone();
-            RestrictToOutfitAppearance(outfit);
             preset.OutfitAppearanceJson = outfit.ToString(Newtonsoft.Json.Formatting.None);
             preset.EquipmentItemIds = ParseEquipmentItems(data);
             preset.Mods = ParseAssociatedMods(data).Select(ToWardrobeRule).ToList();
@@ -569,6 +568,23 @@ internal sealed class IntegrationService : IDisposable
         }
     }
 
+    public bool TryGetEditableAppearance(WardrobePreset preset, out JObject? design, out string error)
+    {
+        design = null;
+        error = string.Empty;
+        try
+        {
+            var json = preset.Type == WardrobePresetType.Character ? preset.CharacterAppearanceJson : preset.OutfitAppearanceJson;
+            design = preset.GlamourerDesignId == Guid.Empty
+                ? (string.IsNullOrWhiteSpace(json) ? null : JObject.Parse(json))
+                : ParseDesignObject(getDesignJObject.InvokeFunc(preset.GlamourerDesignId));
+            if (design is null) { error = "Capture an appearance or reconnect the linked Glamourer design first."; return false; }
+            OutfitAppearancePolicy.PreserveAndApply(design, null, preset.OutfitAppearanceOverrides, preset.AppearanceValueOverrides);
+            return true;
+        }
+        catch (Exception ex) { error = "The appearance could not be read: " + ex.Message; return false; }
+    }
+
     public bool SyncOutfitToGlamourer(WardrobePreset preset, string folderPath, out string message)
     {
         message = string.Empty;
@@ -577,7 +593,7 @@ internal sealed class IntegrationService : IDisposable
             message = "Only outfit presets can be synchronized as Glamourer outfit designs.";
             return false;
         }
-        if (string.IsNullOrWhiteSpace(preset.GlamourerState))
+        if (!OutfitAppearancePolicy.HasCapture(preset))
         {
             message = "Capture the current appearance before saving this outfit to Glamourer.";
             return false;
@@ -589,11 +605,16 @@ internal sealed class IntegrationService : IDisposable
             var oldId = preset.GlamourerDesignId;
             JObject? oldDesign = null;
             if (oldId != Guid.Empty)
+            {
                 oldDesign = ParseDesignObject(getDesignJObject.InvokeFunc(oldId));
+                if (oldDesign is null)
+                {
+                    message = "The linked Glamourer design could not be read. It was not replaced, so its appearance settings remain untouched.";
+                    return false;
+                }
+            }
 
-            // New captures contain only outfit-related application flags. Fall back
-            // to the legacy Base64 state for existing presets until they are captured
-            // again, then sanitize the exported design below in either case.
+            // New outfits can be captured as JSON without a legacy Base64 state.
             var capture = string.IsNullOrWhiteSpace(preset.OutfitAppearanceJson)
                 ? preset.GlamourerState : preset.OutfitAppearanceJson;
             var seeded = addDesign.Invoke(capture, preset.Name, out seedId);
@@ -620,7 +641,7 @@ internal sealed class IntegrationService : IDisposable
                 foreach (var property in new[]
                 {
                     "Description", "ForcedRedraw", "ResetTemporarySettings",
-                    "Color", "QuickDesign", "Tags",
+                    "Color", "QuickDesign", "Tags", "Links", "ResetAdvancedDyes", "RevertAdvancedDyes",
                     "FileSystemFolder", "SortOrderName"
                 })
                     if (oldDesign[property] is { } value) design[property] = value.DeepClone();
@@ -632,7 +653,7 @@ internal sealed class IntegrationService : IDisposable
             // assigned path, and Unfiled deliberately moves the design to the root.
             design["FileSystemFolder"] = folderPath.Trim();
             design["Mods"] = new JArray(preset.Mods.Select(SerializeModAssociation));
-            RestrictToOutfitAppearance(design);
+            OutfitAppearancePolicy.PreserveAndApply(design, oldDesign, preset.OutfitAppearanceOverrides, preset.AppearanceValueOverrides);
 
             // Glamourer's AddDesign IPC determines filesystem placement from the
             // name argument (everything before its final slash), not from the
@@ -657,16 +678,23 @@ internal sealed class IntegrationService : IDisposable
                 return false;
             }
 
+            var stored = ParseDesignObject(getDesignJObject.InvokeFunc(newId));
+            if (stored is null || !OutfitAppearancePolicy.MatchesSavedAppearance(design, stored))
+            {
+                try { deleteDesign.Invoke(newId); } catch { }
+                try { deleteDesign.Invoke(seedId); } catch { }
+                seedId = Guid.Empty;
+                message = "Glamourer's saved appearance did not match the requested values and options. The previous design was kept; the unverified replacement was removed.";
+                return false;
+            }
+
             var seedDeleted = deleteDesign.Invoke(seedId);
             var oldDeleted = oldId == Guid.Empty ? GlamourerApiEc.NothingDone : deleteDesign.Invoke(oldId);
             preset.GlamourerDesignId = newId;
             preset.GlamourerState = getDesignBase64.Invoke(newId) ?? preset.GlamourerState;
-            var stored = ParseDesignObject(getDesignJObject.InvokeFunc(newId));
-            if (stored is not null)
-            {
-                RestrictToOutfitAppearance(stored);
-                preset.OutfitAppearanceJson = stored.ToString(Newtonsoft.Json.Formatting.None);
-            }
+            preset.OutfitAppearanceJson = stored.ToString(Newtonsoft.Json.Formatting.None);
+            preset.OutfitAppearanceOverrides.Clear();
+            preset.AppearanceValueOverrides.Clear();
             SelectQuickDesign(preset);
             var cleanupSucceeded = seedDeleted is GlamourerApiEc.Success or GlamourerApiEc.NothingDone
                 && oldDeleted is GlamourerApiEc.Success or GlamourerApiEc.NothingDone;
@@ -743,6 +771,11 @@ internal sealed class IntegrationService : IDisposable
         {
             var oldId = preset.GlamourerDesignId;
             var oldDesign = oldId == Guid.Empty ? null : ParseDesignObject(getDesignJObject.InvokeFunc(oldId));
+            if (oldId != Guid.Empty && oldDesign is null)
+            {
+                message = "The linked character design could not be read. The existing design was kept.";
+                return false;
+            }
             var design = JObject.Parse(preset.CharacterAppearanceJson);
             RestrictToCharacterAppearance(design);
 
@@ -766,6 +799,8 @@ internal sealed class IntegrationService : IDisposable
             design.Remove("Links");
             design.Remove("ResetAdvancedDyes");
             design.Remove("RevertAdvancedDyes");
+            if (preset.AppearanceValueOverrides.Count > 0)
+                OutfitAppearancePolicy.PreserveAndApply(design, oldDesign, preset.OutfitAppearanceOverrides, preset.AppearanceValueOverrides);
             RestrictToCharacterAppearance(design);
 
             var importName = DesignImportName(preset.GlamourerFolderPath, preset.Name);
@@ -782,15 +817,19 @@ internal sealed class IntegrationService : IDisposable
                 return false;
             }
 
+            var stored = ParseDesignObject(getDesignJObject.InvokeFunc(newId));
+            if (stored is null || !OutfitAppearancePolicy.MatchesSavedAppearance(design, stored))
+            {
+                try { deleteDesign.Invoke(newId); } catch { }
+                message = "Glamourer did not retain the requested character appearance. The previous design was kept.";
+                return false;
+            }
             var oldDeleted = oldId == Guid.Empty ? GlamourerApiEc.NothingDone : deleteDesign.Invoke(oldId);
             preset.GlamourerDesignId = newId;
             preset.GlamourerState = getDesignBase64.Invoke(newId) ?? string.Empty;
-            var stored = ParseDesignObject(getDesignJObject.InvokeFunc(newId));
-            if (stored is not null)
-            {
-                RestrictToCharacterAppearance(stored);
-                preset.CharacterAppearanceJson = stored.ToString(Newtonsoft.Json.Formatting.None);
-            }
+            preset.CharacterAppearanceJson = stored.ToString(Newtonsoft.Json.Formatting.None);
+            preset.AppearanceValueOverrides.Clear();
+            preset.OutfitAppearanceOverrides.Clear();
             var location = string.IsNullOrWhiteSpace(preset.GlamourerFolderPath)
                 ? "Glamourer's root" : $"Glamourer folder {NormalizeGlamourerFolder(preset.GlamourerFolderPath)}";
             message = oldDeleted is GlamourerApiEc.Success or GlamourerApiEc.NothingDone
@@ -1872,7 +1911,7 @@ internal sealed class IntegrationService : IDisposable
             && character.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
             && (character.WorldId == world || character.WorldId == ushort.MaxValue));
 
-    private static void RestrictToCharacterAppearance(JObject design)
+    private static void RestrictToCharacterAppearance(JObject design, bool initializeApply = false)
     {
         if (design["Equipment"] is JObject equipment)
             foreach (var property in equipment.DescendantsAndSelf().OfType<JProperty>()
@@ -1884,14 +1923,14 @@ internal sealed class IntegrationService : IDisposable
                          .Where(property => property.Name.StartsWith("Apply", StringComparison.OrdinalIgnoreCase)).ToList())
                 property.Value = false;
 
-        if (design["Customize"] is JObject customize)
+        if (initializeApply && design["Customize"] is JObject customize)
             foreach (var property in customize.Properties())
             {
                 if (property.Value is not JObject entry) continue;
                 entry["Apply"] = !property.Name.Equals("Wetness", StringComparison.OrdinalIgnoreCase);
             }
 
-        if (design["Parameters"] is JObject parameters)
+        if (initializeApply && design["Parameters"] is JObject parameters)
             foreach (var entry in parameters.Properties().Select(property => property.Value).OfType<JObject>())
                 entry["Apply"] = true;
 
@@ -1921,7 +1960,6 @@ internal sealed class IntegrationService : IDisposable
     {
         if (source is null) return string.Empty;
         var outfit = (JObject)source.DeepClone();
-        RestrictToOutfitAppearance(outfit);
         return outfit.ToString(Newtonsoft.Json.Formatting.None);
     }
 
@@ -2485,9 +2523,4 @@ internal sealed record IntegrationRequirementState(bool PenumbraConnected, bool 
 {
     public bool Connected => PenumbraConnected && GlamourerConnected;
     public string Message => Connected ? "connected" : "connection required";
-}
-internal sealed record ApplyResult(bool Success, string Message)
-{
-    public static ApplyResult Ok(string message) => new(true, message);
-    public static ApplyResult Fail(string message) => new(false, message);
 }

@@ -92,7 +92,8 @@ internal static class TabletAppTheme
 
     public static bool BeginCenteredModal(
         string name,
-        ImGuiWindowFlags flags = ImGuiWindowFlags.None)
+        ImGuiWindowFlags flags = ImGuiWindowFlags.None,
+        float preferredWidth = 560f)
     {
         PruneStaleModal();
         if (requestedModalState is not { CloseRequested: false } state ||
@@ -154,11 +155,20 @@ internal static class TabletAppTheme
                 overlaySize.Y - Px(52f));
             var cardWidth = isWinnerAnnouncement
                 ? MathF.Min(Px(940f), availableWidth)
-                : MathF.Min(Px(560f), availableWidth);
+                : MathF.Min(Px(preferredWidth), availableWidth);
             state.CardWidth = cardWidth;
             state.CardHeight = availableHeight;
             state.MeasurementComplete = false;
             state.AnimationStartedAt = 0d;
+        }
+
+        // Large editors fill the usable tablet area and respond to resize or
+        // UI scale changes while open. Existing compact dialogs keep measuring
+        // their content as before.
+        if (preferredWidth > 560f)
+        {
+            state.CardWidth = MathF.Min(Px(preferredWidth), MathF.Max(Px(120f), overlaySize.X - Px(56f)));
+            state.CardHeight = MathF.Max(Px(120f), overlaySize.Y - Px(52f));
         }
 
         var progress = state.MeasurementComplete
@@ -375,6 +385,28 @@ internal static class TabletAppTheme
     public static float Px(float value) => value * Scale;
 
     public static Vector2 Px(Vector2 value) => value * Scale;
+
+    // A distinct outline is essential for unchecked boxes: the normal input
+    // background can be identical to the surrounding card or modal surface.
+    public static bool VisibleCheckbox(string label, ref bool value)
+    {
+        var accent = HasRememberedTheme ? RememberedAccent : Accent;
+        var hover = HasRememberedTheme ? RememberedAccentHover : AccentHover;
+        var surface = HasRememberedTheme ? RememberedSurfaceRaised : SurfaceRaised;
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, Vector4.Lerp(surface, accent, value ? 0.72f : 0.22f) with { W = 1f });
+        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, Vector4.Lerp(surface, hover, 0.55f) with { W = 1f });
+        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, accent with { W = 1f });
+        ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Lerp(hover, Vector4.One, 0.22f) with { W = 1f });
+        ImGui.PushStyleColor(ImGuiCol.CheckMark, new Vector4(1f, 1f, 1f, 1f));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, MathF.Max(1f, Px(1.5f)));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, Px(3f));
+        try { return ImGui.Checkbox(label, ref value); }
+        finally
+        {
+            ImGui.PopStyleVar(2);
+            ImGui.PopStyleColor(5);
+        }
+    }
 
     private static void PruneStaleModal()
     {
