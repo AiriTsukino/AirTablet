@@ -8,7 +8,7 @@ namespace WardrobeManager;
 internal sealed class Plugin : IDisposable
 {
     private enum HonorificSavePhase { None, WaitingForUnload, WaitingForReload }
-    private const string WardrobeManagerVersion = "1.1.0.2";
+    private const string WardrobeManagerVersion = "1.1.0.3";
     private const string DevelopmentWarningModal = "WardrobeManager is in development##WardrobeManager";
     private const string ManualHonorificModal = "New Honorific Title";
     private static readonly string[] HonorificEffectPalettes =
@@ -24,7 +24,6 @@ internal sealed class Plugin : IDisposable
     private readonly PortraitTextureCache textures = new();
     private readonly AppearanceEditor appearanceEditor = new();
     private readonly SelfieCameraService selfieCamera;
-    private readonly StartupDiagnosticLog startupDiagnostics;
     private IReadOnlyList<AvailableMod> modMatches = [];
     private bool modSearchPending;
     private bool modSearchRunning;
@@ -78,15 +77,9 @@ internal sealed class Plugin : IDisposable
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
         DalamudServices.Initialize(pluginInterface);
-        startupDiagnostics = new StartupDiagnosticLog(pluginInterface.ConfigDirectory);
-        using (startupDiagnostics.MeasureOnce("config-load", "Loading WardrobeManager configuration"))
-            config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        using (startupDiagnostics.MeasureOnce("wardrobe-load", "Loading and normalizing wardrobe.json"))
-            persistence = new PersistenceService();
-        startupDiagnostics.Once("wardrobe-counts",
-            $"Loaded presets={persistence.Data.Presets.Count}; folders={persistence.Data.Folders.Count}");
-        using (startupDiagnostics.MeasureOnce("integration-create", "Creating integration IPC subscribers"))
-            integrations = new IntegrationService();
+        config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        persistence = new PersistenceService();
+        integrations = new IntegrationService();
         selfieCamera = new SelfieCameraService(
             config,
             persistence,
@@ -134,11 +127,8 @@ internal sealed class Plugin : IDisposable
             // one fresh, incremental reconciliation whenever WardrobeManager is
             // opened again, rather than continuously polling Glamourer.
             if (!automaticGlamourerScanRunning && glamourerImport is null) nextAutomaticGlamourerScan = drawNow;
-            startupDiagnostics.BeginVisibleSession();
-            startupDiagnostics.Once("app-open", "WardrobeManager became visible; queued one incremental Glamourer reconciliation");
         }
         lastAppDraw = drawNow;
-        startupDiagnostics.Once("first-draw", "First WardrobeManager draw entered");
         imageDialog.Pump();
         TryAutomaticGlamourerImport();
         if (settingsVisible) DrawSettings();
@@ -153,7 +143,6 @@ internal sealed class Plugin : IDisposable
         }
         else
         {
-            using var libraryDraw = startupDiagnostics.MeasureOnce("library-first-draw", "Drawing the WardrobeManager library");
             DrawLibrary();
         }
         DrawApplyConfirmation();
@@ -1475,9 +1464,7 @@ internal sealed class Plugin : IDisposable
         if (!automaticGlamourerScanRunning)
         {
             if (DateTime.UtcNow < nextAutomaticGlamourerScan) return;
-            using var measured = startupDiagnostics.MeasureOnce("glamourer-scan-start", "Reading Glamourer design index");
             var started = integrations.StartGlamourerDesignScan();
-            startupDiagnostics.Once("glamourer-scan-size", $"Glamourer scan contains {started.Total} designs");
             if (!started.Success)
             {
                 nextAutomaticGlamourerScan = DateTime.MaxValue;
@@ -1493,13 +1480,10 @@ internal sealed class Plugin : IDisposable
             return;
         }
 
-        using var step = startupDiagnostics.MeasureOnce("glamourer-scan-first-design", "Reading one Glamourer design");
         var scan = integrations.ContinueGlamourerDesignScan();
         if (!scan.Complete) return;
         automaticGlamourerScanRunning = false;
         nextAutomaticGlamourerScan = DateTime.MaxValue;
-        startupDiagnostics.Once("glamourer-scan-complete",
-            $"Glamourer scan completed; processed={scan.Processed}; returned={scan.Designs.Count}; success={scan.Success}");
         if (scan.Success) BeginGlamourerImport(scan.Designs);
     }
 
@@ -1604,10 +1588,7 @@ internal sealed class Plugin : IDisposable
                 missingGlamourerDesignScans.Remove(missing);
         if (state.Added > 0 || state.Removed > 0 || state.Reclassified > 0 || state.Organized > 0
             || state.FoldersCreated > 0 || state.Synchronized > 0)
-        {
-            using var save = startupDiagnostics.MeasureOnce("glamourer-import-save", "Saving the reconciled WardrobeManager library");
             persistence.Save();
-        }
         if (!config.GlamourerInitialImportCompleted)
         {
             config.GlamourerInitialImportCompleted = true;
@@ -2283,7 +2264,6 @@ internal sealed class Plugin : IDisposable
         selfieCamera.Dispose();
         imageDialog.Dispose();
         textures.Dispose();
-        startupDiagnostics.Dispose();
     }
 }
 

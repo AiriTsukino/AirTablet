@@ -8,7 +8,7 @@ namespace AirTablet.UI;
 
 internal sealed class TabletWindow
 {
-    private const string ReleaseVersion = "1.1.0.7";
+    private const string ReleaseVersion = "1.1.0.8";
     private const double ScreenTransitionSeconds = 0.20;
     private const double StartupAnimationSeconds = 4.0;
     private const string DiscordInviteUrl = "https://discord.com/invite/HqyDz3SRbG";

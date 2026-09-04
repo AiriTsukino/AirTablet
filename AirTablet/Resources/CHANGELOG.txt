@@ -7,6 +7,9 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-04] WardrobeManager v1.1.0.3
+- Removed temporary log generation used to find a few issues that have been fixed.
+
 [2026-09-03] WardrobeManager v1.1.0.2
 - Added pagination for preset libraries as it was causing rendering lag for large collections.
 
