@@ -67,7 +67,7 @@ internal sealed unsafe class SelfieCameraService : IDisposable
         {
             DrawWrapped(TabletAppTheme.AccentHover, preset.Name);
             DrawWrapped(TabletAppTheme.MutedText, "Frame the live game view inside the guide. Use Move Guide to reposition it and Resize to change its size. The portrait crop remains locked to 9:16. WardrobeManager hides the game UI and camera controls before capturing the rendered frame.");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             DrawWrapped(captureArmed ? TabletAppTheme.AccentHover : TabletAppTheme.MutedText, status);
             if (!string.IsNullOrWhiteSpace(pendingCapturedSelfie))
             {

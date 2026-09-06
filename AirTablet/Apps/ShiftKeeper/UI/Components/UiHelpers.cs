@@ -25,7 +25,7 @@ internal static class UiHelpers
                 ? AirTablet.UI.TabletAppTheme.AccentHover
                 : new Vector4(0.72f, 0.65f, 0.95f, 1f),
             title);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     public static void Status(string text, Vector4 color)

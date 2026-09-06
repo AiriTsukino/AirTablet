@@ -39,7 +39,7 @@ internal sealed class LogTab
 
         ImGui.Spacing();
         UiHelpers.TextDisabledWrapped("Full macro syntax and supported emote commands are available in Settings > Help.");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         var height = Math.Max(
             AirTablet.UI.TabletAppTheme.Px(260f),

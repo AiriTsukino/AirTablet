@@ -10,7 +10,7 @@ internal static class UiHelpers
     {
         ImGui.Spacing();
         ImGui.TextColored(GambaTheme.Gold, title);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     public static void Panel(string title, Action draw) => Panel(title, draw, AirTablet.UI.TabletAppTheme.Px(new Vector2(0, 0)));
@@ -66,7 +66,7 @@ internal static class UiHelpers
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
             ImGui.TextColored(GambaTheme.Gold, title);
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             ImGui.Indent(AirTablet.UI.TabletAppTheme.Px(4f));
             draw();
             ImGui.Unindent(AirTablet.UI.TabletAppTheme.Px(4f));

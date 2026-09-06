@@ -457,7 +457,7 @@ internal sealed class SettingsWindow : Window
             }
             ImGui.Unindent(AirTablet.UI.TabletAppTheme.Px(10f));
         }
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.PopID();
     }
 
@@ -722,7 +722,7 @@ internal sealed class SettingsWindow : Window
         {
             UiHelpers.Header("Files & Folders", "Main Dalamud config stays small; menus, gamba settings, current audit, and reports are saved separately.");
             UiHelpers.TextWrappedMuted($"Dalamud config folder: {persistence.ConfigRoot}");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
 
             var dataDirectory = config.DataDirectory;
             UiHelpers.TextWrappedMuted($"Current data folder: {persistence.DataRoot}");

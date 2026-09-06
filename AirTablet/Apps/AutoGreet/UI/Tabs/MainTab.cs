@@ -69,7 +69,7 @@ internal sealed class MainTab
                 ImGuiWindowFlags.AlwaysAutoResize))
         {
             ImGui.TextWrapped("This will add everyone currently in the house or custom region to the ungreeted list. Use this when you intentionally want to greet people who were already present when you arrived.");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (ImGui.Button(
                     "Manual Scan##main-confirm-manual-scan",
                     AirTablet.UI.TabletAppTheme.Px(new System.Numerics.Vector2(140, 0))))
@@ -99,7 +99,7 @@ internal sealed class MainTab
                 ImGuiWindowFlags.AlwaysAutoResize))
         {
             ImGui.TextWrapped("Reset the current venue session? This clears the ungreeted, greeted, skipped, nightly visitor, and queue lists. Lifetime visitor history, VIPs, blacklist, venues, and macros are kept.");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (ImGui.Button(
                     "Reset Session##main-confirm-reset",
                     AirTablet.UI.TabletAppTheme.Px(new System.Numerics.Vector2(140, 0))))
@@ -155,7 +155,7 @@ internal sealed class MainTab
         if (activeVenue is null)
             ImGui.SetItemDefaultFocus();
 
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         foreach (var venue in venues.Venues.ToArray())
         {
@@ -304,7 +304,7 @@ internal sealed class MainTab
             ImGui.Unindent();
             ImGui.PopID();
             if (tier.Id != tiers[^1].Id)
-                ImGui.Separator();
+                AirTablet.UI.TabletSeparator.Draw();
         }
 
         ImGui.EndCombo();
@@ -405,7 +405,7 @@ internal sealed class MainTab
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
             ImGui.TextColored(AutoGreetTheme.PurpleHovered, "Greeting setup");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (ImGui.BeginTable(
                     "##greeting-selector-grid",
                     2,
@@ -480,7 +480,7 @@ internal sealed class MainTab
             foreach (var key in session.Ungreeted.ToArray())
             {
                 DrawVisitorActions(key, greetedList: false, i++);
-                ImGui.Separator();
+                AirTablet.UI.TabletSeparator.Draw();
             }
         }
         ImGui.EndChild();
@@ -498,7 +498,7 @@ internal sealed class MainTab
             foreach (var key in session.Greeted.ToArray())
             {
                 DrawVisitorActions(key, greetedList: true, i++);
-                ImGui.Separator();
+                AirTablet.UI.TabletSeparator.Draw();
             }
         }
         ImGui.EndChild();

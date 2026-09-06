@@ -54,7 +54,7 @@ internal sealed class VisitorsTab
             for (var i = 0; i < list.Count; i++)
             {
                 DrawVisitorActions(list[i], greetedList, i);
-                ImGui.Separator();
+                AirTablet.UI.TabletSeparator.Draw();
             }
         }
         ImGui.EndChild();

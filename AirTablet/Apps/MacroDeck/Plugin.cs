@@ -83,7 +83,7 @@ internal sealed class Plugin : IDisposable
         var overlayMin = ImGui.GetCursorScreenPos();
         var overlaySize = ImGui.GetContentRegionAvail();
         DrawToolbar(venue);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.SetCursorPosY(MathF.Max(
             0f,
             ImGui.GetCursorPosY() - TabletAppTheme.Px(4f)));
@@ -876,7 +876,7 @@ internal sealed class Plugin : IDisposable
     private void DrawEditor(VenueProfile venue)
     {
         ImGui.TextUnformatted(editingEntry is null ? "Create MacroDeck key" : "Edit MacroDeck key");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.InputText("Title", ref editTitle, DeckEntry.MaxTitleLength);
         var kindIndex = (int)editKind;
         if (ImGui.Combo("Key type", ref kindIndex, "Macro\0Folder\0")) editKind = (DeckEntryKind)kindIndex;
@@ -981,7 +981,7 @@ internal sealed class Plugin : IDisposable
             iconPickerPage = 0;
             SelectBestIconSearchCategory();
         }
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         var categories = macroIcons.Categories;
         if (categories.Count == 0)
@@ -1072,7 +1072,7 @@ internal sealed class Plugin : IDisposable
         }
 
         ImGui.SetCursorPosY(MathF.Max(ImGui.GetCursorPosY(), ImGui.GetWindowHeight() - footerHeight));
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         if (ImGui.Button("Previous", TabletAppTheme.Px(new Vector2(90f, 0f))) && iconPickerPage > 0)
             iconPickerPage--;
         ImGui.SameLine();
@@ -1129,7 +1129,7 @@ internal sealed class Plugin : IDisposable
     private void DrawSettingsScreen()
     {
         ImGui.TextUnformatted("MacroDeck settings");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.TextColored(TabletAppTheme.AccentHover, "Popout deck");
         ImGui.TextWrapped("Configure the detachable Stream Deck-style MacroDeck controller.");
         ImGui.Spacing();
@@ -1202,7 +1202,7 @@ internal sealed class Plugin : IDisposable
             return;
         }
         ImGui.TextUnformatted("Delete this key?");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.TextWrapped(editingEntry.Kind == DeckEntryKind.Folder
             ? $"Delete folder '{editingEntry.Title}' and every key inside it? This cannot be undone."
             : $"Delete macro '{editingEntry.Title}'? This cannot be undone.");
@@ -1222,7 +1222,7 @@ internal sealed class Plugin : IDisposable
     private void DrawProfiles(VenueProfile venue)
     {
         ImGui.TextUnformatted("MacroDeck venue profiles");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.InputText("Active profile name", ref profileName, 80);
         if (ImGui.Button("Rename")) { venue.Name = string.IsNullOrWhiteSpace(profileName) ? venue.Name : profileName.Trim(); persistence.SaveNow(); }
         ImGui.InputText("New profile", ref newVenueName, 80);
@@ -1231,11 +1231,11 @@ internal sealed class Plugin : IDisposable
         if (persistence.Venues.Count <= 1) ImGui.BeginDisabled();
         if (ImGui.Button("Delete Active")) { persistence.DeleteVenue(venue.Id); folderPath.Clear(); popout.ResetFolder(); profileName = persistence.ActiveVenue.Name; }
         if (persistence.Venues.Count <= 1) ImGui.EndDisabled();
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         if (ImGui.Button("Export Active")) dialogs.SaveProfile(venue.Name, path => { try { persistence.ExportVenue(venue, path); status = "Profile exported"; } catch (Exception ex) { status = ex.Message; } });
         ImGui.SameLine();
         if (ImGui.Button("Import Profile")) dialogs.ImportProfile(path => { try { persistence.ImportVenue(path); folderPath.Clear(); popout.ResetFolder(); status = "Profile imported"; } catch (Exception ex) { status = ex.Message; } });
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         if (ImGui.Button("Close", TabletAppTheme.Px(new Vector2(100, 0)))) profilesOpen = false;
     }
 

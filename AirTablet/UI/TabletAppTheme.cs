@@ -285,6 +285,9 @@ internal static class TabletAppTheme
 
     public static void End()
     {
+        // End owns the outer theme scope. A bundled app leaving an extra nested
+        // Push behind must not prevent the actual style stack from unwinding.
+        if (pushDepth > 1) pushDepth = 1;
         Pop();
         palette = null;
         activeScale = 1f;
@@ -385,6 +388,16 @@ internal static class TabletAppTheme
     public static float Px(float value) => value * Scale;
 
     public static Vector2 Px(Vector2 value) => value * Scale;
+
+    public static void PrepareContainedPopup(Vector2 preferredSize, Vector2? preferredPosition = null, bool autoHeight = false)
+    {
+        var viewport = ImGui.GetMainViewport();
+        var min = Vector2.Max(viewport.Pos, tabletScreenMin);
+        var max = Vector2.Min(viewport.Pos + viewport.Size, tabletScreenMax);
+        if (max.X <= min.X || max.Y <= min.Y) { min = viewport.Pos; max = viewport.Pos + viewport.Size; }
+        min += Px(new Vector2(10)); max -= Px(new Vector2(10));
+        TabletPopupLayout.Prepare(Px(preferredSize), min, max, preferredPosition, autoHeight);
+    }
 
     // A distinct outline is essential for unchecked boxes: the normal input
     // background can be identical to the surrounding card or modal surface.

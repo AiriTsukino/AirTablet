@@ -9,6 +9,7 @@ internal sealed class TradeCompletionTracker
     private DateTimeOffset? confirmationClosedAt;
     private bool balanceMatches;
     private bool balanceConfirmationDisabled;
+    private bool nativeSystemCompletion;
     public long ReportedAmount { get; private set; }
     public bool SawCompletionMessage { get; private set; }
     public bool HasUnexpectedBalanceChange { get; private set; }
@@ -43,6 +44,11 @@ internal sealed class TradeCompletionTracker
         if (expectedAmount > 0) SawCompletionMessage = true;
     }
 
+    public void ObserveNativeSystemCompletion()
+    {
+        if (expectedAmount > 0) nativeSystemCompletion = true;
+    }
+
     public void ObserveFailure() => HasFailure = true;
 
     public void ObserveBalance(long? balance, bool? finalConfirmationVisible, DateTimeOffset now)
@@ -73,7 +79,7 @@ internal sealed class TradeCompletionTracker
         amount = 0;
         // Unknown UI state (including lookup errors) must not mean closed.
         if (tradeWindowVisible != false || expectedAmount <= 0 || HasFailure || HasUnexpectedBalanceChange ||
-            (ReportedAmount != expectedAmount && !HasBalanceConfirmation))
+            (ReportedAmount != expectedAmount && !HasBalanceConfirmation && !nativeSystemCompletion))
             return false;
         amount = expectedAmount;
         Reset();
@@ -89,6 +95,7 @@ internal sealed class TradeCompletionTracker
         balanceConfirmationDisabled = false;
         ReportedAmount = 0;
         SawCompletionMessage = false;
+        nativeSystemCompletion = false;
         HasUnexpectedBalanceChange = false;
         HasFailure = false;
         BalanceCheckExpired = false;

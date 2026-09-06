@@ -9,7 +9,7 @@ using Lumina.Excel.Sheets;
 
 namespace WardrobeManager;
 
-internal sealed class IntegrationService : IDisposable
+internal sealed partial class IntegrationService : IDisposable
 {
     private const string Source = "AirTablet WardrobeManager";
     private const string FolderSetupDesignName = ".WardrobeManager Folder Setup";
@@ -361,7 +361,7 @@ internal sealed class IntegrationService : IDisposable
                 .Select(pair => new ModOptionGroup(
                     pair.Key,
                     pair.Value.Item1,
-                    pair.Value.Item2 is GroupType.Multi or GroupType.Combining or GroupType.Complex))
+                    pair.Value.Item2 is GroupType.Multi or GroupType.Imc or GroupType.Combining or GroupType.Complex))
                 .ToList();
         }
         catch (Exception ex)
@@ -442,7 +442,7 @@ internal sealed class IntegrationService : IDisposable
                 return false;
             }
 
-            RestrictToCharacterAppearance(state, initializeApply: true);
+            PrepareCharacterAppearance(state, initializeApply: true);
             characterJson = state.ToString(Newtonsoft.Json.Formatting.None);
             return true;
         }
@@ -692,134 +692,7 @@ internal sealed class IntegrationService : IDisposable
     }
 
     public bool SyncOutfitToGlamourer(WardrobePreset preset, string folderPath, out string message)
-    {
-        message = string.Empty;
-        if (preset.Type != WardrobePresetType.Outfit)
-        {
-            message = "Only outfit presets can be synchronized as Glamourer outfit designs.";
-            return false;
-        }
-        if (!OutfitAppearancePolicy.HasCapture(preset))
-        {
-            message = "Capture the current appearance before saving this outfit to Glamourer.";
-            return false;
-        }
-
-        Guid seedId = Guid.Empty;
-        try
-        {
-            var oldId = preset.GlamourerDesignId;
-            JObject? oldDesign = null;
-            if (oldId != Guid.Empty)
-            {
-                oldDesign = ParseDesignObject(getDesignJObject.InvokeFunc(oldId));
-                if (oldDesign is null)
-                {
-                    message = "The linked Glamourer design could not be read. It was not replaced, so its appearance settings remain untouched.";
-                    return false;
-                }
-            }
-
-            // New outfits can be captured as JSON without a legacy Base64 state.
-            var capture = string.IsNullOrWhiteSpace(preset.OutfitAppearanceJson)
-                ? preset.GlamourerState : preset.OutfitAppearanceJson;
-            var seeded = addDesign.Invoke(capture, preset.Name, out seedId);
-            if (seeded != GlamourerApiEc.Success || seedId == Guid.Empty)
-            {
-                message = $"Glamourer could not create the outfit design ({seeded}).";
-                return false;
-            }
-
-            var design = ParseDesignObject(getDesignJObject.InvokeFunc(seedId));
-            if (design is null)
-            {
-                try { deleteDesign.Invoke(seedId); } catch { }
-                seedId = Guid.Empty;
-                message = "Glamourer could not export the outfit design for editing.";
-                return false;
-            }
-
-            // Preserve Glamourer-owned presentation and behavior metadata when an
-            // existing linked design is replaced. The captured state supplies the
-            // new appearance; WardrobeManager supplies the manual mod associations.
-            if (oldDesign is not null)
-            {
-                foreach (var property in new[]
-                {
-                    "Description", "ForcedRedraw", "ResetTemporarySettings",
-                    "Color", "QuickDesign", "Tags", "Links", "ResetAdvancedDyes", "RevertAdvancedDyes",
-                    "FileSystemFolder", "SortOrderName"
-                })
-                    if (oldDesign[property] is { } value) design[property] = value.DeepClone();
-            }
-
-            design["Name"] = preset.Name.Trim();
-            // The preset editor is authoritative for folder placement. Imported
-            // folders retain Glamourer's exact path, newly created folders use their
-            // assigned path, and Unfiled deliberately moves the design to the root.
-            design["FileSystemFolder"] = folderPath.Trim();
-            design["Mods"] = new JArray(preset.Mods.Select(SerializeModAssociation));
-            OutfitAppearancePolicy.PreserveAndApply(design, oldDesign, preset.OutfitAppearanceOverrides, preset.AppearanceValueOverrides);
-
-            // Glamourer's AddDesign IPC determines filesystem placement from the
-            // name argument (everything before its final slash), not from the
-            // FileSystemFolder property in the imported JSON.
-            var importName = DesignImportName(folderPath, preset.Name);
-            var replaced = addDesign.Invoke(design.ToString(Newtonsoft.Json.Formatting.None), importName, out var newId);
-            if (replaced != GlamourerApiEc.Success || newId == Guid.Empty)
-            {
-                try { deleteDesign.Invoke(seedId); } catch { }
-                seedId = Guid.Empty;
-                message = $"Glamourer could not save the edited outfit ({replaced}).";
-                return false;
-            }
-
-            if (!TryVerifyDesignFolder(newId, folderPath, out var actualFolder))
-            {
-                try { deleteDesign.Invoke(newId); } catch { }
-                try { deleteDesign.Invoke(seedId); } catch { }
-                seedId = Guid.Empty;
-                var expected = string.IsNullOrWhiteSpace(folderPath) ? "Glamourer's root" : folderPath.Trim();
-                message = $"Glamourer created the replacement in '{actualFolder}' instead of '{expected}'. The old design was kept and the incorrect replacement was removed.";
-                return false;
-            }
-
-            var stored = ParseDesignObject(getDesignJObject.InvokeFunc(newId));
-            if (stored is null || !OutfitAppearancePolicy.MatchesSavedAppearance(design, stored))
-            {
-                try { deleteDesign.Invoke(newId); } catch { }
-                try { deleteDesign.Invoke(seedId); } catch { }
-                seedId = Guid.Empty;
-                message = "Glamourer's saved appearance did not match the requested values and options. The previous design was kept; the unverified replacement was removed.";
-                return false;
-            }
-
-            var seedDeleted = deleteDesign.Invoke(seedId);
-            var oldDeleted = oldId == Guid.Empty ? GlamourerApiEc.NothingDone : deleteDesign.Invoke(oldId);
-            preset.GlamourerDesignId = newId;
-            preset.GlamourerState = getDesignBase64.Invoke(newId) ?? preset.GlamourerState;
-            preset.OutfitAppearanceJson = stored.ToString(Newtonsoft.Json.Formatting.None);
-            preset.OutfitAppearanceOverrides.Clear();
-            preset.AppearanceValueOverrides.Clear();
-            SelectQuickDesign(preset);
-            var cleanupSucceeded = seedDeleted is GlamourerApiEc.Success or GlamourerApiEc.NothingDone
-                && oldDeleted is GlamourerApiEc.Success or GlamourerApiEc.NothingDone;
-            var savedLocation = string.IsNullOrWhiteSpace(folderPath) ? "Glamourer's root" : $"Glamourer folder {NormalizeGlamourerFolder(folderPath)}";
-            message = cleanupSucceeded
-                ? $"Saved {preset.Name} to {savedLocation} with {preset.Mods.Count} mod association{(preset.Mods.Count == 1 ? string.Empty : "s")}."
-                : $"Saved the replacement Glamourer design, but a temporary or previous design could not be removed ({seedDeleted}; {oldDeleted}).";
-            return true;
-        }
-        catch (Exception ex)
-        {
-            if (seedId != Guid.Empty)
-            {
-                try { deleteDesign.Invoke(seedId); } catch { }
-            }
-            message = "Glamourer could not save the outfit design: " + ex.Message;
-            return false;
-        }
-    }
+        => SaveLinkedDesign(preset, WardrobePresetType.Outfit, folderPath, out message);
 
     public bool RefreshCharacterFromGlamourer(WardrobePreset preset, out string error)
     {
@@ -844,7 +717,7 @@ internal sealed class IntegrationService : IDisposable
                 error = "Glamourer could not read the linked character design.";
                 return false;
             }
-            RestrictToCharacterAppearance(design);
+            PrepareCharacterAppearance(design);
             preset.Name = string.IsNullOrWhiteSpace(name) ? preset.Name : name.Trim();
             preset.CharacterAppearanceJson = design.ToString(Newtonsoft.Json.Formatting.None);
             preset.GlamourerState = getDesignBase64.Invoke(preset.GlamourerDesignId) ?? preset.GlamourerState;
@@ -859,96 +732,8 @@ internal sealed class IntegrationService : IDisposable
         }
     }
 
-    public bool SyncCharacterToGlamourer(WardrobePreset preset, out string message)
-    {
-        message = string.Empty;
-        if (preset.Type != WardrobePresetType.Character)
-        {
-            message = "Only character presets can be synchronized as Glamourer character designs.";
-            return false;
-        }
-        if (string.IsNullOrWhiteSpace(preset.CharacterAppearanceJson))
-        {
-            message = "Capture the current physical appearance before saving this character to Glamourer.";
-            return false;
-        }
-
-        try
-        {
-            var oldId = preset.GlamourerDesignId;
-            var oldDesign = oldId == Guid.Empty ? null : ParseDesignObject(getDesignJObject.InvokeFunc(oldId));
-            if (oldId != Guid.Empty && oldDesign is null)
-            {
-                message = "The linked character design could not be read. The existing design was kept.";
-                return false;
-            }
-            var design = JObject.Parse(preset.CharacterAppearanceJson);
-            RestrictToCharacterAppearance(design);
-
-            if (oldDesign is not null)
-            {
-                foreach (var property in new[]
-                {
-                    "Description", "ForcedRedraw", "ResetAdvancedDyes", "ResetTemporarySettings",
-                    "RevertAdvancedDyes", "Color", "QuickDesign", "Tags", "Links",
-                    "FileSystemFolder", "SortOrderName"
-                })
-                    if (oldDesign[property] is { } value) design[property] = value.DeepClone();
-                if (string.IsNullOrWhiteSpace(preset.GlamourerFolderPath))
-                    preset.GlamourerFolderPath = oldDesign.Value<string>("FileSystemFolder")?.Trim() ?? string.Empty;
-            }
-
-            design["Name"] = preset.Name.Trim();
-            design["FileSystemFolder"] = preset.GlamourerFolderPath.Trim();
-            design["QuickDesign"] = false;
-            design["Mods"] = new JArray(preset.Mods.Select(SerializeModAssociation));
-            design.Remove("Links");
-            design.Remove("ResetAdvancedDyes");
-            design.Remove("RevertAdvancedDyes");
-            if (preset.AppearanceValueOverrides.Count > 0)
-                OutfitAppearancePolicy.PreserveAndApply(design, oldDesign, preset.OutfitAppearanceOverrides, preset.AppearanceValueOverrides);
-            RestrictToCharacterAppearance(design);
-
-            var importName = DesignImportName(preset.GlamourerFolderPath, preset.Name);
-            var result = addDesign.Invoke(design.ToString(Newtonsoft.Json.Formatting.None), importName, out var newId);
-            if (result != GlamourerApiEc.Success || newId == Guid.Empty)
-            {
-                message = $"Glamourer could not save the character design ({result}).";
-                return false;
-            }
-            if (!TryVerifyDesignFolder(newId, preset.GlamourerFolderPath, out var actualFolder))
-            {
-                try { deleteDesign.Invoke(newId); } catch { }
-                message = $"Glamourer saved the character design in '{actualFolder}' instead of its existing folder. The old design was kept.";
-                return false;
-            }
-
-            var stored = ParseDesignObject(getDesignJObject.InvokeFunc(newId));
-            if (stored is null || !OutfitAppearancePolicy.MatchesSavedAppearance(design, stored))
-            {
-                try { deleteDesign.Invoke(newId); } catch { }
-                message = "Glamourer did not retain the requested character appearance. The previous design was kept.";
-                return false;
-            }
-            var oldDeleted = oldId == Guid.Empty ? GlamourerApiEc.NothingDone : deleteDesign.Invoke(oldId);
-            preset.GlamourerDesignId = newId;
-            preset.GlamourerState = getDesignBase64.Invoke(newId) ?? string.Empty;
-            preset.CharacterAppearanceJson = stored.ToString(Newtonsoft.Json.Formatting.None);
-            preset.AppearanceValueOverrides.Clear();
-            preset.OutfitAppearanceOverrides.Clear();
-            var location = string.IsNullOrWhiteSpace(preset.GlamourerFolderPath)
-                ? "Glamourer's root" : $"Glamourer folder {NormalizeGlamourerFolder(preset.GlamourerFolderPath)}";
-            message = oldDeleted is GlamourerApiEc.Success or GlamourerApiEc.NothingDone
-                ? $"Saved {preset.Name} to {location} with physical customizations, customize parameters, and {preset.Mods.Count} mod association{(preset.Mods.Count == 1 ? string.Empty : "s")}."
-                : $"Saved the replacement character design, but Glamourer could not remove the previous design ({oldDeleted}).";
-            return true;
-        }
-        catch (Exception ex)
-        {
-            message = "Glamourer could not save the character design: " + ex.Message;
-            return false;
-        }
-    }
+    public bool SyncCharacterToGlamourer(WardrobePreset preset, out string message, string? folderPath = null)
+        => SaveLinkedDesign(preset, WardrobePresetType.Character, folderPath ?? preset.GlamourerFolderPath, out message);
 
     public bool EnsureGlamourerFolder(string folderPath, out string error)
     {
@@ -1792,7 +1577,7 @@ internal sealed class IntegrationService : IDisposable
                 else
                 {
                     var characterResult = applyDesign.Invoke(preset.GlamourerDesignId, 0, 0,
-                        ApplyFlag.Once | ApplyFlag.Customization);
+                        ApplyFlag.Once | ApplyFlag.Customization | ApplyFlag.Equipment);
                     if (characterResult != GlamourerApiEc.Success)
                         failures.Add($"Glamourer character appearance ({characterResult})");
                 }
@@ -2066,31 +1851,8 @@ internal sealed class IntegrationService : IDisposable
             && character.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
             && (character.WorldId == world || character.WorldId == ushort.MaxValue));
 
-    private static void RestrictToCharacterAppearance(JObject design, bool initializeApply = false)
-    {
-        if (design["Equipment"] is JObject equipment)
-            foreach (var property in equipment.DescendantsAndSelf().OfType<JProperty>()
-                         .Where(property => property.Name.StartsWith("Apply", StringComparison.OrdinalIgnoreCase)).ToList())
-                property.Value = false;
-
-        if (design["Bonus"] is JObject bonus)
-            foreach (var property in bonus.DescendantsAndSelf().OfType<JProperty>()
-                         .Where(property => property.Name.StartsWith("Apply", StringComparison.OrdinalIgnoreCase)).ToList())
-                property.Value = false;
-
-        if (initializeApply && design["Customize"] is JObject customize)
-            foreach (var property in customize.Properties())
-            {
-                if (property.Value is not JObject entry) continue;
-                entry["Apply"] = !property.Name.Equals("Wetness", StringComparison.OrdinalIgnoreCase);
-            }
-
-        if (initializeApply && design["Parameters"] is JObject parameters)
-            foreach (var entry in parameters.Properties().Select(property => property.Value).OfType<JObject>())
-                entry["Apply"] = true;
-
-        design.Remove("Materials");
-    }
+    private static void PrepareCharacterAppearance(JObject design, bool initializeApply = false)
+        => CharacterAppearancePolicy.Prepare(design, initializeApply);
 
     private static void RestrictToOutfitAppearance(JObject design)
     {
@@ -2107,7 +1869,7 @@ internal sealed class IntegrationService : IDisposable
     {
         if (source is null) return string.Empty;
         var character = (JObject)source.DeepClone();
-        RestrictToCharacterAppearance(character);
+        PrepareCharacterAppearance(character);
         return character.ToString(Newtonsoft.Json.Formatting.None);
     }
 

@@ -38,7 +38,7 @@ internal sealed class MainView
     public void DrawMain()
     {
         DrawHeader(showSettingsButton: true);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         DrawControls();
         ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 8f)));
 
@@ -54,7 +54,7 @@ internal sealed class MainView
     public void DrawSettings()
     {
         DrawHeader(showSettingsButton: false);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         if (ImGui.BeginTabBar("##shoutrunner-settings-tabs"))
         {
             if (ImGui.BeginTabItem("Profiles"))
@@ -383,7 +383,7 @@ internal sealed class MainView
         if (dataCenters.Length == 0)
             return;
 
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.TextColored(TabletAppTheme.AccentHover, "Run checklist");
         var worldRowHeight = TabletAppTheme.Px(20f);
         ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, TabletAppTheme.Px(new Vector2(4f, 1f)));
@@ -413,7 +413,7 @@ internal sealed class MainView
             ImGui.TextColored(
                 dcComplete ? new Vector4(0.35f, 0.86f, 0.53f, 1f) : TabletAppTheme.AccentHover,
                 dcComplete ? $"{dataCenter.Key}  complete" : dataCenter.Key);
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
         }
 
         ImGui.TableNextRow();
@@ -790,7 +790,7 @@ internal sealed class MainView
                 }
                 persistence.SaveProfile(Profile);
             }
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (ImGui.BeginTable(
                     $"##sr-world-grid-{dataCenter.Key}",
                     columns,
@@ -844,7 +844,7 @@ internal sealed class MainView
                 persistence.SaveProfile(Profile);
             TextMutedWrapped("After the selected destination reaches its maximum attempts, try every other world on that Data Center once as a gateway. If none work, skip that Data Center and continue the run.");
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             SectionHeader("Automatic runs");
             var autoMode = Profile.AutoModeEnabled;
             if (ImGui.Checkbox("Automatically start another run", ref autoMode))
@@ -876,7 +876,7 @@ internal sealed class MainView
             if (Profile.AutoModeInfinite) ImGui.EndDisabled();
             if (!Profile.AutoModeEnabled) ImGui.EndDisabled();
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             var postRunDestination = (int)Profile.PostRunDestination;
             var postRunLabels = new[] { "Starting World", "Home World", "Chosen World", "Don't Travel" };
             ImGui.SetNextItemWidth(TabletAppTheme.Px(240f));
@@ -1069,7 +1069,7 @@ internal sealed class MainView
     private static void SectionHeader(string text)
     {
         ImGui.TextColored(TabletAppTheme.AccentHover, text);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     private static void StatusLine(string label, string value)

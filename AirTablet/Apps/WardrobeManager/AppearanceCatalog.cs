@@ -59,7 +59,7 @@ internal sealed class AppearanceCatalog
         var race = Value(design, "Race");
         if (name == "Race") return data.GetExcelSheet<Race>().Where(r => r.RowId is >= 1 and <= 8)
             .Select(r => new Choice((int)r.RowId, r.Masculine.ExtractText())).ToArray();
-        if (name == "Clan") return data.GetExcelSheet<Tribe>().Where(r => r.RowId >= race * 2 - 1 && r.RowId <= race * 2)
+        if (name == "Clan") return data.GetExcelSheet<Tribe>().Where(r => r.RowId is >= 1 and <= 16)
             .Select(r => new Choice((int)r.RowId, (gender == 1 ? r.Feminine : r.Masculine).ExtractText())).ToArray();
         if (name == "Gender") return [new(0, "Masculine"), new(1, "Feminine")];
         if (clan is < 1 or > 16 || gender is < 0 or > 1) return [];

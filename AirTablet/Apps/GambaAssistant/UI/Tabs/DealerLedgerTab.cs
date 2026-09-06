@@ -32,7 +32,7 @@ public sealed class DealerLedgerTab
                 ledger.ActualEndingGil = null;
             UiHelpers.Tooltip("Enter the gil you actually have at the end of the night. Clear this if you are not reconciling yet.");
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             ImGui.Text($"Expected dealer gil: {service.ExpectedDealerGil:N0} gil");
             ImGui.TextDisabled("Expected = starting gil + settled game profit/loss + tips + adjustments.");
             if (service.Difference.HasValue)
@@ -51,7 +51,7 @@ public sealed class DealerLedgerTab
         {
             ImGui.Text($"Dealer tips total: {ledger.DealerTips:N0} gil");
             ImGui.Text($"Venue tips total: {ledger.VenueTips:N0} gil");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
 
             ImGui.TextDisabled("Record a tip for the night");
             ImGui.SetNextItemWidth(AirTablet.UI.TabletAppTheme.Px(190f));
@@ -86,7 +86,7 @@ public sealed class DealerLedgerTab
             ImGui.Text($"Dealer tips: {ledger.DealerTips:N0} gil");
             ImGui.Text($"Venue tips: {ledger.VenueTips:N0} gil");
             ImGui.Text($"Misc adjustments: {ledger.MiscAdjustments:N0} gil");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             ImGui.Text($"Outstanding player banks: {service.OutstandingPlayerBanks:N0} gil");
             ImGui.Text($"Buy-ins / deposits: {ledger.TotalBuyInsDeposits:N0} gil");
             ImGui.Text($"Total cash-outs: {ledger.TotalCashOuts:N0} gil");
@@ -94,7 +94,7 @@ public sealed class DealerLedgerTab
             ImGui.TextColored(service.BankTrackingDifference == 0 ? GambaTheme.Green : GambaTheme.Gold,
                 $"Bank tracking variance: {service.BankTrackingDifference:N0} gil");
             UiHelpers.Help("A non-zero bank tracking variance means recorded buy-ins, cash-outs, and outstanding player banks do not reconcile with settled hand results. It does not change expected dealer gil.");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             ImGui.Text($"Total losing wagers: {ledger.TotalBets:N0} gil");
             ImGui.Text($"Total winning returns: {ledger.TotalPayouts:N0} gil");
         });

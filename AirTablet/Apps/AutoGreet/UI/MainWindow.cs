@@ -102,7 +102,7 @@ public sealed class MainWindow : Window
         DrawTopRightButtonsOnTabRow(tabRowScreenPos);
 
         ImGui.Spacing();
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.Spacing();
 
         if (ImGui.BeginChild(

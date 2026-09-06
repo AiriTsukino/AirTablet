@@ -79,6 +79,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
     {
         this.autoAcceptIncomingTrades = autoAcceptIncomingTrades;
         DalamudServices.ChatGui.ChatMessage += OnChatMessage;
+        DalamudServices.ChatGui.LogMessage += OnSystemLog;
         DalamudServices.ToastGui.ErrorToast += OnErrorToast;
         Trace("PrizeTrader diagnostics started.");
         Trace($"Automatic incoming trade acceptance is {(autoAcceptIncomingTrades() ? "enabled" : "disabled")}.");
@@ -471,6 +472,19 @@ internal sealed unsafe class TradeSequenceService : IDisposable
             Status = "Waiting for the incoming Trade window to close. System messages are optional; the other player can take as long as needed.";
             nextIncomingActionUtc = DateTimeOffset.UtcNow.AddMilliseconds(100);
         }
+    }
+
+    private void OnSystemLog(ILogMessage message)
+    {
+        if (stage != SequenceStage.AwaitingCompletion || !IsSameTradeContext() || message.LogMessageId != 38) return;
+        if (!AirTablet.Services.TradeSystemLog.IsCompletion(message)
+            || !AirTablet.Services.TradeSystemLog.HasPartner(message, lockedName, lockedWorld))
+        {
+            Trace("Native completion candidate lacked a recognized template or matching partner; retained existing confirmation safeguards.");
+            return;
+        }
+        completion.ObserveNativeSystemCompletion();
+        Trace("Matched partner-validated native trade completion before chat filtering.");
     }
 
     private void OnChatMessage(IHandleableChatMessage message)
@@ -895,6 +909,7 @@ internal sealed unsafe class TradeSequenceService : IDisposable
     public void Dispose()
     {
         DalamudServices.ChatGui.ChatMessage -= OnChatMessage;
+        DalamudServices.ChatGui.LogMessage -= OnSystemLog;
         DalamudServices.ToastGui.ErrorToast -= OnErrorToast;
     }
 

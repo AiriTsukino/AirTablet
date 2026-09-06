@@ -75,7 +75,7 @@ internal sealed class MainWindow : Window, IDisposable
             ImGui.EndTable();
         }
 
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         if (ImGui.BeginTabBar("##BarManagerTabs"))
         {
             if (ImGui.BeginTabItem("Audit")) { auditTab.Draw(); ImGui.EndTabItem(); }

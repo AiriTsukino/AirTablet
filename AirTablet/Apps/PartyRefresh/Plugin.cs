@@ -104,7 +104,7 @@ internal sealed class Plugin : IDisposable
     private void DrawMain()
     {
         DrawHeader(true);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         DrawPrimaryControls();
         ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 5f)));
 
@@ -308,7 +308,7 @@ internal sealed class Plugin : IDisposable
                 }
                 ImGui.EndTable();
             }
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             Checkbox("Remove role restrictions for all remaining openings", () => Preset.RemoveRoleRestrictions, value => Preset.RemoveRoleRestrictions = value);
             Checkbox("Unselect Classes", () => Preset.UnselectClasses, value => Preset.UnselectClasses = value);
             Checkbox("One Player per Job", () => Preset.OnePlayerPerJob, value => Preset.OnePlayerPerJob = value);
@@ -395,7 +395,7 @@ internal sealed class Plugin : IDisposable
     private void DrawSettings()
     {
         DrawHeader(false);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         ImGui.TextColored(TabletAppTheme.AccentHover, "PartyRefresh settings");
         ImGui.TextWrapped("Manage automatic refreshing, venue profiles, presets, imports, and exports.");
         ImGui.Spacing();
@@ -470,7 +470,7 @@ internal sealed class Plugin : IDisposable
                 TabletAppTheme.OpenCenteredModal("Delete PartyRefresh profile?");
             }
             if (persistence.Profiles.Count <= 1) ImGui.EndDisabled();
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             var fileDialogOpen = dialogs.DialogOpen;
             if (fileDialogOpen) ImGui.BeginDisabled();
             if (ImGui.Button(fileDialogOpen ? "File dialog open..." : "Export Profile", TabletAppTheme.Px(new Vector2(150f, 0f))))
@@ -518,7 +518,7 @@ internal sealed class Plugin : IDisposable
                 TabletAppTheme.OpenCenteredModal("Delete PartyRefresh preset?");
             }
             if (Profile.Presets.Count <= 1) ImGui.EndDisabled();
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             foreach (var preset in Profile.Presets.OrderBy(candidate => candidate.Name))
             {
                 var selected = preset.Id == Preset.Id;

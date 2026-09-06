@@ -14,9 +14,18 @@ internal sealed class TradeBalanceEvidence(long startingGil)
     public bool IncomingRecorded { get; private set; }
     public bool OutgoingRecorded { get; private set; }
     public bool Completed { get; private set; }
+    public bool SystemConfirmed { get; private set; }
     public long Incoming => incoming;
     public long Outgoing => outgoing;
     public bool NeedsBalanceRead => armed && !matched && !disabled && !Completed;
+
+    public bool ObserveSystemCompletion()
+    {
+        if (!armed || disabled || Completed) return false;
+        SystemConfirmed = true;
+        matched = true;
+        return true;
+    }
 
     public void ObserveOffer(long offeredToOperator, long offeredByOperator, bool finalConfirmation)
     {

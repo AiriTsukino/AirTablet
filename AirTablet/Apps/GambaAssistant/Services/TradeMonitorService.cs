@@ -1,4 +1,6 @@
 using System.Globalization;
+using Dalamud.Game.Addon.Lifecycle;
+using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using Dalamud.Game.ClientState.Objects.SubKinds;
@@ -9,7 +11,7 @@ using GambaAssistant.Models.Players;
 
 namespace GambaAssistant.Services;
 
-public sealed unsafe class TradeMonitorService
+public sealed unsafe class TradeMonitorService : IDisposable
 {
     private static readonly TimeSpan DuplicateTradeWindow = TimeSpan.FromSeconds(5);
     private readonly Configuration config;
@@ -31,6 +33,7 @@ public sealed unsafe class TradeMonitorService
     private uint balanceTerritoryId;
     private uint balancePartnerEntityId;
     private bool balanceWindowVisible;
+    private bool nativeWindowClosed;
     private DateTime balancePartnerSeenAt = DateTime.MinValue;
     private DateTime nextBalanceWarningAt = DateTime.MinValue;
     public List<TradeEntry> Trades { get; } = [];
@@ -50,6 +53,55 @@ public sealed unsafe class TradeMonitorService
         this.session = session;
         this.ledger = ledger;
         this.log = log;
+        DalamudServices.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "Trade", OnTradeSetup);
+        DalamudServices.AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, "Trade", OnTradeFinalize);
+        DalamudServices.ChatGui.LogMessage += OnSystemLog;
+    }
+
+    private void OnSystemLog(Dalamud.Game.Chat.ILogMessage message)
+    {
+        if (!AutomaticDetectionEnabled || message.LogMessageId != 38) return;
+        ObserveNativeTradeBalance();
+        if (balanceEvidence is null) return;
+        if (!AirTablet.Services.TradeSystemLog.IsCompletion(message)
+            || !AirTablet.Services.TradeSystemLog.HasPartner(message, balancePartner.Name, balancePartner.World))
+        {
+            log.Add(LogCategory.Trades, "Native completion candidate lacked a recognized template or matching partner; retained existing confirmation safeguards.");
+            return;
+        }
+        if (balanceEvidence.ObserveSystemCompletion())
+        {
+            log.Add(LogCategory.Trades, "Matched partner-validated native trade completion before chat filtering.");
+            ObserveNativeTradeBalance();
+        }
+    }
+
+    private void OnTradeSetup(AddonEvent type, AddonArgs args)
+    {
+        // A new native Trade window is a new transaction, even if its partner
+        // and amount equal the previous payment a fraction of a second ago.
+        nativeWindowClosed = true;
+        ObserveNativeTradeBalance();
+        balanceWindowVisible = false;
+        balanceEvidence = null;
+        nativeWindowClosed = false;
+        recentAutomaticTrades.Clear();
+        ObserveNativeTradeBalance();
+    }
+
+    private void OnTradeFinalize(AddonEvent type, AddonArgs args)
+    {
+        ObserveNativeTradeBalance();
+        nativeWindowClosed = true;
+        try { ObserveNativeTradeBalance(); }
+        finally { nativeWindowClosed = false; }
+    }
+
+    public void Dispose()
+    {
+        DalamudServices.ChatGui.LogMessage -= OnSystemLog;
+        DalamudServices.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Trade", OnTradeSetup);
+        DalamudServices.AddonLifecycle.UnregisterListener(AddonEvent.PreFinalize, "Trade", OnTradeFinalize);
     }
 
     public TradeEntry AddManualTrade(PlayerIdentity from, PlayerIdentity to, long amount, TradeClassification classification, string note = "Manual entry")
@@ -87,11 +139,13 @@ public sealed unsafe class TradeMonitorService
         }
 
         var now = DateTime.UtcNow;
+        // Automation can accept the final prompt between 100-ms UI polls.
+        // Observe the native state every framework tick; keep text scans throttled.
+        ObserveNativeTradeBalance();
         if (now < nextTradeWindowPollAtUtc)
             return;
 
         nextTradeWindowPollAtUtc = now.AddMilliseconds(100);
-        ObserveNativeTradeBalance();
 
         if (!TryReadTradeWindowAmounts(out var amounts, out var diagnosticText))
         {
@@ -242,11 +296,15 @@ public sealed unsafe class TradeMonitorService
             if (inventory is null) return;
             var ptr = DalamudServices.GameGui.GetAddonByName("Trade");
             var addon = (AtkUnitBase*)ptr.Address;
-            var visible = addon is not null && addon->IsVisible;
+            var visible = !nativeWindowClosed && addon is not null && addon->IsVisible;
             if (visible && !addon->IsReady) return;
             var currency = inventory->GetInventoryContainer(InventoryType.Currency);
             long? ReadGil() => currency is not null && currency->IsLoaded ? inventory->GetGil() : null;
-            if (visible && !balanceWindowVisible) balanceEvidence = null;
+            if (visible && !balanceWindowVisible)
+            {
+                balanceEvidence = null;
+                recentAutomaticTrades.Clear();
+            }
             // Addon creation can precede the native partner/currency data by a
             // frame. Retry only while offers are still being prepared, never
             // capture a new baseline after the final confirmation/payment.
@@ -326,7 +384,9 @@ public sealed unsafe class TradeMonitorService
             session.SessionPlayers.Add(partner);
         }
         if (partner is null || partner.Status == PlayerStatus.Dealer) return;
-        const string note = "Verified exact native trade offers and operator gil delta within 3 seconds of final confirmation; Trade window closed";
+        var note = evidence.SystemConfirmed
+            ? "Verified native trade offers and partner-matched pre-display system completion; Trade window closed"
+            : "Verified exact native trade offers and operator gil delta within 3 seconds of final confirmation; Trade window closed";
         if (evidence.Incoming > 0 && !evidence.IncomingRecorded)
         {
             evidence.Record(true);

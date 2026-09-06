@@ -64,7 +64,7 @@ public sealed class MainWindow : Window
     {
         var venue = persistence.ActiveVenue;
         DrawSettingsHeader(venue);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         if (ImGui.BeginTabBar("shift-keeper-settings-tabs"))
         {
             if (ImGui.BeginTabItem("Staff List")) { DrawStaffList(venue); ImGui.EndTabItem(); }
@@ -495,7 +495,7 @@ public sealed class MainWindow : Window
             ImGui.TextColored(staffStatus.StartsWith("Added", StringComparison.Ordinal) ? ShiftKeeperTheme.Green : ShiftKeeperTheme.Amber, staffStatus);
             ImGui.PopTextWrapPos();
         }
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         for (var i = 0; i < venue.Staff.Count; i++)
         {
             var member = venue.Staff[i];

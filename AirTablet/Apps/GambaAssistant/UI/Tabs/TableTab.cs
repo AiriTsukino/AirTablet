@@ -181,7 +181,7 @@ public sealed class TableTab
             DrawWrappedDisabled($"Starting {ledger.StartingGil:N0} + settled game P/L ({ledger.GameProfitLoss:N0}) + tips + adjustments");
             if (ledger.ActualEndingGil.HasValue)
                 DrawWrappedDisabled($"Actual ending gil entered: {ledger.ActualEndingGil.Value:N0} gil | Difference: {dealerLedger.Difference.GetValueOrDefault():N0} gil");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             DrawWrappedText($"Cards: {session.Round.DealerHand.CardText}");
             DrawWrappedText($"Total: {session.Round.DealerHand.TotalText}");
             if (session.Round.Phase == BlackjackPhase.DealerTurn)
@@ -204,7 +204,7 @@ public sealed class TableTab
     private void DrawPlayerRow(PlayerSessionState p)
     {
         ImGui.PushID(p.Identity.ToString());
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         ImGui.TextColored(p.Status == PlayerStatus.Dealer ? GambaTheme.Gold : GambaTheme.Text, $"{p.PartySlot}. {p.DisplayName}");
         DrawWrappedDisabled($"Status: {p.Status}");

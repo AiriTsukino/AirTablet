@@ -40,26 +40,45 @@ internal static class OutfitAppearancePolicy
         foreach (var (path, json) in values)
         {
             var parts = path.Split('/');
-            if (parts.Length != 3 || parts[0] is not ("Customize" or "Parameters")) continue;
-            if (target[parts[0]]?[parts[1]] is not JObject entry) continue;
+            if (parts.Length != 3 || parts[0] is not ("Customize" or "Parameters" or "Equipment" or "Bonus" or "Materials")) continue;
+            if (target[parts[0]] is not JObject section) target[parts[0]] = section = new JObject();
+            if (section[parts[1]] is not JObject entry) section[parts[1]] = entry = new JObject();
             var value = JToken.Parse(json);
-            if (value is JValue) entry[parts[2]] = value;
+            if (value.Type == JTokenType.Null) entry.Remove(parts[2]);
+            else if (value is JValue or JArray) entry[parts[2]] = value;
         }
     }
 
     public static void RecordEdits(JObject original, JObject edited, IDictionary<string, string> overrides)
     {
-        foreach (var section in new[] { "Customize", "Parameters" })
+        foreach (var section in new[] { "Customize", "Parameters", "Equipment", "Bonus", "Materials" })
         {
             if (edited[section] is not JObject entries) continue;
             foreach (var entry in entries.Properties())
             {
                 if (entry.Value is not JObject fields) continue;
                 foreach (var field in fields.Properties())
-                    if (field.Value is JValue && !JToken.DeepEquals(original[section]?[entry.Name]?[field.Name], field.Value))
+                    if (field.Value is JValue or JArray && !JToken.DeepEquals(original[section]?[entry.Name]?[field.Name], field.Value))
                         overrides[$"{section}/{entry.Name}/{field.Name}"] = field.Value.ToString(Newtonsoft.Json.Formatting.None);
+                if (section == "Materials" && original[section]?[entry.Name] is JObject previous)
+                    foreach (var field in previous.Properties().Where(field => fields[field.Name] is null))
+                        overrides[$"{section}/{entry.Name}/{field.Name}"] = "null";
             }
         }
+    }
+
+    public static bool MatchesEditorFields(JObject expected, JObject stored, IReadOnlyDictionary<string, string> edits)
+    {
+        foreach (var path in edits.Keys)
+        {
+            var parts = path.Split('/');
+            if (parts.Length != 3) return false;
+            var wanted = expected[parts[0]]?[parts[1]]?[parts[2]];
+            var actual = stored[parts[0]]?[parts[1]]?[parts[2]];
+            if (wanted?.Type == JTokenType.Boolean && wanted.Value<bool>() == false && actual is null) continue;
+            if (!JToken.DeepEquals(wanted, actual)) return false;
+        }
+        return true;
     }
 
     public static IEnumerable<(string Key, string Label, bool Apply)> Options(string json, IReadOnlyDictionary<string, bool> overrides)

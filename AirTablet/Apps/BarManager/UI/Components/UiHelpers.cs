@@ -10,14 +10,14 @@ internal static class UiHelpers
         ImGui.TextColored(BarManagerTheme.Gold, title);
         if (!string.IsNullOrWhiteSpace(subtitle))
             TextMuted(subtitle);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     public static void SectionTitle(string title)
     {
         ImGui.Spacing();
         ImGui.TextColored(BarManagerTheme.Gold, title);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     public static bool BeginCard(

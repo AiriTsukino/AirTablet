@@ -510,7 +510,7 @@ internal sealed class SettingsTab
                         ImGuiWindowFlags.AlwaysAutoResize))
                 {
                     ImGui.TextWrapped($"Delete custom region '{region.Name}'? This cannot be undone.");
-                    ImGui.Separator();
+                    AirTablet.UI.TabletSeparator.Draw();
                     if (ImGui.Button("Delete", AirTablet.UI.TabletAppTheme.Px(new Vector2(120, 0))))
                     {
                         if (pendingDeleteRegionId == region.Id)
@@ -548,7 +548,7 @@ internal sealed class SettingsTab
         {
             ImGui.TextColored(new Vector4(1f, 0.32f, 0.32f, 1f), "Danger zone");
             ImGui.PushStyleColor(ImGuiCol.Separator, new Vector4(0.95f, 0.18f, 0.20f, 0.95f));
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             ImGui.PopStyleColor();
             ImGui.TextWrapped("These actions permanently delete visitor history data. They do not delete venues, greeting profiles, macros, VIP settings, blacklist entries, or current general settings.");
             ImGui.Spacing();
@@ -618,7 +618,7 @@ internal sealed class SettingsTab
         {
             ImGui.TextColored(new Vector4(1f, 0.32f, 0.32f, 1f), "Permanent action");
             ImGui.TextWrapped("Delete lifetime visitor history for every venue? This cannot be undone.");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (DangerButton("Reset All History", AirTablet.UI.TabletAppTheme.Px(new Vector2(150, 0))))
             {
                 foreach (var venue in venues.Venues)
@@ -646,7 +646,7 @@ internal sealed class SettingsTab
             ImGui.TextWrapped(venue is null
                 ? "No venue selected."
                 : $"Delete lifetime visitor history for '{venue.Name}'? This cannot be undone.");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (venue is null) ImGui.BeginDisabled();
             if (DangerButton("Reset Venue History", AirTablet.UI.TabletAppTheme.Px(new Vector2(160, 0))))
             {

@@ -63,7 +63,7 @@ internal sealed class MainWindow : Window, IDisposable
     {
         UpdateSpinAnimation();
         DrawHeader();
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         if (ImGui.BeginTabBar("##mainTabs"))
         {
@@ -261,7 +261,7 @@ internal sealed class MainWindow : Window, IDisposable
     private void DrawAddCard()
     {
         ImGui.TextColored(RaffleTheme.Pink, "Add Contestant");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         if (ImGui.BeginTable(
                 "##contestant-identity",
@@ -493,7 +493,7 @@ internal sealed class MainWindow : Window, IDisposable
     private void DrawRandomizerCard()
     {
         ImGui.TextColored(RaffleTheme.Pink, "Randomizer");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         DrawJackpotStrip();
 
         ImGui.Spacing();

@@ -7,7 +7,7 @@ using Newtonsoft.Json.Linq;
 
 namespace WardrobeManager;
 
-internal sealed class AppearanceEditor
+internal sealed partial class AppearanceEditor
 {
     private const string Modal = "Appearance Studio##WardrobeManager";
     private readonly AppearanceCatalog catalog = new();
@@ -26,6 +26,10 @@ internal sealed class AppearanceEditor
 
     public void Open(WardrobePreset owner, JObject design)
     {
+        Dispose();
+        BeginSharedFavoritesRead();
+        captureTarget = null;
+        capturedMaterialColors = null;
         preset = owner;
         original = (JObject)design.DeepClone();
         draft = (JObject)design.DeepClone();
@@ -34,46 +38,105 @@ internal sealed class AppearanceEditor
         search = error = string.Empty;
         showChoices = false;
         hexOwner = string.Empty;
+        materialTargets.Clear();
+        materialScanStep = -1;
+        materialScanStatus = string.Empty;
         TabletAppTheme.OpenCenteredModal(Modal);
     }
 
     public void Draw(Func<WardrobePreset, JObject, JObject, string?> save)
     {
-        if (preset is null || draft is null || original is null || !TabletAppTheme.BeginCenteredModal(Modal, preferredWidth: 900f)) return;
+        using var studioScope = new ImGuiDrawScope();
+        if (preset is null || draft is null || original is null || !TabletAppTheme.BeginCenteredModal(Modal, preferredWidth: 900f)) { Dispose(); return; }
+        materialHover.BeginFrame();
+        FinishSharedFavoritesRead();
+        // Popups inherit the tablet's transparent modal surface unless explicitly
+        // given an opaque background. Cover every combo in this editor.
+        ImGui.PushStyleColor(ImGuiCol.PopupBg, TabletAppTheme.SurfaceRaised with { W = 1f });
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, Vector4.Lerp(TabletAppTheme.SurfaceRaised, TabletAppTheme.Accent, .22f) with { W = 1f });
+        ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Lerp(TabletAppTheme.SurfaceRaised, TabletAppTheme.Accent, .55f) with { W = 1f });
+        ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Lerp(TabletAppTheme.SurfaceRaised, TabletAppTheme.Accent, .22f) with { W = 1f });
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, TabletAppTheme.Px(new Vector2(3, 1)));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, TabletAppTheme.Px(new Vector2(4, 3)));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemInnerSpacing, TabletAppTheme.Px(new Vector2(3, 2)));
+        ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, Vector2.Zero);
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, TabletAppTheme.Px(2));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 0f);
+        ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, TabletAppTheme.Px(2));
+        ImGui.PushStyleVar(ImGuiStyleVar.PopupBorderSize, Math.Max(1, TabletAppTheme.Px(1)));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, TabletAppTheme.Px(new Vector2(8, 8)));
         ImGui.TextWrapped(preset.Name);
-        ImGui.TextWrapped("Choose a feature, edit its value, then save to the linked Glamourer design.");
-        if (ImGui.Button("Customization")) SelectSection("Customize");
-        ImGui.SameLine();
-        if (ImGui.Button("Advanced Customization")) SelectSection("Parameters");
-        ImGui.Separator();
-        var bodyHeight = MathF.Max(TabletAppTheme.Px(90f), ImGui.GetContentRegionAvail().Y - ImGui.GetFrameHeightWithSpacing() - TabletAppTheme.Px(12f));
+        var tabs = new[] { ("Customize", "Customization"), ("Parameters", "Advanced Customization"), ("Equipment", "Equipment") };
+        var tabWidth = Math.Max(1, (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X * (tabs.Length - 1)) / tabs.Length);
+        for (var index = 0; index < tabs.Length; index++)
+        {
+            if (index > 0) ImGui.SameLine();
+            ImGui.PushStyleColor(ImGuiCol.Button, (section == tabs[index].Item1 || section == "Materials" && tabs[index].Item1 == "Equipment" ? TabletAppTheme.Accent : TabletAppTheme.SurfaceRaised) with { W = 1f });
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, TabletAppTheme.AccentHover with { W = 1f });
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, TabletAppTheme.Accent with { W = 1f });
+            if (ImGui.Button(tabs[index].Item2, new Vector2(tabWidth, TabletAppTheme.Px(34)))) SelectSection(tabs[index].Item1);
+            ImGui.PopStyleColor(3);
+        }
+        AirTablet.UI.TabletSeparator.Draw();
+        var footerHeight = Math.Max(TabletAppTheme.Px(34), ImGui.GetTextLineHeight() + TabletAppTheme.Px(12));
+        var footerY = ImGui.GetCursorPosY() + ImGui.GetContentRegionAvail().Y - footerHeight - TabletAppTheme.Px(4);
+        var bodyHeight = MathF.Max(1, footerY - ImGui.GetCursorPosY() - TabletAppTheme.Px(6));
+        selectionPopupPosition = ImGui.GetCursorScreenPos() + new Vector2(TabletAppTheme.Px(450), TabletAppTheme.Px(6));
+        using (var bodyScope = new ImGuiDrawScope())
+        try
+        {
         if (ImGui.BeginChild("##appearance-body", new Vector2(0, bodyHeight), false,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
-            if (ImGui.BeginTable("##appearance-columns", 2, ImGuiTableFlags.SizingStretchProp))
+            if (section != "Materials")
             {
-                ImGui.TableSetupColumn("Features", ImGuiTableColumnFlags.WidthStretch, 0.40f);
-                ImGui.TableSetupColumn("Editor", ImGuiTableColumnFlags.WidthStretch, 0.60f);
-                ImGui.TableNextColumn();
-                var paneHeight = Math.Max(1, ImGui.GetContentRegionAvail().Y - ImGui.GetStyle().CellPadding.Y * 2);
-                if (ImGui.BeginChild("##appearance-fields", new Vector2(0, paneHeight), true)) DrawFields();
-                ImGui.EndChild();
-                ImGui.TableNextColumn();
-                ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, TabletAppTheme.Px(new Vector2(18f, 12f)));
-                if (ImGui.BeginChild("##appearance-value", new Vector2(0, paneHeight), false, ImGuiWindowFlags.AlwaysUseWindowPadding)) DrawSelected();
+                ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, TabletAppTheme.Px(new Vector2(4, 4)));
+                if (ImGui.BeginChild("##compact-scroll", Vector2.Zero, false, ImGuiWindowFlags.AlwaysUseWindowPadding)) DrawCompactOverview();
                 ImGui.EndChild();
                 ImGui.PopStyleVar();
-                ImGui.EndTable();
+            }
+            else
+            {
+                ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, TabletAppTheme.Px(new Vector2(16, 14)));
+                if (ImGui.BeginChild("##advanced-dye-page", Vector2.Zero, false, ImGuiWindowFlags.AlwaysUseWindowPadding)) DrawAdvancedDyePopup();
+                ImGui.EndChild();
+                ImGui.PopStyleVar();
             }
         }
         ImGui.EndChild();
-        if (ImGui.Button("Save to Glamourer"))
+        }
+        catch (Exception ex)
+        {
+            if (error != "Appearance controls could not be drawn: " + ex.Message)
+                DalamudServices.Log.Error(ex, "WardrobeManager Appearance Studio draw failed.");
+            error = "Appearance controls could not be drawn: " + ex.Message;
+        }
+        ImGui.SetCursorPosY(footerY);
+        ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Lerp(TabletAppTheme.SurfaceRaised, TabletAppTheme.Accent, .3f) with { W = 1 });
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 1);
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, TabletAppTheme.Px(new Vector2(10, 6)));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, TabletAppTheme.Px(7));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, TabletAppTheme.Px(new Vector2(8, 6)));
+        if (section == "Materials")
+        {
+            if (ImGui.Button("Done / Back to Equipment", new Vector2(0, footerHeight)))
+            { materialHover.Dispose(); materialReadback.Dispose(); SelectSection("Equipment"); }
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Return to Equipment. Draft edits remain until you save or cancel.");
+            ImGui.SameLine();
+        }
+        if (ImGui.Button("Save to Glamourer", new Vector2(0, footerHeight)))
         {
             error = save(preset, original, draft) ?? string.Empty;
-            if (error.Length == 0) { TabletAppTheme.CloseCenteredModal(); preset = null; }
+            if (error.Length == 0) { Dispose(); TabletAppTheme.CloseCenteredModal(); preset = null; }
         }
         ImGui.SameLine();
-        if (ImGui.Button("Cancel")) { TabletAppTheme.CloseCenteredModal(); preset = null; }
+        if (ImGui.Button("Cancel", new Vector2(0, footerHeight))) { Dispose(); TabletAppTheme.CloseCenteredModal(); preset = null; }
+        if (error.Length > 0) { ImGui.SameLine(); ImGui.TextUnformatted("Error (hover)"); if (ImGui.IsItemHovered()) ImGui.SetTooltip(error); }
+        ImGui.PopStyleVar(4);
+        ImGui.PopStyleColor();
+        ImGui.PopStyleVar(9);
+        ImGui.PopStyleColor(4);
+        materialHover.EndFrame();
         TabletAppTheme.EndCenteredModal();
     }
 
@@ -88,9 +151,16 @@ internal sealed class AppearanceEditor
 
     private void DrawFields()
     {
+        if (section == "Materials") DrawMaterialTargets();
         ImGui.SetNextItemWidth(-1);
         ImGui.InputTextWithHint("##search", "Find a feature...", ref search, 100);
-        if (draft![section] is not JObject fields) { ImGui.TextWrapped("This design does not contain these settings."); return; }
+        if (draft![section] is not JObject fields)
+        {
+            ImGui.TextWrapped(section == "Materials"
+                ? "No saved dye rows yet. Scan worn materials above to add one."
+                : "This design does not contain these settings.");
+            return;
+        }
         foreach (var property in fields.Properties())
         {
             if (property.Value is not JObject) continue;
@@ -98,7 +168,7 @@ internal sealed class AppearanceEditor
             // expose it as a normal customization choice. Its UI only offers a
             // one-shot reset when an imported NPC body type is non-default.
             if (section == "Customize" && property.Name == "BodyType") continue;
-            var label = Label(property.Name);
+            var label = section == "Materials" ? MaterialLabel(property.Name) : Label(property.Name);
             if (!label.Contains(search, StringComparison.OrdinalIgnoreCase)) continue;
             if (selected.Length == 0) selected = property.Name;
             // Wrapped selectable labels keep long field names inside the column.
@@ -120,6 +190,8 @@ internal sealed class AppearanceEditor
     {
         if (draft![section]?[selected] is not JObject entry) { ImGui.TextWrapped("Select a feature to edit."); return; }
         ImGui.TextWrapped(Label(selected));
+        if (section == "Equipment") { DrawEquipment(entry); return; }
+        if (section == "Materials") { DrawMaterial(entry); return; }
         var apply = entry.Value<bool?>("Apply") ?? false;
         if (TabletAppTheme.VisibleCheckbox("Apply with this preset", ref apply))
         {
@@ -131,7 +203,7 @@ internal sealed class AppearanceEditor
             }
         }
         ImGui.TextWrapped("Unchecked values are saved but do not replace the character's current value when applied.");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         if (section == "Parameters") DrawParameter(entry);
         else DrawCustomization(entry);
         if (section == "Customize" && entry["Value"]?.Type == JTokenType.Integer && selected is not ("Race" or "Gender" or "Clan"))
@@ -158,7 +230,7 @@ internal sealed class AppearanceEditor
         if (error.Length > 0) ImGui.TextWrapped(error);
         if (catalog.Error.Length > 0) ImGui.TextWrapped(catalog.Error);
         ImGui.Spacing();
-        ImGui.TextWrapped("Saving uses Glamourer's replacement-design API. It also saves this preset's current mod associations. Automation rules referencing the old design ID may need updating.");
+        ImGui.TextWrapped("Saving updates the linked Glamourer design and its mod associations while keeping its design ID and automation links. A new design is created only for an unlinked preset.");
     }
 
     private void DrawParameter(JObject entry)
@@ -210,11 +282,9 @@ internal sealed class AppearanceEditor
         }
         ImGui.EndGroup();
         ImGui.SameLine(0, gap);
-        // A child constrains text, input and buttons to the preview column.
-        // It scrolls on very small layouts instead of spilling over the pane.
-        var previewHeight = TabletAppTheme.Px(58f) + ImGui.GetTextLineHeightWithSpacing() * (hexInvalid ? 5 : 2)
-            + ImGui.GetFrameHeightWithSpacing() * 4;
-        if (ImGui.BeginChild("##color-preview", new Vector2(previewWidth, Math.Max(wheelWidth, previewHeight)), false))
+        // A content-sized group avoids a painted, empty child below Paste.
+        ImGui.BeginGroup();
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + previewWidth);
         {
             var formatted = AppearanceColorHex.Format(color, alpha, hasAlpha);
             if (owner != hexOwner || formatted != lastHexColor || changed)
@@ -226,9 +296,9 @@ internal sealed class AppearanceEditor
             }
             ImGui.TextWrapped("Selected color");
             ImGui.ColorButton("##swatch", new Vector4(Vector3.Clamp(color, Vector3.Zero, Vector3.One), Math.Clamp(alpha, 0f, 1f)),
-                ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoDragDrop, new Vector2(Math.Max(1, ImGui.GetContentRegionAvail().X), TabletAppTheme.Px(46f)));
+                ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoDragDrop, new Vector2(previewWidth, TabletAppTheme.Px(46f)));
             ImGui.TextUnformatted(hasAlpha ? "Hex (RGBA)" : "Hex (RGB)");
-            ImGui.SetNextItemWidth(-1f);
+            ImGui.SetNextItemWidth(previewWidth);
             var inputAccent = TabletAppTheme.RememberedAccent;
             var inputHover = TabletAppTheme.RememberedAccentHover;
             var inputSurface = TabletAppTheme.RememberedSurfaceRaised;
@@ -241,9 +311,9 @@ internal sealed class AppearanceEditor
             var applyHex = ImGui.InputText("##hex", ref hexText, 32, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll);
             ImGui.PopStyleVar(2);
             ImGui.PopStyleColor(4);
-            applyHex |= ImGui.Button("Apply hex", new Vector2(-1, 0));
-            if (ImGui.Button("Copy", new Vector2(-1, 0))) ImGui.SetClipboardText(formatted);
-            if (ImGui.Button("Paste", new Vector2(-1, 0)))
+            applyHex |= ImGui.Button("Apply hex", new Vector2(previewWidth, 0));
+            if (ImGui.Button("Copy", new Vector2(previewWidth, 0))) ImGui.SetClipboardText(formatted);
+            if (ImGui.Button("Paste", new Vector2(previewWidth, 0)))
             {
                 hexText = ImGui.GetClipboardText();
                 applyHex = true;
@@ -261,7 +331,8 @@ internal sealed class AppearanceEditor
             }
             if (hexInvalid) ImGui.TextWrapped(hasAlpha ? "Use #RRGGBB or #RRGGBBAA." : "Use #RRGGBB.");
         }
-        ImGui.EndChild();
+        ImGui.PopTextWrapPos();
+        ImGui.EndGroup();
         ImGui.PopID();
         if (color.X < 0 || color.Y < 0 || color.Z < 0 || color.X > 1 || color.Y > 1 || color.Z > 1)
             ImGui.TextWrapped("Hex shows the 0-1 color range; HDR values remain unchanged unless you apply a new color.");
@@ -394,6 +465,7 @@ internal sealed class AppearanceEditor
 
     private static string Label(string name) => name switch
     {
+        "Glasses" => "Facewear",
         "Hairstyle" => "Hair style", "Face" => "Face / head style", "MuscleMass" => "Muscle tone / tail / ear length",
         "TailShape" => "Tail / ear shape", "TattooColor" => "Facial feature color", "SmallIris" => "Small iris",
         "SkinDiffuse" => "Skin color", "HairDiffuse" => "Hair color", "LipDiffuse" => "Lip color and opacity",

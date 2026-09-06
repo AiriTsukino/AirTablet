@@ -9,7 +9,7 @@ internal static class UiHelpers
     {
         ImGui.TextColored(RaffleTheme.Pink, title);
         if (!string.IsNullOrWhiteSpace(subtitle)) TextMutedWrapped(subtitle);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     public static bool BeginCard(

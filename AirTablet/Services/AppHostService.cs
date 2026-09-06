@@ -198,6 +198,8 @@ internal sealed class AppHostService : IDisposable
         if (!running.TryGetValue(id, out var app))
             return false;
 
+        using var drawScope = new AirTablet.UI.ImGuiDrawScope();
+
         try
         {
             app.Draw();

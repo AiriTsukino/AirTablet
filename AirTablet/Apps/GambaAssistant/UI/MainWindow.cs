@@ -271,7 +271,7 @@ public sealed class MainWindow : Window
             UiHelpers.Tooltip("Open GambaAssistant settings.");
             ImGui.EndTable();
         }
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     private void DrawPrimaryNavigation()

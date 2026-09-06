@@ -284,7 +284,7 @@ public sealed class ProfileSettingsTab
                 SaveRules(rules);
             }
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
 
             var split = rules.SplittingEnabled;
             if (ImGui.Checkbox("Splitting enabled", ref split))
@@ -392,7 +392,7 @@ public sealed class ProfileSettingsTab
                 }
             }
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (profile.BlackjackVips.Count == 0)
             {
                 ImGui.TextDisabled("No Blackjack VIPs saved for this venue.");

@@ -343,6 +343,7 @@ internal sealed class Plugin : IDisposable
 
         SafeRun("Dispose DRT service", () => { if (deathRoll is not null) deathRoll.Dispose(); });
         SafeRun("Dispose chat monitor", () => { if (chatMonitor is not null) chatMonitor.Dispose(); });
+        SafeRun("Dispose trade monitor", () => { if (tradeMonitor is not null) tradeMonitor.Dispose(); });
         SafeRun("Dispose dice service", () => { if (dice is not null) dice.Dispose(); });
         SafeRun("Dispose chat queue", () => { if (chatQueue is not null) chatQueue.Dispose(); });
 

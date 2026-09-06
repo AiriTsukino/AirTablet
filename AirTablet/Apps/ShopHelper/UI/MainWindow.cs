@@ -89,7 +89,7 @@ internal sealed class MainWindow : Window
             }
             ImGui.EndTable();
         }
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     private void DrawStatus()

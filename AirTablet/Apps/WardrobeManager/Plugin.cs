@@ -78,6 +78,7 @@ internal sealed class Plugin : IDisposable
     {
         DalamudServices.Initialize(pluginInterface);
         config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        appearanceEditor.ConfigureFavorites(config, () => pluginInterface.SavePluginConfig(config));
         persistence = new PersistenceService();
         integrations = new IntegrationService();
         selfieCamera = new SelfieCameraService(
@@ -96,6 +97,7 @@ internal sealed class Plugin : IDisposable
 
     public void Tick()
     {
+        appearanceEditor.Tick();
         ProcessHonorificSave();
         if (glamourerEnablePending && DateTime.UtcNow >= glamourerEnableAt)
         {
@@ -120,6 +122,7 @@ internal sealed class Plugin : IDisposable
 
     public void Draw()
     {
+        appearanceEditor.WarmEquipmentCatalog();
         var drawNow = DateTime.UtcNow;
         if (lastAppDraw == default || drawNow - lastAppDraw > TimeSpan.FromSeconds(5))
         {
@@ -198,17 +201,17 @@ internal sealed class Plugin : IDisposable
             if (foldersVisible && ImGui.Button("New Folder", new Vector2(-1f, 0f)))
             {
                 newFolderName = "New Folder";
-                TabletAppTheme.OpenCenteredModal("Create outfit folder");
+                TabletAppTheme.OpenCenteredModal("Create preset folder");
             }
             ImGui.TableNextColumn();
-            if ((!foldersVisible || activeFolderId != Guid.Empty) && ImGui.Button(foldersVisible ? "New Outfit" : "New Preset", new Vector2(-1f, 0f)))
-                CreatePreset(foldersVisible ? WardrobePresetType.Outfit : activeType);
+            if ((!foldersVisible || activeFolderId != Guid.Empty) && ImGui.Button("New Preset", new Vector2(-1f, 0f)))
+                CreatePreset(activeType);
             ImGui.TableNextColumn();
             if (ImGui.Button("Settings", new Vector2(-1f, 0f))) settingsVisible = true;
             ImGui.EndTable();
         }
         DrawConnectionAndQuickRow(synchronizeQuickSelection);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         if (foldersVisible)
         {
@@ -218,21 +221,22 @@ internal sealed class Plugin : IDisposable
                 if (folder is null) activeFolderId = Guid.Empty;
                 else
                 {
-                    if (ImGui.Button("Back to All Outfits", TabletAppTheme.Px(new Vector2(170f, 0f)))) activeFolderId = Guid.Empty;
+                    if (ImGui.Button("Back to Folders", TabletAppTheme.Px(new Vector2(170f, 0f)))) activeFolderId = Guid.Empty;
                     ImGui.SameLine();
                     ImGui.TextColored(TabletAppTheme.AccentHover, folder.Name);
-                    ImGui.Separator();
+                    AirTablet.UI.TabletSeparator.Draw();
                 }
             }
             if (activeFolderId == Guid.Empty)
             {
-                DrawOutfitFolders();
+                DrawFolderCategory(WardrobePresetType.Outfit);
+                DrawFolderCategory(WardrobePresetType.Character);
                 return;
             }
         }
 
         var presets = persistence.Data.Presets
-            .Where(x => x.Type == (foldersVisible ? WardrobePresetType.Outfit : activeType))
+            .Where(x => x.Type == activeType)
             .Where(x => !foldersVisible || x.FolderId == activeFolderId)
             .OrderByDescending(x => x.IsFavorite)
             .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
@@ -241,7 +245,7 @@ internal sealed class Plugin : IDisposable
         {
             ImGui.Dummy(TabletAppTheme.Px(new Vector2(0f, 35f)));
             var emptyMessage = foldersVisible
-                ? "This folder has no outfit presets. Create one here or assign an existing outfit to this folder from its editor."
+                ? "This folder has no presets of the selected type. Create one here or assign a preset from its editor."
                 : $"No {TypeLabel(activeType).ToLowerInvariant()} presets yet. Create one to capture an appearance and configure it.";
             TextColoredWrapped(TabletAppTheme.MutedText, emptyMessage);
             return;
@@ -294,14 +298,24 @@ internal sealed class Plugin : IDisposable
         ImGui.Spacing();
     }
 
-    private void DrawOutfitFolders()
+    private void DrawFolderCategory(WardrobePresetType type)
     {
-        var folders = persistence.Data.Folders.OrderBy(folder => folder.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        if (folders.Count == 0) return;
+        ImGui.PushID(type.ToString());
+        ImGui.TextColored(TabletAppTheme.AccentHover, TypeLabel(type));
+        var folders = persistence.Data.Folders
+            .Where(folder => type != WardrobePresetType.Character || persistence.Data.Presets.Any(preset => preset.Type == type && preset.FolderId == folder.Id))
+            .OrderBy(folder => folder.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        if (folders.Count == 0)
+        {
+            ImGui.TextDisabled(type == WardrobePresetType.Character ? "No folders containing characters." : "No outfit folders yet.");
+            ImGui.Spacing();
+            ImGui.PopID();
+            return;
+        }
         var available = ImGui.GetContentRegionAvail().X;
         var width = TabletAppTheme.Px(220f);
         var columns = Math.Max(1, (int)((available + TabletAppTheme.Px(10f)) / (width + TabletAppTheme.Px(10f))));
-        if (!ImGui.BeginTable("##wardrobe-folder-grid", columns, ImGuiTableFlags.SizingStretchSame | ImGuiTableFlags.NoSavedSettings)) return;
+        if (!ImGui.BeginTable("##wardrobe-folder-grid", columns, ImGuiTableFlags.SizingStretchSame | ImGuiTableFlags.NoSavedSettings)) { ImGui.PopID(); return; }
         foreach (var folder in folders)
         {
             ImGui.TableNextColumn();
@@ -312,10 +326,10 @@ internal sealed class Plugin : IDisposable
             {
                 ImGui.TextColored(TabletAppTheme.AccentHover, "Folder");
                 ImGui.TextWrapped(folder.Name);
-                var count = persistence.Data.Presets.Count(preset => preset.Type == WardrobePresetType.Outfit && preset.FolderId == folder.Id);
-                TextColoredWrapped(TabletAppTheme.MutedText, $"{count} outfit{(count == 1 ? string.Empty : "s")}");
+                var count = persistence.Data.Presets.Count(preset => preset.Type == type && preset.FolderId == folder.Id);
+                TextColoredWrapped(TabletAppTheme.MutedText, $"{count} {TypeLabel(type).ToLowerInvariant()}");
                 var buttonWidth = MathF.Max(TabletAppTheme.Px(62f), (ImGui.GetContentRegionAvail().X - TabletAppTheme.Px(6f)) / 2f);
-                if (ImGui.Button("Open", new Vector2(buttonWidth, 0f))) activeFolderId = folder.Id;
+                if (ImGui.Button("Open", new Vector2(buttonWidth, 0f))) { activeFolderId = folder.Id; activeType = type; }
                 ImGui.SameLine();
                 if (ImGui.Button("Remove", new Vector2(buttonWidth, 0f)))
                 {
@@ -329,7 +343,8 @@ internal sealed class Plugin : IDisposable
         }
         ImGui.EndTable();
         ImGui.Spacing();
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
+        ImGui.PopID();
     }
 
     private void DrawPresetCard(WardrobePreset preset)
@@ -656,7 +671,7 @@ internal sealed class Plugin : IDisposable
             if (ImGui.Button("Settings", new Vector2(-1f, 0f))) settingsVisible = true;
             ImGui.EndTable();
         }
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         // The table adds vertical cell padding around its children. Reserve that space so
         // the editor consumes the remaining tablet viewport without creating an outer scroll bar.
@@ -851,6 +866,18 @@ internal sealed class Plugin : IDisposable
                 persistence.Save();
             }
 
+            TextColoredWrapped(TabletAppTheme.MutedText, "Glamourer folder");
+            var characterFolder = persistence.Data.Folders.FirstOrDefault(folder => folder.Id == preset.FolderId)?.Name ?? "Unfiled";
+            ImGui.SetNextItemWidth(-1f);
+            if (ImGui.BeginCombo("##character-folder", characterFolder))
+            {
+                if (ImGui.Selectable("Unfiled", preset.FolderId == Guid.Empty))
+                { preset.FolderId = Guid.Empty; outfitDirty = true; persistence.Save(); }
+                foreach (var folder in persistence.Data.Folders.OrderBy(folder => folder.Name, StringComparer.OrdinalIgnoreCase))
+                    if (ImGui.Selectable(folder.Name, preset.FolderId == folder.Id))
+                    { preset.FolderId = folder.Id; outfitDirty = true; persistence.Save(); }
+                ImGui.EndCombo();
+            }
             TextColoredWrapped(TabletAppTheme.MutedText, "Penumbra collection");
             DrawCollectionCombo(preset);
 
@@ -1192,7 +1219,7 @@ internal sealed class Plugin : IDisposable
                 if (ImGui.Button(saveLabel, new Vector2(actionWidth, 0f))) RequestDesignSync(preset, false);
                 if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
                     ImGui.SetTooltip(preset.Type == WardrobePresetType.Character
-                        ? "Saves the physical Glamourer character design and this preset's Penumbra collection, Customize+ profile, Honorific title, and mod associations."
+                        ? "Saves the Glamourer character design, including selected equipment and advanced dyes, and this preset's Penumbra collection, Customize+ profile, Honorific title, and mod associations."
                         : "Saves this captured outfit, Glamourer folder, and mod associations to the linked Glamourer design.");
                 ImGui.EndDisabled();
                 ImGui.SameLine();
@@ -1216,9 +1243,10 @@ internal sealed class Plugin : IDisposable
                 if (ImGui.Button("Open Glamourer", new Vector2(actionWidth, 0f))) integrations.OpenLinkedDesign(preset);
                 ImGui.EndDisabled();
                 if (outfitDirty)
-                    TextColoredWrapped(TabletAppTheme.MutedText, "Unsaved Glamourer changes. Save or press Done to review the replacement confirmation.");
+                    TextColoredWrapped(TabletAppTheme.MutedText, "Unsaved Glamourer changes. Save or press Done to review the save confirmation.");
             }
             if (preset.Type == WardrobePresetType.Outfit) DrawOutfitAppearanceOptions(preset);
+            if (glamourerDesign) appearanceEditor.WarmSavedAppearance(preset);
             if (glamourerDesign && ImGui.Button("Edit appearance...", new Vector2(-1f, 0f)))
             {
                 if (integrations.TryGetEditableAppearance(preset, out var appearance, out var error)) appearanceEditor.Open(preset, appearance!);
@@ -1228,7 +1256,7 @@ internal sealed class Plugin : IDisposable
             {
                 ImGui.BeginTooltip();
                 ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + TabletAppTheme.Px(340f));
-                ImGui.TextUnformatted("Edit the linked Glamourer design's physical appearance settings, including character customizations, colours, application toggles, and advanced Customize Parameters.");
+                ImGui.TextWrapped("Edit the linked Glamourer design's customizations, equipment, colours, application toggles, and advanced dyes.");
                 ImGui.PopTextWrapPos();
                 ImGui.EndTooltip();
             }
@@ -1265,7 +1293,7 @@ internal sealed class Plugin : IDisposable
                     persistence.Save();
                 }
             }
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             var displayOrder = preset.Mods.Select((rule, index) => (Rule: rule, Index: index)).ToList();
             foreach (var entry in displayOrder)
             {
@@ -1360,7 +1388,7 @@ internal sealed class Plugin : IDisposable
                         else DrawOptionEditor(rule, preset.Type == WardrobePresetType.Emote, false);
                     }
                 }
-                ImGui.Separator();
+                AirTablet.UI.TabletSeparator.Draw();
                 ImGui.PopID();
             }
             if (preset.Mods.Count == 0)
@@ -1400,7 +1428,7 @@ internal sealed class Plugin : IDisposable
     private void DrawSettings()
     {
         ImGui.TextColored(TabletAppTheme.AccentHover, "WardrobeManager Settings");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         var confirm = config.ConfirmBeforeApply;
         if (TabletAppTheme.VisibleCheckbox("Confirm before applying presets", ref confirm))
         {
@@ -1510,11 +1538,12 @@ internal sealed class Plugin : IDisposable
             var type = design.AppliesEquipment ? WardrobePresetType.Outfit : WardrobePresetType.Character;
             if (state.Existing.TryGetValue(design.Id, out var existingPreset))
             {
+                // Equipment is optional for both libraries. Retain an existing
+                // character's category when its design gains equipment flags.
+                type = existingPreset.Type;
                 // Never overwrite unsaved editor changes with the opening-time mirror.
                 if (ReferenceEquals(existingPreset, editing) && outfitDirty) return;
-                var existingFolderId = type == WardrobePresetType.Outfit
-                    ? ResolveGlamourerFolder(design.FolderPath, ref state.FoldersCreated)
-                    : Guid.Empty;
+                var existingFolderId = ResolveGlamourerFolder(design.FolderPath, ref state.FoldersCreated);
                 var changed = existingPreset.Type != type
                     || existingPreset.FolderId != existingFolderId
                     || !existingPreset.Name.Equals(design.Name.Trim(), StringComparison.Ordinal)
@@ -1556,9 +1585,7 @@ internal sealed class Plugin : IDisposable
                 return;
             }
 
-            var folderId = type == WardrobePresetType.Outfit
-                ? ResolveGlamourerFolder(design.FolderPath, ref state.FoldersCreated)
-                : Guid.Empty;
+            var folderId = ResolveGlamourerFolder(design.FolderPath, ref state.FoldersCreated);
             persistence.Data.Presets.Add(new WardrobePreset
             {
                 Type = type,
@@ -1738,6 +1765,7 @@ internal sealed class Plugin : IDisposable
         ImGui.PushStyleColor(ImGuiCol.Text, foldersVisible ? Vector4.One : TabletAppTheme.MutedText);
         if (ImGui.Button("Folders", TabletAppTheme.Px(new Vector2(112f, 34f))))
         {
+            if (activeType == WardrobePresetType.Emote) activeType = WardrobePresetType.Outfit;
             foldersVisible = true;
             activeFolderId = Guid.Empty;
         }
@@ -1751,7 +1779,7 @@ internal sealed class Plugin : IDisposable
         var preset = new WardrobePreset
         {
             Type = type,
-            FolderId = type == WardrobePresetType.Outfit && foldersVisible ? activeFolderId : Guid.Empty,
+            FolderId = type != WardrobePresetType.Emote && foldersVisible ? activeFolderId : Guid.Empty,
             Name = type switch { WardrobePresetType.Outfit => "New Outfit", WardrobePresetType.Character => "New Character", _ => "New Emote" },
             PenumbraCollectionId = type == WardrobePresetType.Character ? collection?.Id ?? Guid.Empty : Guid.Empty,
             PenumbraCollectionName = type == WardrobePresetType.Character ? collection?.Name ?? string.Empty : string.Empty,
@@ -1782,7 +1810,7 @@ internal sealed class Plugin : IDisposable
                 }
             ImGui.EndCombo();
         }
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
     }
 
     private string? SaveAppearanceEditor(WardrobePreset preset, Newtonsoft.Json.Linq.JObject original, Newtonsoft.Json.Linq.JObject draft)
@@ -1796,7 +1824,7 @@ internal sealed class Plugin : IDisposable
         var folder = persistence.Data.Folders.FirstOrDefault(item => item.Id == staged.FolderId);
         var folderPath = folder is null ? string.Empty : string.IsNullOrWhiteSpace(folder.GlamourerPath) ? folder.Name : folder.GlamourerPath;
         var success = staged.Type == WardrobePresetType.Character
-            ? integrations.SyncCharacterToGlamourer(staged, out var message)
+            ? integrations.SyncCharacterToGlamourer(staged, out var message, folderPath)
             : integrations.SyncOutfitToGlamourer(staged, folderPath, out message);
         if (!success) return message;
         preset.GlamourerDesignId = staged.GlamourerDesignId;
@@ -1809,7 +1837,7 @@ internal sealed class Plugin : IDisposable
         if (editingSnapshot is not null)
         {
             // Discarding unrelated editor changes must not restore an old
-            // Glamourer ID that this successful save has already replaced.
+            // appearance that this successful save has already updated.
             editingSnapshot.GlamourerDesignId = preset.GlamourerDesignId;
             editingSnapshot.GlamourerState = preset.GlamourerState;
             editingSnapshot.GlamourerFolderPath = preset.GlamourerFolderPath;
@@ -1953,7 +1981,7 @@ internal sealed class Plugin : IDisposable
         closeEditorAfterSync = closeAfter;
         var kind = preset.Type == WardrobePresetType.Character ? "character" : "outfit";
         TabletAppTheme.OpenCenteredModal(preset.GlamourerDesignId == Guid.Empty
-            ? $"Create Glamourer {kind}?" : $"Replace linked Glamourer {kind}?");
+            ? $"Create Glamourer {kind}?" : $"Update linked Glamourer {kind}?");
     }
 
     private void DrawDesignSyncConfirmation()
@@ -1962,22 +1990,22 @@ internal sealed class Plugin : IDisposable
         var existing = pendingDesignSync.GlamourerDesignId != Guid.Empty;
         var character = pendingDesignSync.Type == WardrobePresetType.Character;
         var kind = character ? "character" : "outfit";
-        var title = existing ? $"Replace linked Glamourer {kind}?" : $"Create Glamourer {kind}?";
+        var title = existing ? $"Update linked Glamourer {kind}?" : $"Create Glamourer {kind}?";
         if (!TabletAppTheme.BeginCenteredModal(title)) return;
         ImGui.TextWrapped(character
             ? existing
-                ? $"Replace {pendingDesignSync.Name} in its current Glamourer folder? Only regular Customizations, Customize Parameters, and mod associations are saved. Equipment, weapons, accessories, dyes, crests, materials, and advanced dyes are excluded."
-                : $"Create {pendingDesignSync.Name} as a Glamourer character design? Only regular Customizations, Customize Parameters, and mod associations are saved."
+                ? $"Update {pendingDesignSync.Name} in its current Glamourer folder? Save customizations, equipment, dyes, advanced materials, and mod associations while keeping its design ID and automation links."
+                : $"Create {pendingDesignSync.Name} as a Glamourer character design? Save customizations, equipment, dyes, advanced materials, and mod associations with their selected application settings."
             : existing
-                ? $"Save changes to {pendingDesignSync.Name} in Glamourer? Glamourer's public API replaces the design with a new design ID, then removes the old design. Mod associations, priorities, options, Quick Design visibility, folder metadata, appearance, materials, and advanced dyes are copied. Glamourer automation rules that reference the old design ID may need to be pointed at the replacement afterward."
+                ? $"Save changes to {pendingDesignSync.Name} in Glamourer? Updates the existing design, appearance, advanced dyes, folder and mod associations while keeping its design ID and automation links."
                 : $"Create {pendingDesignSync.Name} as a Glamourer outfit? Its captured appearance and manual mod associations will be written to Glamourer.");
-        if (ImGui.Button(existing ? "Replace" : "Create", TabletAppTheme.Px(new Vector2(110f, 0f))))
+        if (ImGui.Button(existing ? "Update" : "Create", TabletAppTheme.Px(new Vector2(110f, 0f))))
         {
             var preset = pendingDesignSync;
             var closeAfter = closeEditorAfterSync;
-            var selectedFolder = character ? null : persistence.Data.Folders.FirstOrDefault(folder => folder.Id == preset.FolderId);
+            var selectedFolder = persistence.Data.Folders.FirstOrDefault(folder => folder.Id == preset.FolderId);
             var folderPath = selectedFolder?.GlamourerPath?.Trim() ?? string.Empty;
-            if (!character && selectedFolder is not null && string.IsNullOrWhiteSpace(folderPath))
+            if (selectedFolder is not null && string.IsNullOrWhiteSpace(folderPath))
             {
                 // Folders created by older WardrobeManager versions were local-only.
                 // Promote their display name to a Glamourer path the first time an
@@ -1987,7 +2015,7 @@ internal sealed class Plugin : IDisposable
                 persistence.Save();
             }
             var synchronized = character
-                ? integrations.SyncCharacterToGlamourer(preset, out var message)
+                ? integrations.SyncCharacterToGlamourer(preset, out var message, folderPath)
                 : integrations.SyncOutfitToGlamourer(preset, folderPath, out message);
             if (synchronized)
             {
@@ -2058,8 +2086,8 @@ internal sealed class Plugin : IDisposable
 
     private void DrawCreateFolderModal()
     {
-        if (!TabletAppTheme.BeginCenteredModal("Create outfit folder")) return;
-        ImGui.TextWrapped("Create a folder for organizing outfit presets.");
+        if (!TabletAppTheme.BeginCenteredModal("Create preset folder")) return;
+        ImGui.TextWrapped("Create a Glamourer folder for organizing outfit and character presets.");
         ImGui.SetNextItemWidth(TabletAppTheme.Px(320f));
         ImGui.InputText("Folder name", ref newFolderName, 80);
         var valid = !string.IsNullOrWhiteSpace(newFolderName);
@@ -2094,7 +2122,7 @@ internal sealed class Plugin : IDisposable
     {
         if (pendingFolderRemoval is null || !TabletAppTheme.BeginCenteredModal("Remove WardrobeManager folder?")) return;
         var count = persistence.Data.Presets.Count(preset => preset.FolderId == pendingFolderRemoval.Id);
-        ImGui.TextWrapped($"Remove {pendingFolderRemoval.Name}? Its {count} outfit{(count == 1 ? string.Empty : "s")} will move to Unfiled and linked Glamourer designs will move to Glamourer's root. No outfits will be deleted. The empty Glamourer folder will disappear after Glamourer next reloads.");
+        ImGui.TextWrapped($"Remove {pendingFolderRemoval.Name}? Its {count} preset{(count == 1 ? string.Empty : "s")} will move to Unfiled and linked Glamourer designs will move to Glamourer's root. No outfits or characters will be deleted. The empty Glamourer folder will disappear after Glamourer next reloads.");
         if (ImGui.Button("Remove Folder", TabletAppTheme.Px(new Vector2(145f, 0f))))
         {
             var removed = pendingFolderRemoval;
@@ -2102,9 +2130,12 @@ internal sealed class Plugin : IDisposable
                 ? removed.Name.Replace('\\', '/').Trim('/').Trim()
                 : removed.GlamourerPath;
             var folderPresets = persistence.Data.Presets.Where(preset => preset.FolderId == removed.Id).ToList();
-            foreach (var preset in folderPresets.Where(preset => preset.Type == WardrobePresetType.Outfit && preset.GlamourerDesignId != Guid.Empty))
+            foreach (var preset in folderPresets.Where(preset => preset.Type != WardrobePresetType.Emote && preset.GlamourerDesignId != Guid.Empty))
             {
-                if (integrations.SyncOutfitToGlamourer(preset, string.Empty, out var syncMessage)) continue;
+                var moved = preset.Type == WardrobePresetType.Character
+                    ? integrations.SyncCharacterToGlamourer(preset, out var syncMessage, string.Empty)
+                    : integrations.SyncOutfitToGlamourer(preset, string.Empty, out syncMessage);
+                if (moved) continue;
                 notification = $"Folder removal stopped: {syncMessage}";
                 TabletAppTheme.EndCenteredModal();
                 return;
@@ -2120,13 +2151,13 @@ internal sealed class Plugin : IDisposable
             persistence.Save();
             if (activeFolderId == removed.Id) activeFolderId = Guid.Empty;
             pendingFolderRemoval = null;
-            notification = $"Removed folder {removed.Name}. Its outfits were moved to Unfiled and linked Glamourer designs were moved to Glamourer's root. Glamourer's empty folder record was removed and will disappear after Glamourer reloads; no outfits were deleted.";
+            notification = $"Removed folder {removed.Name}. Its presets were moved to Unfiled and linked Glamourer designs were moved to Glamourer's root. Glamourer's empty folder record was removed and will disappear after Glamourer reloads; no outfits or characters were deleted.";
             if (config.ReloadGlamourerAfterFolderDelete)
             {
                 DalamudServices.CommandManager.ProcessCommand("/xldisableplugin \"Glamourer\"");
                 glamourerEnablePending = true;
                 glamourerEnableAt = DateTime.UtcNow.AddSeconds(1);
-                notification = $"Removed folder {removed.Name}. Its outfits were moved to Unfiled and Glamourer is being reloaded to refresh its folder list.";
+                notification = $"Removed folder {removed.Name}. Its presets were moved to Unfiled and Glamourer is being reloaded to refresh its folder list.";
             }
             TabletAppTheme.CloseCenteredModal();
         }
@@ -2251,7 +2282,7 @@ internal sealed class Plugin : IDisposable
         if (showHeader)
         {
             ImGui.TextColored(TabletAppTheme.AccentHover, title);
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
         }
         content();
         ImGui.EndChild();
@@ -2260,6 +2291,7 @@ internal sealed class Plugin : IDisposable
 
     public void Dispose()
     {
+        appearanceEditor.Dispose();
         integrations.Dispose();
         selfieCamera.Dispose();
         imageDialog.Dispose();

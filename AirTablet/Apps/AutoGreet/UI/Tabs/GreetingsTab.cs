@@ -27,7 +27,7 @@ public sealed class GreetingsTab
         UiHelpers.Section("Greeting profiles");
         UiHelpers.TextDisabledWrapped("Greeting profiles for every venue are shown here so you can edit all macros without changing the active venue.");
         DrawAddProfileControls();
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         foreach (var venue in venues.Venues.ToArray())
         {

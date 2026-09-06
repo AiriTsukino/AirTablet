@@ -41,7 +41,7 @@ internal sealed class ListsTab
             ImGui.SameLine();
             if (ImGui.SmallButton("Skip")) visitors.Skip(key);
             ImGui.PopID();
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
         }
     }
 }

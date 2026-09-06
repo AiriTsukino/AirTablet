@@ -79,7 +79,7 @@ public sealed class DeathRollTournamentTab
 
             DrawDisabledWrapped("This tab keeps DRT broadcasts, suppressed broadcast attempts, join activity, warnings, and match history in one spot. If chat broadcasts are disabled, attempted DRT broadcasts still appear here internally.");
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             ImGui.TextColored(GambaTheme.Gold, "Broadcast / System Log");
             if (string.IsNullOrWhiteSpace(broadcastText))
             {
@@ -93,7 +93,7 @@ public sealed class DeathRollTournamentTab
                 ImGui.InputTextMultiline("##drt-broadcast-log", ref broadcastText, Math.Max(broadcastText.Length + 1024, 4096), new Vector2(-1, logHeight), ImGuiInputTextFlags.ReadOnly | ImGuiInputTextFlags.AllowTabInput);
             }
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             ImGui.TextColored(GambaTheme.Gold, "Tournament Match History");
             if (string.IsNullOrWhiteSpace(historyText))
             {
@@ -269,7 +269,7 @@ public sealed class DeathRollTournamentTab
 
             ImGui.TextDisabled($"Status: {drt.Tournament.Status} | Entrants: {drt.Tournament.Entrants.Count}/{config.DeathRoll.MaxPlayers}");
             DrawDisabledWrapped($"Death Roll starts each match with both players rolling {GetRollCommandLabel(drt.Tournament.SeedingMax)}. Higher seed roll goes first, then the first active roll uses plain {GetRollCommandLabel()} before later turns shrink the max until someone rolls 1.");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
 
             var setup = drt.Tournament.Status == DeathRollTournamentStatus.Setup;
             if (!setup) ImGui.BeginDisabled();
@@ -336,7 +336,7 @@ public sealed class DeathRollTournamentTab
 
             DrawEntrants(setup);
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (setup)
             {
                 if (UiHelpers.DisabledAwareButton("Start Tournament", drt.CanStart(out var reason), reason))

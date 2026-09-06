@@ -45,7 +45,7 @@ internal sealed class Plugin : IDisposable
         }
 
         DrawHeader();
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         if (ImGui.BeginTable("##prizetrader-layout", 2, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.NoSavedSettings))
         {
@@ -140,7 +140,7 @@ internal sealed class Plugin : IDisposable
     private void DrawSettings()
     {
         ImGui.TextColored(TabletAppTheme.AccentHover, "PrizeTrader Settings");
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         if (!ImGui.BeginTabBar("##prizetrader-settings-tabs"))
             return;
         if (ImGui.BeginTabItem("General"))
@@ -289,7 +289,7 @@ internal sealed class Plugin : IDisposable
         ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(TabletAppTheme.Accent.X, TabletAppTheme.Accent.Y, TabletAppTheme.Accent.Z, 0.48f));
         ImGui.BeginChild($"##prizetrader-card-{title}", new Vector2(-1f, 0f), true, ImGuiWindowFlags.AlwaysAutoResize);
         ImGui.TextColored(TabletAppTheme.AccentHover, title);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         content();
         ImGui.EndChild();
         ImGui.PopStyleColor(2);

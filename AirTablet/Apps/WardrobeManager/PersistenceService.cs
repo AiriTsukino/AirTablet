@@ -324,7 +324,7 @@ internal sealed class PersistenceService
                 preset.AutomaticLayersScanned = false;
                 preset.EquipmentItemIds.Clear();
             }
-            if (preset.Type != WardrobePresetType.Outfit || !folderIds.Contains(preset.FolderId)) preset.FolderId = Guid.Empty;
+            if (preset.Type == WardrobePresetType.Emote || !folderIds.Contains(preset.FolderId)) preset.FolderId = Guid.Empty;
             preset.Mods ??= [];
             preset.RegisteredOutfitMods ??= [];
             foreach (var mod in preset.Mods)

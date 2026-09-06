@@ -7,6 +7,18 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-05] WardrobeManager v1.1.0.4
+- Saves now update existing Glamourer designs without changing their IDs or removing automation references.
+- Added character folders and support for multiple selections in compatible Penumbra mod option groups.
+- Added equipment and advanced dye editing for outfit and character presets incase users want character only presets with outfits.
+- Reworked Appearance Studio with compact Glamourer layouts, clearer controls, improved colour pickers, and more.
+
+[2026-09-05] PrizeTrader v1.1.0.1
+- Improved payout confirmation when system messages are hidden, while retaining partner checks and duplicate-completion safeguards.
+
+[2026-09-05] GambaAssistant v1.1.0.1
+- Improved automatic blackjack bank tracking for PrizeTrader and Dropbox trades, including repeated trades and hidden system messages.
+
 [2026-09-04] WardrobeManager v1.1.0.3
 - Removed temporary log generation used to find a few issues that have been fixed.
 

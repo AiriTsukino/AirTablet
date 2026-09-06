@@ -65,7 +65,7 @@ internal sealed class VenuesTab : IDisposable
             DrawRegionRouting(venue);
             DrawPlotLock(venue);
             DrawCustomRegionMacroRoutes(venue);
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             ImGui.PopID();
         }
     }
@@ -280,7 +280,7 @@ internal sealed class VenuesTab : IDisposable
     private void DrawCustomRegionMacroRoute(VenueProfile venue, CustomRegionMacroRoute route)
     {
         ImGui.PushID(route.Id.ToString());
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         var enabled = route.Enabled;
         if (ImGui.Checkbox("Enabled", ref enabled))
@@ -375,7 +375,7 @@ internal sealed class VenuesTab : IDisposable
             }
 
             if (regions.Length > 0)
-                ImGui.Separator();
+                AirTablet.UI.TabletSeparator.Draw();
 
             foreach (var region in regions)
             {

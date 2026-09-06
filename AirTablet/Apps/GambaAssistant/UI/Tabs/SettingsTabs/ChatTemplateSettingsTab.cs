@@ -146,7 +146,7 @@ public sealed class ChatTemplateSettingsTab
             }
             if (profiles.GetTemplateSets(profile).Count <= 1) ImGui.EndDisabled();
 
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
             if (renameTemplateId != selected.Id)
             {
                 if (ImGui.Button("Rename Selected"))

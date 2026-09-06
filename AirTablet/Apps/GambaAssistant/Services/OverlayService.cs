@@ -168,7 +168,7 @@ public sealed class OverlayService
             ImGui.TextDisabled(config.Overlay.Compact ? "Compact" : "Detailed");
             ImGui.SameLine();
             ImGui.TextDisabled($"{panelColumns} wide");
-            ImGui.Separator();
+            AirTablet.UI.TabletSeparator.Draw();
 
             DrawContextualActionPanel(activeActionsHeight, useCompactActionGrid);
 

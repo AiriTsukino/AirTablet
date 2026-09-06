@@ -14,4 +14,6 @@ public sealed class Configuration : IPluginConfiguration
     public bool GlamourerFolderImportCompleted { get; set; }
     public bool ReloadGlamourerAfterFolderDelete { get; set; }
     public string LastAcknowledgedDevelopmentVersion { get; set; } = string.Empty;
+    public HashSet<uint> EquipmentFavorites { get; set; } = [];
+    public HashSet<uint> FacewearFavorites { get; set; } = [];
 }

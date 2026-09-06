@@ -32,10 +32,10 @@ public sealed class VipBlacklistTab
         ImGui.TextWrapped("VIP tiers choose which active VIP macro a visitor receives. Blacklisted visitors are excluded from tracking, queueing, and greetings.");
         ImGui.Spacing();
         DrawVenueSelector(venue);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         DrawTierManagement(venue);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
         DrawAssignmentTierSelector(venue);
         ImGui.Spacing();
         if (ImGui.BeginTable(
@@ -54,7 +54,7 @@ public sealed class VipBlacklistTab
         }
         ImGui.Spacing();
         UiHelpers.TextDisabledWrapped(status);
-        ImGui.Separator();
+        AirTablet.UI.TabletSeparator.Draw();
 
         if (ImGui.BeginTable("VipBlacklistTables", 2, ImGuiTableFlags.Resizable | ImGuiTableFlags.BordersInnerV))
         {
