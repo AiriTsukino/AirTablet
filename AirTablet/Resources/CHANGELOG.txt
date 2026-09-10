@@ -7,6 +7,10 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-09] PartyRefresh v1.1.0.1
+- Fixed issue where auto refresh timer wouldnt work or reset if instance area changed.
+- Added debug log for easier bug reports.
+
 [2026-09-05] WardrobeManager v1.1.0.4
 - Saves now update existing Glamourer designs without changing their IDs or removing automation references.
 - Added character folders and support for multiple selections in compatible Penumbra mod option groups.

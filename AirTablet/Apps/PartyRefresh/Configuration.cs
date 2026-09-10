@@ -10,11 +10,13 @@ public sealed class Configuration : IPluginConfiguration
     public bool SettingsVisible { get; set; }
     public bool AutoRefreshEnabled { get; set; }
     public int RefreshIntervalMinutes { get; set; } = 50;
+    public long NextAutomaticRefreshUnixSeconds { get; set; }
 
     public void Normalize()
     {
         ActiveVenueProfileId ??= string.Empty;
         RefreshIntervalMinutes = Math.Clamp(RefreshIntervalMinutes, 1, 55);
+        NextAutomaticRefreshUnixSeconds = Math.Max(0, NextAutomaticRefreshUnixSeconds);
     }
 }
 

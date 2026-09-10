@@ -8,7 +8,7 @@ namespace PartyRefresh;
 
 internal sealed class Plugin : IDisposable
 {
-    private const string Version = "1.0.9.1";
+    private const string Version = "1.0.10.0";
     private readonly Configuration config;
     private readonly PersistenceService persistence;
     private readonly PartyFinderService partyFinder;
@@ -417,6 +417,11 @@ internal sealed class Plugin : IDisposable
                 DrawPresetSettings();
                 ImGui.EndTabItem();
             }
+            if (ImGui.BeginTabItem("Debug Log"))
+            {
+                DrawDebugLog();
+                ImGui.EndTabItem();
+            }
             ImGui.EndTabBar();
         }
     }
@@ -440,6 +445,35 @@ internal sealed class Plugin : IDisposable
             }
             EndCard();
         }
+    }
+
+    private void DrawDebugLog()
+    {
+        ImGui.TextColored(TabletAppTheme.AccentHover, "PartyRefresh diagnostics");
+        ImGui.TextWrapped("Use this session log when automatic refreshing does not run as expected. Select any part of the log and press Ctrl+C, copy the latest visible entries, or copy the entire session.");
+        ImGui.Spacing();
+
+        var visibleLog = partyFinder.GetDiagnostics(visibleOnly: true);
+        if (ImGui.Button("Copy Visible", TabletAppTheme.Px(new Vector2(120f, 30f))))
+            ImGui.SetClipboardText(visibleLog);
+        ImGui.SameLine();
+        if (ImGui.Button("Copy All", TabletAppTheme.Px(new Vector2(105f, 30f))))
+            ImGui.SetClipboardText(partyFinder.GetDiagnostics());
+        ImGui.SameLine();
+        if (ImGui.Button("Clear", TabletAppTheme.Px(new Vector2(90f, 30f))))
+            partyFinder.ClearDiagnostics();
+        ImGui.SameLine();
+        ImGui.TextDisabled($"Showing latest {Math.Min(partyFinder.DiagnosticCount, 300):N0} of {partyFinder.DiagnosticCount:N0} entries.");
+
+        ImGui.Spacing();
+        visibleLog = partyFinder.GetDiagnostics(visibleOnly: true);
+        var height = MathF.Max(TabletAppTheme.Px(220f), ImGui.GetContentRegionAvail().Y);
+        ImGui.InputTextMultiline(
+            "##partyrefresh-copyable-debug-log",
+            ref visibleLog,
+            Math.Max(visibleLog.Length + 1024, 4096),
+            new Vector2(-1f, height),
+            ImGuiInputTextFlags.ReadOnly | ImGuiInputTextFlags.AllowTabInput);
     }
 
     private void DrawProfileSettings()

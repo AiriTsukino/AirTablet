@@ -33,8 +33,15 @@ internal sealed class PartyFinderService
     private long nextStepAt;
     private long operationDeadline;
     private readonly RefreshSchedule refreshSchedule = new();
+    private readonly Queue<string> diagnostics = new();
     private bool criteriaSubmitted;
     private bool criteriaWasVisible;
+    private bool automaticRefreshOperation;
+    private bool loggedWaitingForRecruitment;
+    private bool? lastRecruitingState;
+    private bool startupDiagnosticPending = true;
+    private long lastTickAt;
+    private long nextHeartbeatAt;
     private string? notification;
 
     public PartyFinderService(Configuration config, Func<PartyFinderPreset> activePreset)
@@ -50,7 +57,9 @@ internal sealed class PartyFinderService
         {
             DalamudServices.Log.Warning(ex, "PartyRefresh could not resolve the active recruitment opener.");
         }
-        RefreshScheduleChanged();
+        RestoreRefreshSchedule();
+        AddDiagnostic($"Service initialized. Auto refresh={config.AutoRefreshEnabled}; interval={config.RefreshIntervalMinutes} min; " +
+            $"opener available={openActiveRecruitment is not null}; next due={FormatDueTime()}. Game state will be read on the first main-thread tick.");
     }
 
     public bool IsBusy => step != OperationStep.Idle;
@@ -61,6 +70,7 @@ internal sealed class PartyFinderService
     public TimeSpan AutomaticRefreshRemaining => config.AutoRefreshEnabled
         ? TimeSpan.FromMilliseconds(refreshSchedule.RemainingMilliseconds(Environment.TickCount64))
         : TimeSpan.Zero;
+    public int DiagnosticCount => diagnostics.Count;
 
     public unsafe bool ApplyPreset(PartyFinderPreset preset)
     {
@@ -103,8 +113,9 @@ internal sealed class PartyFinderService
         return true;
     }
 
-    public bool RefreshCurrent()
+    public bool RefreshCurrent(bool automatic = false)
     {
+        automaticRefreshOperation = automatic;
         if (!CanStart(out var error))
         {
             RejectStart(error);
@@ -123,6 +134,7 @@ internal sealed class PartyFinderService
         pendingPreset = activePreset();
         criteriaSubmitted = false;
         refreshOnly = true;
+        AddDiagnostic($"{(automatic ? "Automatic" : "Manual")} refresh started with preset '{pendingPreset.Name}'.");
         BeginRefresh();
         return true;
     }
@@ -160,8 +172,14 @@ internal sealed class PartyFinderService
     public void SetAutoRefresh(bool enabled)
     {
         config.AutoRefreshEnabled = enabled;
-        RefreshScheduleChanged();
-        DalamudServices.PluginInterface.SavePluginConfig(config);
+        if (enabled)
+            ResetRefreshSchedule("Automatic refresh enabled");
+        else
+        {
+            config.NextAutomaticRefreshUnixSeconds = 0;
+            DalamudServices.PluginInterface.SavePluginConfig(config);
+            AddDiagnostic("Automatic refresh disabled.");
+        }
         Status = enabled
             ? $"Automatic refresh enabled. The next refresh is in {config.RefreshIntervalMinutes} minutes."
             : "Automatic refresh stopped.";
@@ -169,20 +187,59 @@ internal sealed class PartyFinderService
 
     public void RefreshScheduleChanged()
     {
-        refreshSchedule.Reset(Environment.TickCount64, config.RefreshIntervalMinutes);
+        ResetRefreshSchedule("Refresh interval or recruitment changed");
     }
 
     public unsafe void Tick()
     {
+        var now = Environment.TickCount64;
+        if (lastTickAt > 0 && now - lastTickAt > 5_000 && config.AutoRefreshEnabled)
+            AddDiagnostic($"Ticking resumed after a {TimeSpan.FromMilliseconds(now - lastTickAt):g} gap; remaining={FormatRemaining()}.");
+        lastTickAt = now;
+
         var criteriaVisible = GetVisibleConditionAddon() is not null;
         // A manual in-game post/refresh does not necessarily toggle the online
         // recruiting status. Closing its editor starts a fresh full interval too.
         if (!IsBusy && criteriaWasVisible && !criteriaVisible && IsRecruiting) RefreshScheduleChanged();
         criteriaWasVisible = criteriaVisible;
-        var refreshDue = refreshSchedule.IsDue(Environment.TickCount64, config.RefreshIntervalMinutes, IsRecruiting, IsBusy || criteriaVisible);
+        var recruiting = IsRecruiting;
+        if (startupDiagnosticPending)
+        {
+            startupDiagnosticPending = false;
+            AddDiagnostic($"First main-thread tick. Logged in={DalamudServices.ClientState.IsLoggedIn}; recruiting={recruiting}; online status={CurrentOnlineStatusId}.");
+        }
+        if (lastRecruitingState != recruiting)
+        {
+            AddDiagnostic($"Recruitment detection changed to {recruiting}; logged in={DalamudServices.ClientState.IsLoggedIn}; online status={CurrentOnlineStatusId}.");
+            lastRecruitingState = recruiting;
+        }
+        var refreshDue = refreshSchedule.IsDue(now, recruiting, IsBusy || criteriaVisible);
+        if (config.AutoRefreshEnabled && now >= nextHeartbeatAt)
+        {
+            nextHeartbeatAt = now + 5 * 60_000L;
+            AddDiagnostic($"Timer check: remaining={FormatRemaining()}; recruiting={recruiting}; busy={IsBusy}; " +
+                $"criteria open={criteriaVisible}; logged in={DalamudServices.ClientState.IsLoggedIn}; online status={CurrentOnlineStatusId}.");
+        }
+        if (config.AutoRefreshEnabled && !recruiting && !IsBusy && refreshSchedule.RemainingMilliseconds(now) == 0)
+        {
+            if (!loggedWaitingForRecruitment)
+            {
+                loggedWaitingForRecruitment = true;
+                Status = "Automatic refresh is due and waiting for an active Party Finder recruitment.";
+                AddDiagnostic("Timer became due, but the game does not report an active recruitment. It will run as soon as recruitment is detected.");
+            }
+        }
+        else if (recruiting)
+        {
+            loggedWaitingForRecruitment = false;
+        }
         if (step == OperationStep.Idle)
         {
-            if (config.AutoRefreshEnabled && refreshDue) RefreshCurrent();
+            if (config.AutoRefreshEnabled && refreshDue)
+            {
+                AddDiagnostic($"Timer is due. Starting automatic refresh; criteria open={criteriaVisible}; online status={CurrentOnlineStatusId}.");
+                RefreshCurrent(automatic: true);
+            }
             return;
         }
 
@@ -250,6 +307,26 @@ internal sealed class PartyFinderService
         var value = notification;
         notification = null;
         return value;
+    }
+
+    public string GetDiagnostics(bool visibleOnly = false)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("PartyRefresh automatic refresh diagnostics");
+        builder.AppendLine($"Generated: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        builder.AppendLine($"Auto refresh: {config.AutoRefreshEnabled}; interval: {config.RefreshIntervalMinutes} min; remaining: {FormatRemaining()}");
+        builder.AppendLine($"Logged in: {DalamudServices.ClientState.IsLoggedIn}; recruiting: {IsRecruiting}; online status: {CurrentOnlineStatusId}; busy: {IsBusy}; step: {step}; opener available: {openActiveRecruitment is not null}");
+        builder.AppendLine();
+        var entries = visibleOnly ? diagnostics.TakeLast(300) : diagnostics;
+        foreach (var line in entries)
+            builder.AppendLine(line);
+        return builder.ToString().TrimEnd();
+    }
+
+    public void ClearDiagnostics()
+    {
+        diagnostics.Clear();
+        AddDiagnostic("Diagnostics cleared.");
     }
 
     private bool CanStart(out string error)
@@ -586,25 +663,99 @@ internal sealed class PartyFinderService
 
     private void Finish(string message)
     {
+        var wasAutomatic = automaticRefreshOperation;
         step = OperationStep.Idle;
         pendingPreset = null;
         refreshOnly = false;
         endingRecruitment = false;
+        automaticRefreshOperation = false;
         Status = message;
         notification = message;
-        RefreshScheduleChanged();
+        AddDiagnostic($"{(wasAutomatic ? "Automatic" : "Manual")} operation completed: {message}");
+        ResetRefreshSchedule("Operation completed");
     }
 
     private void Fail(string message)
     {
+        var wasAutomatic = automaticRefreshOperation;
         step = OperationStep.Idle;
         pendingPreset = null;
         refreshOnly = false;
         endingRecruitment = false;
+        automaticRefreshOperation = false;
         Status = message;
         notification = message;
         DalamudServices.ChatGui.PrintError($"PartyRefresh: {message}");
-        RefreshScheduleChanged();
+        AddDiagnostic($"{(wasAutomatic ? "Automatic" : "Manual")} operation failed: {message}");
+        if (wasAutomatic)
+            ResetRefreshSchedule("Automatic attempt failed; retry scheduled", 1);
+        else
+            ResetRefreshSchedule("Manual operation ended");
+    }
+
+    private uint CurrentOnlineStatusId => DalamudServices.ObjectTable.LocalPlayer?.OnlineStatus.RowId ?? 0;
+
+    private void RestoreRefreshSchedule()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (config.AutoRefreshEnabled && config.NextAutomaticRefreshUnixSeconds > 0)
+        {
+            try
+            {
+                var due = DateTimeOffset.FromUnixTimeSeconds(config.NextAutomaticRefreshUnixSeconds);
+                var remaining = Math.Max(0, (long)(due - now).TotalMilliseconds);
+                refreshSchedule.Restore(Environment.TickCount64, remaining);
+                nextHeartbeatAt = Environment.TickCount64;
+                return;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                config.NextAutomaticRefreshUnixSeconds = 0;
+            }
+        }
+        ResetRefreshSchedule("Timer initialized");
+    }
+
+    private void ResetRefreshSchedule(string reason, int? minutes = null)
+    {
+        var interval = Math.Clamp(minutes ?? config.RefreshIntervalMinutes, 1, 55);
+        refreshSchedule.Reset(Environment.TickCount64, interval);
+        config.NextAutomaticRefreshUnixSeconds = DateTimeOffset.UtcNow.AddMinutes(interval).ToUnixTimeSeconds();
+        DalamudServices.PluginInterface.SavePluginConfig(config);
+        nextHeartbeatAt = Environment.TickCount64;
+        loggedWaitingForRecruitment = false;
+        AddDiagnostic($"{reason}; next attempt in {interval} min ({FormatDueTime()}).");
+    }
+
+    private string FormatRemaining()
+    {
+        if (!config.AutoRefreshEnabled)
+            return "disabled";
+        var remaining = AutomaticRefreshRemaining;
+        return remaining <= TimeSpan.Zero ? "due" : remaining.ToString(@"hh\:mm\:ss");
+    }
+
+    private string FormatDueTime()
+    {
+        if (config.NextAutomaticRefreshUnixSeconds <= 0)
+            return "not scheduled";
+        try
+        {
+            return DateTimeOffset.FromUnixTimeSeconds(config.NextAutomaticRefreshUnixSeconds).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz");
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return "invalid";
+        }
+    }
+
+    private void AddDiagnostic(string message)
+    {
+        var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}] {message}";
+        diagnostics.Enqueue(line);
+        while (diagnostics.Count > 2_000)
+            diagnostics.Dequeue();
+        DalamudServices.Log.Information("PartyRefresh diagnostics: {Message}", message);
     }
 
     private void RejectStart(string message)
