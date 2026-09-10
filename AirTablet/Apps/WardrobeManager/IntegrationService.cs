@@ -1349,7 +1349,12 @@ internal sealed partial class IntegrationService : IDisposable
         try
         {
             var result = deleteDesign.Invoke(preset.GlamourerDesignId);
-            if (result is GlamourerApiEc.Success or GlamourerApiEc.NothingDone) return true;
+            if (result is GlamourerApiEc.Success or GlamourerApiEc.NothingDone)
+            {
+                if (!getDesignList.Invoke().ContainsKey(preset.GlamourerDesignId)) return true;
+                error = "Glamourer reported success but the linked design is still present. Nothing was removed from WardrobeManager.";
+                return false;
+            }
             error = $"Glamourer could not delete the linked design ({result}).";
             return false;
         }
@@ -1366,17 +1371,26 @@ internal sealed partial class IntegrationService : IDisposable
         {
             ["Name"] = rule.Name,
             ["Directory"] = rule.Directory,
+            ["Version"] = 1,
             ["Priority"] = rule.Priority,
-            ["Settings"] = new JObject(rule.Options.Select(option =>
-                new JProperty(option.Key, new JArray(option.Value))))
+            ["Settings"] = new JArray(rule.Options.Select(option => new JObject
+            {
+                ["Name"] = option.Key,
+                ["DisableAllUnknown"] = true,
+                ["Options"] = new JArray(option.Value.Select(value => new JObject
+                {
+                    ["Name"] = value,
+                    ["State"] = "Enabled",
+                })),
+            })),
         };
         switch (rule.AssociationState)
         {
-            case GlamourerModAssociationState.Enabled: result["Enabled"] = true; break;
-            case GlamourerModAssociationState.Disabled: result["Enabled"] = false; break;
-            case GlamourerModAssociationState.Inherit: result["Inherit"] = true; break;
-            case GlamourerModAssociationState.Remove: result["Remove"] = true; break;
-            default: result["Enabled"] = JValue.CreateNull(); break;
+            case GlamourerModAssociationState.Enabled: result["State"] = "Enabled"; break;
+            case GlamourerModAssociationState.Disabled: result["State"] = "Disabled"; break;
+            case GlamourerModAssociationState.Inherit: result["State"] = "Inherited"; break;
+            case GlamourerModAssociationState.Remove: result["State"] = "RemoveTemporary"; break;
+            default: result["State"] = "Ignored"; break;
         }
         return result;
     }
@@ -1993,18 +2007,23 @@ internal sealed partial class IntegrationService : IDisposable
                         ? values.Values<string>().OfType<string>().Where(value => !string.IsNullOrWhiteSpace(value)).ToList()
                         : [];
             }
-            var state = mod.Value<bool?>("Remove") == true
-                ? GlamourerModAssociationState.Remove
-                : mod.Value<bool?>("Inherit") == true
-                    ? GlamourerModAssociationState.Inherit
-                    : mod["Enabled"]?.Type == JTokenType.Null
-                        ? GlamourerModAssociationState.Ignore
-                        : mod.Value<bool?>("Enabled") switch
-                        {
-                            true => GlamourerModAssociationState.Enabled,
-                            false => GlamourerModAssociationState.Disabled,
-                            _ => GlamourerModAssociationState.Ignore,
-                        };
+            else if (mod["Settings"] is JArray settingRecords)
+            {
+                foreach (var setting in settingRecords.OfType<JObject>())
+                {
+                    var groupName = setting.Value<string>("Name")?.Trim() ?? string.Empty;
+                    if (groupName.Length == 0) continue;
+                    options[groupName] = setting["Options"] is JArray optionRecords
+                        ? optionRecords.OfType<JObject>()
+                            .Where(option => IsEnabledOptionState(option["State"]))
+                            .Select(option => option.Value<string>("Name")?.Trim())
+                            .OfType<string>()
+                            .Where(value => value.Length > 0)
+                            .ToList()
+                        : [];
+                }
+            }
+            var state = ParseModAssociationState(mod);
             result.Add(new DesignModAssociation(
                 directory,
                 string.IsNullOrWhiteSpace(name) ? directory : name,
@@ -2013,6 +2032,42 @@ internal sealed partial class IntegrationService : IDisposable
                 options));
         }
         return result;
+    }
+
+    private static bool IsEnabledOptionState(JToken? state)
+        => state?.Type switch
+        {
+            JTokenType.Boolean => state.Value<bool>(),
+            JTokenType.String => state.Value<string>()?.Equals("Enabled", StringComparison.OrdinalIgnoreCase) == true
+                || state.Value<string>()?.Equals("True", StringComparison.OrdinalIgnoreCase) == true,
+            _ => false,
+        };
+
+    private static GlamourerModAssociationState ParseModAssociationState(JObject mod)
+    {
+        if (mod.Value<string>("State") is { } value)
+            return value.Trim().ToLowerInvariant() switch
+            {
+                "enabled" => GlamourerModAssociationState.Enabled,
+                "disabled" => GlamourerModAssociationState.Disabled,
+                "inherited" => GlamourerModAssociationState.Inherit,
+                "removetemporary" => GlamourerModAssociationState.Remove,
+                _ => GlamourerModAssociationState.Ignore,
+            };
+
+        // Glamourer design versions 1 and 2 used separate state properties.
+        return mod.Value<bool?>("Remove") == true
+            ? GlamourerModAssociationState.Remove
+            : mod.Value<bool?>("Inherit") == true
+                ? GlamourerModAssociationState.Inherit
+                : mod["Enabled"]?.Type == JTokenType.Null
+                    ? GlamourerModAssociationState.Ignore
+                    : mod.Value<bool?>("Enabled") switch
+                    {
+                        true => GlamourerModAssociationState.Enabled,
+                        false => GlamourerModAssociationState.Disabled,
+                        _ => GlamourerModAssociationState.Ignore,
+                    };
     }
 
     private static WardrobeModRule ToWardrobeRule(DesignModAssociation association) => new()

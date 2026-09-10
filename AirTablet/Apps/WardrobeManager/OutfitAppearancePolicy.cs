@@ -8,16 +8,23 @@ internal static class OutfitAppearancePolicy
         || !string.IsNullOrWhiteSpace(preset.GlamourerState);
 
     public static bool MatchesSavedAppearance(JObject expected, JObject stored)
-        => new[] { "Customize", "Parameters" }.All(section => JToken.DeepEquals(Canonical(expected[section]), Canonical(stored[section])));
+        => new[] { "Customize", "Parameters" }.All(section => JToken.DeepEquals(Canonical(section, expected[section]), Canonical(section, stored[section])));
 
-    private static JToken? Canonical(JToken? token)
+    private static JToken? Canonical(string section, JToken? token)
     {
         var copy = token?.DeepClone();
         if (copy is not JObject entries) return copy;
         // Newer Glamourer exports omit false Apply flags. Omission and false
         // are semantically identical, not a failed round-trip.
-        foreach (var entry in entries.Properties().Select(p => p.Value).OfType<JObject>())
+        foreach (var property in entries.Properties())
+        {
+            if (property.Value is not JObject entry) continue;
             if (entry.Value<bool?>("Apply") == false) entry.Remove("Apply");
+            // Glamourer 1.7 normalizes BodyType to an applied value even when
+            // an imported outfit explicitly stores Apply=false. It is an
+            // internal invariant, not evidence that the save lost data.
+            if (section == "Customize" && property.Name == "BodyType") entry.Remove("Apply");
+        }
         return copy;
     }
 

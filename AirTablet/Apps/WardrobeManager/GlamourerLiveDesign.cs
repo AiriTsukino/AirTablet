@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using System.Text;
 using Newtonsoft.Json.Linq;
 
 namespace WardrobeManager;
@@ -64,6 +65,22 @@ internal sealed class GlamourerLiveDesign
         return JObject.Parse(Required(share.Invoke(converter, [parsed]), "captured JSON").ToString()!);
     }
 
+    internal string Encode(JObject input)
+    {
+        // AddDesign accepts JSON for backwards compatibility, but current
+        // Glamourer first treats that string as base64 and logs a conversion
+        // failure. Parse and encode with Glamourer's own current converter so
+        // creation follows the same format as Glamourer's design exporter.
+        var json = (JObject)input.DeepClone();
+        json.Remove("Identifier");
+        var parsed = Parse(json);
+        var share = converter.GetType().GetMethods().Single(m => m.Name == "ShareBase64"
+            && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == baseType);
+        var bytes = Required(share.Invoke(converter, [parsed]), "encoded design") as byte[]
+            ?? throw new InvalidOperationException("Glamourer compatibility check failed: encoded design bytes.");
+        return Encoding.UTF8.GetString(bytes);
+    }
+
     internal void Update(Guid id, JObject wanted, string folder, Func<bool> verify)
     {
         var storage = Required(manager.GetType().GetField("Designs")?.GetValue(manager), "design storage");
@@ -72,18 +89,7 @@ internal sealed class GlamourerLiveDesign
             throw new InvalidOperationException("This Glamourer design is write-protected.");
         var json = (JObject)wanted.DeepClone();
         json["Identifier"] = id.ToString();
-        object parseInput;
-        if (parse.Name == "FromJObject")
-        {
-            var jsonType = parse.GetParameters()[0].ParameterType;
-            parseInput = Required(jsonType.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, [typeof(string)])?.Invoke(null, [json.ToString()]), "design JSON");
-        }
-        else
-        {
-            using var document = System.Text.Json.JsonDocument.Parse(json.ToString());
-            parseInput = document.RootElement.Clone();
-        }
-        var parsed = Required(parse.Invoke(converter, [parseInput, true, true]), "validated design");
+        var parsed = Parse(json);
         if (!designType.IsInstanceOfType(parsed)) throw new InvalidOperationException("Glamourer did not parse a complete design.");
         var export = converter.GetType().GetMethods().Single(m => m.Name == "ShareJObject" && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == designType);
         JObject Export(object value) => JObject.Parse(Required(export.Invoke(converter, [value]), "verification export").ToString()!);
@@ -152,6 +158,24 @@ internal sealed class GlamourerLiveDesign
             catch (Exception rollback) { throw new AggregateException("Save failed and restoring the original values also failed. The design ID was not deleted.", failure, rollback); }
             throw new InvalidOperationException("Save failed; the original design values were restored.", failure);
         }
+    }
+
+    private object Parse(JObject json)
+    {
+        object parseInput;
+        if (parse.Name == "FromJObject")
+        {
+            var jsonType = parse.GetParameters()[0].ParameterType;
+            parseInput = Required(jsonType.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, [typeof(string)])
+                ?.Invoke(null, [json.ToString()]), "design JSON");
+        }
+        else
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(json.ToString());
+            parseInput = document.RootElement.Clone();
+        }
+
+        return Required(parse.Invoke(converter, [parseInput, true, true]), "validated design");
     }
 
     private static object Required(object? value, string name)

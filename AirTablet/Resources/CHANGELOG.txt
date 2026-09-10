@@ -7,6 +7,9 @@
 #
 # Entries are shown newest-first in Settings > What's New.
 
+[2026-09-09] WardrobeManager v1.1.0.5
+- Updated to support new glamourer/penumbra changes.
+
 [2026-09-09] PartyRefresh v1.1.0.1
 - Fixed issue where auto refresh timer wouldnt work or reset if instance area changed.
 - Added debug log for easier bug reports.

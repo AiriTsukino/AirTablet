@@ -44,7 +44,7 @@ internal sealed partial class IntegrationService
                 bridge.Update(id, design, folder, Verify);
             else
             {
-                var result = addDesign.Invoke(design.ToString(Newtonsoft.Json.Formatting.None), DesignImportName(folder, preset.Name), out id);
+                var result = addDesign.Invoke(bridge.Encode(design), DesignImportName(folder, preset.Name), out id);
                 if (result != GlamourerApiEc.Success || id == Guid.Empty)
                 { message = $"Glamourer could not create the design ({result})."; return false; }
                 if (!Verify())
